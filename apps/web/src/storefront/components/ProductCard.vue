@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { RouterLink } from 'vue-router'
 import { ShoppingBasket } from '@lucide/vue'
+import { computed } from 'vue'
 import type { Product } from '@pos/shared/index'
-import { formatCurrency } from '@pos/shared/index'
+import { discountPercent, formatCurrency } from '@pos/shared/index'
 import { useStorefrontCart } from '@pos/web/storefront/cart'
 import { useStorefrontWishlist } from '@pos/web/storefront/wishlist'
 
@@ -14,6 +16,8 @@ const props = defineProps<{
 const cart = useStorefrontCart()
 const wishlist = useStorefrontWishlist()
 
+const discount = computed(() => discountPercent(props.product))
+
 function quantity(): number {
   return cart.cartLines.value.find((line) => line.product.id === props.product.id)?.quantity ?? 0
 }
@@ -22,10 +26,16 @@ function quantity(): number {
 <template>
   <article class="pc" :class="{ 'pc--featured': featured }">
     <div class="pc__art">
-      <img v-if="product.imageUrl" :src="product.imageUrl" :alt="product.name" loading="lazy" class="pc__image" />
-      <div v-else class="pc__fallback">
-        <ShoppingBasket :size="28" />
-      </div>
+      <span v-if="discount !== null" class="pc__badge">-{{ discount }}%</span>
+      <!-- Only the artwork and the title link through to the detail page; the
+           wishlist toggle and the cart controls stay outside the link so they
+           act in place instead of navigating. -->
+      <RouterLink :to="{ name: 'product', params: { productId: product.id } }" class="pc__art-link">
+        <img v-if="product.imageUrl" :src="product.imageUrl" :alt="product.name" loading="lazy" class="pc__image" />
+        <div v-else class="pc__fallback">
+          <ShoppingBasket :size="28" />
+        </div>
+      </RouterLink>
 
       <button
         type="button"
@@ -42,9 +52,12 @@ function quantity(): number {
 
     <div class="pc__body">
       <span class="pc__category">{{ categoryName }}</span>
-      <p class="pc__title">{{ product.name }}</p>
+      <RouterLink :to="{ name: 'product', params: { productId: product.id } }" class="pc__title-link">
+        <p class="pc__title">{{ product.name }}</p>
+      </RouterLink>
       <div class="pc__price-row">
         <strong class="pc__price">{{ formatCurrency(product.priceCents) }}</strong>
+        <span v-if="discount !== null" class="pc__was">{{ formatCurrency(product.compareAtPriceCents!) }}</span>
         <span v-if="product.unitLabel" class="pc__unit">{{ product.unitLabel }}</span>
       </div>
     </div>
@@ -81,6 +94,12 @@ function quantity(): number {
   aspect-ratio: 1 / 1;
   background: var(--fill);
   overflow: hidden;
+}
+
+.pc__art-link {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .pc__image,
@@ -134,6 +153,15 @@ function quantity(): number {
   letter-spacing: 0.04em;
 }
 
+.pc__title-link {
+  text-decoration: none;
+  color: inherit;
+}
+
+.pc__title-link:hover .pc__title {
+  color: var(--accent);
+}
+
 .pc__title {
   margin: 0;
   display: -webkit-box;
@@ -164,6 +192,25 @@ function quantity(): number {
 .pc__unit {
   color: var(--text-tertiary);
   font-size: 12px;
+}
+
+.pc__was {
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  text-decoration: line-through;
+}
+
+.pc__badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-text-on);
+  font-size: 11.5px;
+  font-weight: 800;
 }
 
 .pc__actions {

@@ -13,6 +13,7 @@ interface FsProduct {
   barcode: string
   name: string
   priceCents: number
+  compareAtPriceCents?: number | null
   taxRate: number | string
   productType: string
   imageUrl?: string
@@ -33,6 +34,7 @@ function mapProduct(id: string, data: FsProduct): Product {
     barcode: data.barcode ?? '',
     name: data.name,
     priceCents: data.priceCents,
+    compareAtPriceCents: data.compareAtPriceCents ?? undefined,
     taxRate: Number(data.taxRate),
     kind: data.productType === 'weighted' ? 'weighted' : 'standard',
     imageUrl: data.imageUrl,

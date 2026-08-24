@@ -136,7 +136,7 @@ function removeOne(event: Event) {
   display: grid;
   place-items: center;
   border-radius: 999px;
-  background: #2f9e5c;
+  background: var(--sf-primary);
   color: #fff;
 }
 
@@ -147,13 +147,13 @@ function removeOne(event: Event) {
   gap: 6px;
   padding: 3px;
   border-radius: 999px;
-  background: #eaf6ee;
+  background: var(--sf-banner-green);
 }
 
 .pc__stepper button {
   height: 24px;
   border-radius: 999px;
-  background: #2f9e5c;
+  background: var(--sf-primary);
   color: #fff;
   font-size: 0.9rem;
   font-weight: 800;
@@ -161,7 +161,7 @@ function removeOne(event: Event) {
 
 .pc__stepper span {
   text-align: center;
-  color: #24824a;
+  color: var(--sf-primary-dark);
   font-size: 0.82rem;
   font-weight: 800;
 }

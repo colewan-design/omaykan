@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Cole POS Admin</string>
-    <string name="title_activity_main">Cole POS Admin</string>
-    <string name="package_name">com.colepos.app</string>
-    <string name="custom_url_scheme">com.colepos.app</string>
+    <string name="app_name">Baguio Online Market Admin</string>
+    <string name="title_activity_main">Baguio Online Market Admin</string>
+    <string name="package_name">com.baguioonlinemarket.app</string>
+    <string name="custom_url_scheme">com.baguioonlinemarket.app</string>
 </resources>

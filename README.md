@@ -1,4 +1,4 @@
-# ColePOS
+# Baguio Online Market
 
 Commission-free local commerce for Philippine merchants.
 

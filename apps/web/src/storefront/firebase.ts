@@ -65,17 +65,26 @@ export let STORE_ADDRESS: string = import.meta.env.VITE_POS_STORE_ADDRESS ?? ''
 // store's settings doc (Firestore rules keep that staff-only), so it's
 // configured directly via env instead.
 export let BUSINESS_MODE = import.meta.env.VITE_POS_BUSINESS_MODE as BusinessMode
+// Store pin used to quote a distance-based delivery fee (merged in from
+// Baguio Delivery). Null when the store never set one — the checkout then
+// falls back to the flat base fee.
+export let STORE_LAT: number | null = Number(import.meta.env.VITE_POS_STORE_LAT) || null
+export let STORE_LNG: number | null = Number(import.meta.env.VITE_POS_STORE_LNG) || null
 
 export function setStorefrontContext(ctx: {
   orgSlug: string
   storeCode: string
   storeAddress: string
   businessMode: BusinessMode
+  storeLat?: number | null
+  storeLng?: number | null
 }) {
   ORG_SLUG = ctx.orgSlug
   STORE_CODE = ctx.storeCode
   STORE_ADDRESS = ctx.storeAddress
   BUSINESS_MODE = ctx.businessMode
+  STORE_LAT = ctx.storeLat ?? null
+  STORE_LNG = ctx.storeLng ?? null
 }
 
 export interface CreateOnlineOrderItem {
@@ -92,12 +101,21 @@ export interface CreateOnlineOrderGuest {
 export interface CreateOnlineOrderFulfillment {
   method: 'pickup' | 'delivery'
   address?: string
+  /**
+   * Optional drop-off coordinates, sent when the customer shares their
+   * location. The API recomputes the fee from these rather than trusting the
+   * client's quote — see api/create-online-order.ts.
+   */
+  lat?: number
+  lng?: number
 }
 
 export interface CreateOnlineOrderResult {
   orderId: string
   ticketNumber: string
   totalCents: number
+  /** Server-computed; 0 for pickup orders. */
+  deliveryFeeCents?: number
 }
 
 export async function createOnlineOrder(
@@ -123,6 +141,8 @@ export interface ResolveStoreCodeResult {
   businessMode: BusinessMode
   storeName: string
   storeAddress: string
+  storeLat?: number | null
+  storeLng?: number | null
 }
 
 // Only used by the mobile storefront (see apps/mobile/src/storefront/pairing.ts)

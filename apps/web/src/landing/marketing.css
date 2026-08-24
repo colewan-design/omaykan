@@ -1,0 +1,73 @@
+/*
+ * Shared marketing chrome for the two marketing surfaces:
+ *   - the consumer landing page  (.landing  — LandingPage.vue)
+ *   - the merchant registration page (.pm-root — PosMarketing.vue on /signup)
+ *
+ * Deliberately global rather than scoped: both surfaces need the same brand
+ * tokens, reveal animation and layout container, and duplicating them in two
+ * `<style scoped>` blocks would let them drift apart. Everything here is
+ * namespaced under `.landing`/`.pm-root` or a `lp-`/`reveal` class, so it
+ * can't leak into the app itself.
+ */
+
+.landing,
+.pm-root {
+  /* Baguio Delivery's green brand — the single accent across both marketing
+     surfaces now that Baguio Online Market has absorbed that product. (This replaced the
+     original gold theme; nothing should reintroduce #cda44a.) */
+  --accent-rgb: 34, 197, 94;
+  --accent: #22c55e;
+  --accent-pressed: #16a34a;
+  --accent-deep: #1a6b3c;
+  /* Near-black green rather than white: white on #22c55e is only ~2.2:1. */
+  --accent-ink: #06240f;
+  --accent-light: rgba(var(--accent-rgb), 0.14);
+  --accent-border: rgba(var(--accent-rgb), 0.32);
+  --accent-warm: #bbf451;
+  --accent-warm-rgb: 187, 244, 81;
+  --marketing-dark: #1a1a1a;
+  --bg-base: #f5f9f6;
+  --bg-surface: #ffffff;
+  --bg-elevated: #e8f0f2;
+  --fill: rgba(15, 23, 42, 0.05);
+  --text-primary: #1a1a1a;
+  --text-secondary: #6b7280;
+  --text-tertiary: #8a938e;
+  --separator: #eef1ef;
+  --separator-strong: rgba(15, 23, 42, 0.14);
+}
+
+/* ── Reveal ──────────────────────────────────────────────────────────── */
+.reveal { opacity: 0; transform: translateY(14px); transition: opacity 0.4s var(--ease-out), transform 0.4s var(--ease-out); }
+.reveal-visible { opacity: 1; transform: none; }
+.reveal--scale { transform: scale(0.97); transition: opacity 0.45s var(--ease-out), transform 0.45s var(--ease-out), box-shadow 0.45s var(--ease-out); }
+.reveal--scale.reveal-visible { transform: scale(1); }
+
+/* ── Hero load-in (runs once on mount, never scroll-triggered) ────────── */
+@keyframes heroRise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+.hero-in { opacity: 0; animation: heroRise 0.7s cubic-bezier(0.16, 0.84, 0.44, 1) both; }
+.lp-line { display: inline-block; }
+
+/* ── Decorative blobs ──────────────────────────────────────────────── */
+.lp-blob { position: absolute; border-radius: 50%; filter: blur(70px); pointer-events: none; z-index: 0; }
+.lp-blob--1 { top: -140px; right: -100px; width: 460px; height: 460px; background: radial-gradient(circle, rgba(var(--accent-rgb),0.24), transparent 70%); }
+.lp-blob--2 { bottom: -120px; left: -80px; width: 340px; height: 340px; background: radial-gradient(circle, rgba(var(--accent-warm-rgb),0.12), transparent 70%); }
+.lp-blob--cta { top: 50%; left: 50%; transform: translate(-50%, -50%); width: 640px; height: 640px; background: radial-gradient(circle, rgba(var(--accent-rgb),0.16), transparent 70%); }
+
+.lp-particle-zone { position: absolute; z-index: 0; pointer-events: none; }
+.lp-particle-zone.reveal { transform: none; }
+.lp-particle-zone--hero { inset: 0; }
+.lp-particle-zone--full { inset: 0; }
+
+/* ── Layout ────────────────────────────────────────────────────────── */
+.lp-container { max-width: 1080px; margin: 0 auto; }
+.lp-container--narrow { max-width: 720px; }
+
+/* ── Local reset ───────────────────────────────────────────────────────
+   landing.css applies these globally for the landing entry, but the
+   registration page loads app.css instead — which underlines links — so
+   the marketing block needs them scoped to itself. */
+.landing a,
+.pm-root a { color: inherit; text-decoration: none; }
+.landing img,
+.pm-root img { display: block; max-width: 100%; }

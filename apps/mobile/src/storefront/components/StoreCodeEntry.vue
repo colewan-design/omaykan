@@ -81,8 +81,8 @@ async function handleSubmit() {
   height: 52px;
   margin-bottom: 6px;
   border-radius: 16px;
-  background: #eaf6ee;
-  color: #2f9e5c;
+  background: var(--sf-banner-green);
+  color: var(--sf-primary);
 }
 
 .pair__card h1 {
@@ -132,7 +132,7 @@ async function handleSubmit() {
   min-height: 50px;
   border: none;
   border-radius: 14px;
-  background: #f3811f;
+  background: var(--sf-primary);
   color: #fff;
   font: 800 1rem/1 inherit;
 }

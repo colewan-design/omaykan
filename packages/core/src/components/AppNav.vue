@@ -67,9 +67,9 @@ function isActive(path: string) {
 <template>
   <nav class="workspace-nav">
     <div class="workspace-nav__brand">
-      <div class="workspace-nav__brand-mark">C</div>
+      <div class="workspace-nav__brand-mark">B</div>
       <div>
-        <strong>ColePOS</strong>
+        <strong>Baguio Online Market</strong>
         <p>{{ store.settings.businessName || 'Smart POS Solutions' }}</p>
       </div>
     </div>

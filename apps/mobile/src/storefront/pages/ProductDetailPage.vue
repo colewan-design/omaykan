@@ -154,7 +154,7 @@ function goBack() {
 }
 
 .pd__icon-btn--active {
-  color: #f3811f;
+  color: var(--sf-primary);
 }
 
 .pd__title {
@@ -209,7 +209,7 @@ function goBack() {
 }
 
 .pd__stat span {
-  color: #f3811f;
+  color: var(--sf-primary);
   font-size: 0.76rem;
   font-weight: 700;
 }
@@ -235,7 +235,7 @@ function goBack() {
   border: none;
   border-radius: 12px;
   background: #fdecd9;
-  color: #f3811f;
+  color: var(--sf-primary);
 }
 
 .pd__stepper span {
@@ -269,7 +269,7 @@ function goBack() {
 
 .pd__price {
   flex-shrink: 0;
-  color: #f3811f;
+  color: var(--sf-primary);
   font-size: 1.1rem;
   font-weight: 800;
 }
@@ -283,7 +283,7 @@ function goBack() {
   min-height: 48px;
   border: none;
   border-radius: 999px;
-  background: #f3811f;
+  background: var(--sf-primary);
   color: #fff;
   font: 800 0.94rem/1 inherit;
 }

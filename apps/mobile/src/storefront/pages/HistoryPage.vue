@@ -81,7 +81,7 @@ function formatPlacedAt(iso: string): string {
   padding: 12px 18px;
   border-radius: 999px;
   background: #fdecd9;
-  color: #f3811f;
+  color: var(--sf-primary);
   text-decoration: none;
   font-weight: 800;
 }
@@ -115,10 +115,10 @@ function formatPlacedAt(iso: string): string {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #f3811f;
+  color: var(--sf-primary);
 }
 
 .history__item-side strong {
-  color: #f3811f;
+  color: var(--sf-primary);
 }
 </style>

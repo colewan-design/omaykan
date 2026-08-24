@@ -67,10 +67,10 @@ function weightedPaymentMethod(): PaymentMethod {
 function seedDemoCustomers(): Customer[] {
   const timestamp = new Date().toISOString()
   return [
-    { name: 'Maria Santos', phone: '09171234567', email: 'maria@demo.cole', notes: 'Prefers iced drinks.' },
-    { name: 'Paolo Reyes', phone: '09179876543', email: 'paolo@demo.cole', notes: 'Usually orders for pickup.' },
-    { name: 'Anne Lim', phone: '09175554444', email: 'anne@demo.cole', notes: 'Loyal weekend shopper.' },
-    { name: 'Miguel Garcia', phone: '09176667777', email: 'miguel@demo.cole', notes: 'Asks for printed receipts.' },
+    { name: 'Maria Santos', phone: '09171234567', email: 'maria@demo.baguio', notes: 'Prefers iced drinks.' },
+    { name: 'Paolo Reyes', phone: '09179876543', email: 'paolo@demo.baguio', notes: 'Usually orders for pickup.' },
+    { name: 'Anne Lim', phone: '09175554444', email: 'anne@demo.baguio', notes: 'Loyal weekend shopper.' },
+    { name: 'Miguel Garcia', phone: '09176667777', email: 'miguel@demo.baguio', notes: 'Asks for printed receipts.' },
   ].map((customer) => ({
     id: crypto.randomUUID(),
     createdAt: timestamp,
@@ -166,7 +166,7 @@ export function createDemoPosRepository(): PosRepository {
   let suppliers: Supplier[] = []
   let reorderMarks: ReorderMark[] = []
   let orders: OrderSummary[] = seedDemoOrders(customers)
-  let settings: AppSettings = { ...defaultSettings, businessName: 'Cole POS Demo' }
+  let settings: AppSettings = { ...defaultSettings, businessName: 'Baguio Online Market Demo' }
   let appEvents: AppEvent[] = []
   let users: UserAccount[] = []
   let roles: RoleDefinition[] = [...defaultRoles]

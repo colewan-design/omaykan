@@ -59,6 +59,12 @@ export interface Product {
   barcode: string
   name: string
   priceCents: number
+  /**
+   * Original "was" price, for showing a strikethrough and a discount badge.
+   * Only meaningful when higher than priceCents — the customer is always
+   * charged priceCents, and the API never reads this.
+   */
+  compareAtPriceCents?: number
   taxRate: number
   kind: ProductKind
   imageUrl?: string
@@ -477,6 +483,7 @@ export const demoProducts: Product[] = [
     stockQty: 48, lowStockThreshold: 10,
   }),
   standardProduct(2, 'coffee', 'COF', 'latte', 'Cafe Latte', 18000, ['coffee-shop'], {
+    compareAtPriceCents: 22000,
     imageUrl: '/products/latte.jpg',
     stockQty: 32, lowStockThreshold: 10,
   }),
@@ -501,12 +508,14 @@ export const demoProducts: Product[] = [
     stockQty: 18, lowStockThreshold: 8,
   }),
   standardProduct(8, 'coffee', 'COF', 'affogato', 'Affogato', 21500, ['coffee-shop'], {
+    compareAtPriceCents: 26000,
     imageUrl: '/products/affogato.jpg',
     stockQty: 12, lowStockThreshold: 5,
   }),
 
   // Tea
   standardProduct(1, 'tea', 'TEA', 'matcha', 'Iced Matcha', 21000, ['coffee-shop'], {
+    compareAtPriceCents: 25000,
     imageUrl: '/products/matcha.jpg',
     stockQty: 3, lowStockThreshold: 8,
   }),
@@ -905,6 +914,17 @@ export function formatCurrency(amountCents: number): string {
     currency: 'PHP',
     minimumFractionDigits: 2,
   }).format(amountCents / 100)
+}
+
+/**
+ * Percentage off, or null when the product isn't discounted.
+ * One implementation so the storefront card, the product page and the landing
+ * page can't disagree about what counts as a discount or how it rounds.
+ */
+export function discountPercent(product: Pick<Product, 'priceCents' | 'compareAtPriceCents'>): number | null {
+  const was = product.compareAtPriceCents
+  if (!was || !Number.isFinite(was) || was <= product.priceCents) return null
+  return Math.round(((was - product.priceCents) / was) * 100)
 }
 
 export function formatCompactDate(value: string): string {

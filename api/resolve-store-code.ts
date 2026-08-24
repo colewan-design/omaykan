@@ -12,6 +12,11 @@ interface FsStore {
   address?: string
   businessMode?: string
   pairingCode?: string
+  /** Set by the staff app's store settings; absent for stores that never
+      configured a pin, in which case the storefront falls back to a flat
+      delivery fee instead of a distance-based quote. */
+  lat?: number
+  lng?: number
 }
 
 async function resolveStoreCode(rawCode: unknown) {
@@ -41,6 +46,8 @@ async function resolveStoreCode(rawCode: unknown) {
     businessMode: store.businessMode as OnlineBusinessMode,
     storeName: store.name,
     storeAddress: store.address ?? '',
+    storeLat: typeof store.lat === 'number' ? store.lat : null,
+    storeLng: typeof store.lng === 'number' ? store.lng : null,
   }
 }
 

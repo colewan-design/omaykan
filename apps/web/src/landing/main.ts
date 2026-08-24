@@ -5,6 +5,7 @@ import LandingPage from './LandingPage.vue'
 import { createDemoPosRepository } from './demoRepository'
 import '@pos/core/styles/tokens.css'
 import '@pos/core/styles/app.css'
+import './marketing.css'
 import './landing.css'
 
 // Force the light theme tokens — this page has one designed look and

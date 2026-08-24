@@ -12,7 +12,7 @@
       "VITE_FIREBASE_APP_ID": "1:544551813143:web:64ed40f6f8eff6a0481c52",
       "VITE_POS_ORGANIZATION_SLUG": "colepos",
       "VITE_POS_STORE_CODE": "main",
-      "VITE_POS_DEVICE_NAME": "ColePOS",
+      "VITE_POS_DEVICE_NAME": "Baguio Online Market",
       "VITE_POS_APP_VERSION": "0.1.0",
       "VITE_POS_BUSINESS_MODE": "coffee-shop"
     }

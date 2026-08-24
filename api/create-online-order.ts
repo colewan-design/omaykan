@@ -25,6 +25,34 @@ interface GuestInput {
 interface FulfillmentInput {
   method: 'pickup' | 'delivery'
   address?: string
+  lat?: number
+  lng?: number
+}
+
+// Delivery pricing merged in from Baguio Delivery. Kept in sync with
+// apps/web/src/storefront/delivery.ts, which quotes the same numbers in the
+// checkout UI — but the client's quote is never trusted: the fee charged is
+// always the one recomputed here from the store's own pin.
+const DELIVERY_BASE_FEE_CENTS = 4900
+const DELIVERY_BASE_KM = 2
+const DELIVERY_PER_KM_CENTS = 1500
+const DELIVERY_MAX_KM = 15
+
+/** Port of DistanceService::haversineKm from the Baguio Delivery backend. */
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const earthRadiusKm = 6371
+  const toRad = (deg: number) => (deg * Math.PI) / 180
+  const latDelta = toRad(lat2 - lat1)
+  const lngDelta = toRad(lng2 - lng1)
+  const a =
+    Math.sin(latDelta / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(lngDelta / 2) ** 2
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+function deliveryFeeForKm(distanceKm: number): number {
+  const extraKm = Math.max(0, Math.ceil(distanceKm - DELIVERY_BASE_KM))
+  return DELIVERY_BASE_FEE_CENTS + extraKm * DELIVERY_PER_KM_CENTS
 }
 
 interface CreateOnlineOrderRequest {
@@ -45,6 +73,11 @@ interface FsProduct {
   isActive: boolean
   trackInventory: boolean
   stockQty: number | null
+}
+
+interface FsStore {
+  lat?: number
+  lng?: number
 }
 
 function calculateTax(amountCents: number, rate: number): number {
@@ -72,6 +105,20 @@ async function createOnlineOrder(data: CreateOnlineOrderRequest) {
   if (fulfillment.method === 'delivery' && !fulfillment.address?.trim()) {
     throw new ApiError(400, 'A delivery address is required.')
   }
+  // Coordinates are optional, but a malformed pair must not silently fall
+  // through to the flat-fee path — that would let a caller dodge the
+  // distance surcharge by sending garbage.
+  const sentLat = fulfillment?.lat !== undefined && fulfillment?.lat !== null
+  const sentLng = fulfillment?.lng !== undefined && fulfillment?.lng !== null
+  if (sentLat !== sentLng) {
+    throw new ApiError(400, 'Delivery coordinates must be sent as a lat/lng pair.')
+  }
+  if (sentLat && sentLng) {
+    const { lat, lng } = fulfillment
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat!) > 90 || Math.abs(lng!) > 180) {
+      throw new ApiError(400, 'Delivery coordinates are out of range.')
+    }
+  }
   if (paymentMethod !== undefined && paymentMethod !== 'cash' && paymentMethod !== 'ewallet') {
     throw new ApiError(400, 'paymentMethod must be cash or ewallet.')
   }
@@ -85,6 +132,30 @@ async function createOnlineOrder(data: CreateOnlineOrderRequest) {
   }
   if (!storeSnap.exists) {
     throw new ApiError(404, `Store '${storeCode}' not found under '${orgSlug}'.`)
+  }
+
+  // Delivery quote is resolved before the transaction: it depends only on the
+  // store's pin and the drop-off coordinates, neither of which the transaction
+  // writes, so there's nothing to keep consistent with the product reads.
+  let deliveryFeeCents = 0
+  let deliveryDistanceKm: number | null = null
+
+  if (fulfillment.method === 'delivery') {
+    const store = storeSnap.data() as FsStore
+    const hasStorePin = typeof store.lat === 'number' && typeof store.lng === 'number'
+    const hasDropPin = Number.isFinite(fulfillment.lat) && Number.isFinite(fulfillment.lng)
+
+    if (hasStorePin && hasDropPin) {
+      deliveryDistanceKm = haversineKm(store.lat!, store.lng!, fulfillment.lat!, fulfillment.lng!)
+      if (deliveryDistanceKm > DELIVERY_MAX_KM) {
+        throw new ApiError(422, "That address is outside this store's delivery area.")
+      }
+      deliveryFeeCents = deliveryFeeForKm(deliveryDistanceKm)
+    } else {
+      // No pin on one side or the other — charge the flat base fee rather than
+      // refusing the order, matching what the checkout quoted.
+      deliveryFeeCents = DELIVERY_BASE_FEE_CENTS
+    }
   }
 
   const orderRef = storeRef.collection('orders').doc()
@@ -142,7 +213,7 @@ async function createOnlineOrder(data: CreateOnlineOrderRequest) {
       })
     })
 
-    const totalCents = subtotalCents + taxCents
+    const totalCents = subtotalCents + taxCents + deliveryFeeCents
 
     // Writes.
     tx.set(orderRef, {
@@ -156,6 +227,17 @@ async function createOnlineOrder(data: CreateOnlineOrderRequest) {
       paymentMethod: paymentMethod ?? 'cash',
       fulfillmentMethod: fulfillment.method,
       deliveryAddress: fulfillment.method === 'delivery' ? fulfillment.address!.trim() : null,
+      deliveryLat: fulfillment.method === 'delivery' && Number.isFinite(fulfillment.lat) ? fulfillment.lat : null,
+      deliveryLng: fulfillment.method === 'delivery' && Number.isFinite(fulfillment.lng) ? fulfillment.lng : null,
+      deliveryDistanceKm: deliveryDistanceKm === null ? null : Math.round(deliveryDistanceKm * 100) / 100,
+      deliveryFeeCents,
+      // Delivery timeline stage, merged in from Baguio Delivery's order
+      // lifecycle. The staff app advances status (preparing/ready/served);
+      // this is the finer-grained rider-aware stage the customer sees, and
+      // stays null for pickup orders.
+      deliveryStage: fulfillment.method === 'delivery' ? 'pending' : null,
+      riderName: null,
+      riderPhone: null,
       subtotalCents,
       taxCents,
       totalCents,
@@ -203,7 +285,7 @@ async function createOnlineOrder(data: CreateOnlineOrderRequest) {
       }
     })
 
-    return { orderId: orderRef.id, ticketNumber, totalCents }
+    return { orderId: orderRef.id, ticketNumber, totalCents, deliveryFeeCents }
   })
 }
 

@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Cole Store</string>
-    <string name="title_activity_main">Cole Store</string>
-    <string name="package_name">com.colepos.storefront</string>
-    <string name="custom_url_scheme">com.colepos.storefront</string>
+    <string name="app_name">Baguio Online Market</string>
+    <string name="title_activity_main">Baguio Online Market</string>
+    <string name="package_name">com.baguioonlinemarket.storefront</string>
+    <string name="custom_url_scheme">com.baguioonlinemarket.storefront</string>
 </resources>

@@ -1,4 +1,4 @@
-package com.colepos.app;
+package com.baguioonlinemarket.app;
 
 import com.getcapacitor.BridgeActivity;
 

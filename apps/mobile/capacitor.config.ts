@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
-  appId: 'com.colepos.storefront',
-  appName: 'Cole Store',
+  appId: 'com.baguioonlinemarket.storefront',
+  appName: 'Baguio Online Market',
   webDir: 'www',
 }
 

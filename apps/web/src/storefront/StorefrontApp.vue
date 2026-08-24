@@ -32,7 +32,7 @@ function toggleLoved() {
         <RouterLink to="/" class="sf-brand">
           <span class="sf-brand__icon"><Store :size="20" /></span>
           <span class="sf-brand__text">
-            <span class="sf-brand__mark">Cole Store</span>
+            <span class="sf-brand__mark">Baguio Online Market</span>
             <span class="sf-brand__sub">Order online for pickup</span>
           </span>
         </RouterLink>
@@ -77,7 +77,7 @@ function toggleLoved() {
 
     <footer class="sf-footer">
       <div class="sf-footer__row">
-        <span class="sf-brand__mark">Cole Store</span>
+        <span class="sf-brand__mark">Baguio Online Market</span>
         <p>Orders are prepared in store — pay when you pick up. No online payment is collected.</p>
       </div>
     </footer>
@@ -92,6 +92,13 @@ function toggleLoved() {
   background: var(--bg-base);
   color: var(--text-primary);
   font-family: var(--font-sans);
+  /* Baguio green, matching the landing page. Re-pointed here rather than in
+     tokens.css so the staff-facing POS app keeps its own blue accent — the
+     storefront's buttons, steppers and prices all read --accent. Dark ink on
+     the bright green: white would be ~2.2:1, this is ~7.5:1. */
+  --accent: #22c55e;
+  --accent-pressed: #16a34a;
+  --accent-text-on: #06240f;
 }
 
 .sf-header {

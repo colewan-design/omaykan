@@ -1,5 +1,5 @@
 /*
- * The marketing brand tokens (dark premium theme, gold accent) are scoped to the
+ * The marketing brand tokens (Baguio Delivery's green) are scoped to the
  * `.landing` wrapper in LandingPage.vue, NOT :root — this page no longer embeds any
  * live app components, but keeping :root untouched avoids the marketing palette
  * leaking into anything else that might load `tokens.css`/`app.css` alongside it.
@@ -11,14 +11,10 @@ html {
 
 body {
   margin: 0;
-  background-image:
-    radial-gradient(circle at top left, rgba(205, 164, 74, 0.10), transparent 26%),
-    radial-gradient(circle at top right, rgba(52, 211, 153, 0.06), transparent 26%),
-    radial-gradient(circle, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(180deg, #0b0c0f, #07080a);
-  background-size: auto, auto, 22px 22px, auto;
-  background-attachment: fixed, fixed, fixed, fixed;
-  color: #f5f2ea;
+  /* Light ground: the page opens on the green delivery hero and stays light
+     until the dark CTA/footer, which paint their own backgrounds. */
+  background: #f5f9f6;
+  color: #1a1a1a;
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;

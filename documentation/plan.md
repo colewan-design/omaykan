@@ -277,7 +277,7 @@ Merchants treat these as non-negotiable, and "how do I know my cashier isn't ste
 - **SQLite migration** for the register — how much of the offline promise is actually delivered today versus claimed.
 - **Storefront rendering.** Public merchant pages benefit from server rendering for link previews when a merchant shares them on Facebook. Worth checking against the current Vite SPA setup.
 - **Android distribution.** Direct APK requires "unknown sources" and triggers Play Protect warnings — a real conversion loss with non-technical merchants. Play Store presence is probably worth the friction.
-- **Product name.** "ColePOS" names the least important part of the product.
+- ~~**Product name.** "ColePOS" names the least important part of the product.~~ Resolved — renamed to **Baguio Online Market**.
 
 ---
 

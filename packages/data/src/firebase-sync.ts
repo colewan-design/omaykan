@@ -99,6 +99,7 @@ interface FsProduct {
   productType: string
   taxRate: number | string
   priceCents: number
+  compareAtPriceCents?: number | null
   trackInventory: boolean
   isActive: boolean
   businessModes: string[]
@@ -166,6 +167,7 @@ function mapFsProduct(docSnap: QueryDocumentSnapshot): Product {
     barcode: data.barcode ?? '',
     name: data.name,
     priceCents: data.priceCents,
+    compareAtPriceCents: data.compareAtPriceCents ?? undefined,
     taxRate: Number(data.taxRate),
     kind: data.productType === 'weighted' ? 'weighted' : 'standard',
     businessModes: (data.businessModes ?? []) as Product['businessModes'],
@@ -474,6 +476,7 @@ export function createFirebaseSync(config: FirebaseSyncConfig) {
       productType: string
       taxRate: number
       priceCents: number
+      compareAtPriceCents?: number | null
       trackInventory: boolean
       stockQty: number | null
       lowStockThreshold: number | null
@@ -490,6 +493,7 @@ export function createFirebaseSync(config: FirebaseSyncConfig) {
       productType: p.productType ?? 'standard',
       taxRate: p.taxRate,
       priceCents: p.priceCents,
+      compareAtPriceCents: p.compareAtPriceCents ?? null,
       trackInventory: p.trackInventory ?? false,
       lowStockThreshold: p.lowStockThreshold ?? null,
       isActive: p.isActive !== false && !p.deletedAt,

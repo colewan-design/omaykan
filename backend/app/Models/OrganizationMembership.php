@@ -15,4 +15,14 @@ class OrganizationMembership extends Model
         'user_id',
         'membership_role',
     ];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function organization()
+    {
+        return $this->belongsTo(Organization::class);
+    }
 }

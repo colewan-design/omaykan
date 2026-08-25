@@ -24,6 +24,11 @@ class Product extends Model
         'track_inventory',
         'is_active',
         'created_by_device_id',
+        'business_modes',
+        'compare_at_price_cents',
+        'image_url',
+        'unit_label',
+        'low_stock_threshold',
     ];
 
     protected function casts(): array
@@ -32,6 +37,7 @@ class Product extends Model
             'tax_rate' => 'decimal:2',
             'track_inventory' => 'boolean',
             'is_active' => 'boolean',
+            'business_modes' => 'array',
         ];
     }
 

@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\Category;
+use App\Models\InventoryLevel;
 use App\Models\Organization;
 use App\Models\OrganizationMembership;
 use App\Models\PosRole;
@@ -53,9 +54,20 @@ class DatabaseSeeder extends Seeder
                 'timezone' => 'Asia/Manila',
                 'currency_code' => 'PHP',
                 'status' => 'active',
-                'pairing_code_hash' => Hash::make('123456'),
+                'business_mode' => 'coffee-shop',
+                'address' => '12 Session Road, Baguio City',
+                // Session Road, Baguio — the origin pin delivery is quoted from.
+                'lat' => 16.4123,
+                'lng' => 120.5960,
             ],
         );
+
+        // Sets the bcrypt hash and the discovery lookup key together; assigning
+        // either column directly lets the two drift apart.
+        if ($store->public_store_code === null) {
+            $store->setPairingCode('123456');
+            $store->save();
+        }
 
         $admin = User::query()->firstOrCreate([
             'email' => 'admin@example.com',
@@ -110,7 +122,7 @@ class DatabaseSeeder extends Seeder
             ],
         );
 
-        Product::query()->firstOrCreate(
+        $espresso = Product::query()->firstOrCreate(
             [
                 'organization_id' => $organization->id,
                 'sku' => 'ESP-0001',
@@ -124,6 +136,22 @@ class DatabaseSeeder extends Seeder
                 'price_cents' => 12000,
                 'track_inventory' => true,
                 'is_active' => true,
+                // Without this the storefront will not list the product — see
+                // OnlineOrderController.
+                'business_modes' => ['coffee-shop'],
+            ],
+        );
+
+        // A tracked product with no inventory row reads as out of stock, so the
+        // demo store needs one before it can take an online order.
+        InventoryLevel::query()->firstOrCreate(
+            [
+                'organization_id' => $organization->id,
+                'store_id' => $store->id,
+                'product_id' => $espresso->id,
+            ],
+            [
+                'qty_on_hand' => 100,
             ],
         );
     }

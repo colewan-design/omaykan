@@ -12,10 +12,29 @@ class Organization extends Model
     use HasFactory, HasUuids, SoftDeletes;
 
     protected $fillable = [
+        'id',
         'name',
         'slug',
         'status',
+        'suspended',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'suspended' => 'boolean',
+        ];
+    }
+
+    public function subscription()
+    {
+        return $this->hasOne(Subscription::class);
+    }
+
+    public function memberships()
+    {
+        return $this->hasMany(OrganizationMembership::class);
+    }
 
     public function stores()
     {

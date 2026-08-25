@@ -27,7 +27,17 @@ class DeviceSessionController extends Controller
             ->whereHas('organization', fn ($query) => $query->where('slug', $validated['organizationSlug']))
             ->firstOrFail();
 
-        if (! $store->pairing_code_hash || ! Hash::check($validated['pairingCode'], $store->pairing_code_hash)) {
+        // Codes are typed by hand, so the normalised (uppercased, trimmed) form
+        // is what Store::setPairingCode() hashes. The raw form is still
+        // accepted as a fallback for any row written before that existed,
+        // whose hash was made from whatever case the merchant first entered.
+        $submitted = $validated['pairingCode'];
+        $matches = $store->pairing_code_hash && (
+            Hash::check(Store::normalizePairingCode($submitted), $store->pairing_code_hash)
+            || Hash::check($submitted, $store->pairing_code_hash)
+        );
+
+        if (! $matches) {
             abort(422, 'Invalid pairing code.');
         }
 

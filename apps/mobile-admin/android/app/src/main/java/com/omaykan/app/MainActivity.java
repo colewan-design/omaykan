@@ -1,4 +1,4 @@
-package com.baguioonlinemarket.app;
+package com.omaykan.app;
 
 import com.getcapacitor.BridgeActivity;
 

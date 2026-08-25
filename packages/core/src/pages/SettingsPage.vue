@@ -223,7 +223,7 @@ function handleBusinessImageChange(event: Event) {
             v-if="store.settings.pairingCode"
             id="online-store"
             label="Online Store"
-            description="Customers enter this code in the ColePOS app to find and order from your store."
+            description="Customers enter this code in the Omaykan app to find and order from your store."
           >
             <div class="settings-row settings-row--stack">
               <div class="settings-profile__actions">

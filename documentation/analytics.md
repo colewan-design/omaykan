@@ -45,7 +45,7 @@ Nothing in the current architecture captures this yet.
 
 | Signal | Tool/approach | Why |
 |---|---|---|
-| Crashes/errors | Sentry (self-hostable, works across Capacitor/Electron/web) | One SDK, three platforms; offline-queues and retries automatically |
+| Crashes/errors | Sentry (self-hostable, works across Capacitor/web) | One SDK, both platforms; offline-queues and retries automatically |
 | Feature usage (payment method choice, search usage, catalog size in practice) | Self-hosted PostHog | Matches the "avoid 3rd-party dependency" philosophy in plan.md; one VPS, no per-event billing surprise |
 | Sync health (outbox depth, last-synced time, failure rate) | Custom table + Laravel endpoint | plan.md §5 already calls for sync status to be visible — this is the backend half of that |
 | Performance (cold start time, DB query latency, time-to-first-paint) | Lightweight custom timers → same outbox | Matters most on the cheap Android tablets targeted in plan.md §1 |

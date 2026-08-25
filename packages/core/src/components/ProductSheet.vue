@@ -23,6 +23,7 @@ const form = reactive({
   name: '',
   categoryId: '',
   priceText: '',
+  compareAtText: '',
   kind: 'standard' as 'standard' | 'weighted',
   unitLabel: '/ kg',
   businessModes: [] as BusinessMode[],
@@ -45,6 +46,7 @@ watch(
       form.name = p.name
       form.categoryId = p.categoryId
       form.priceText = (p.priceCents / 100).toFixed(2)
+      form.compareAtText = p.compareAtPriceCents ? (p.compareAtPriceCents / 100).toFixed(2) : ''
       form.kind = p.kind
       form.unitLabel = p.unitLabel ?? '/ kg'
       form.businessModes = [...p.businessModes]
@@ -60,6 +62,7 @@ watch(
       form.name = ''
       form.categoryId = store.categories[0]?.id ?? ''
       form.priceText = ''
+      form.compareAtText = ''
       form.kind = 'standard'
       form.unitLabel = '/ kg'
       form.businessModes = [store.settings.businessMode]
@@ -77,6 +80,14 @@ watch(
   },
   { immediate: true },
 )
+
+/** Live "-N%" preview under the Compare at field; null when it isn't a discount. */
+const compareAtPreview = computed(() => {
+  const price = Math.round(parseFloat(form.priceText) * 100)
+  const was = Math.round(parseFloat(form.compareAtText) * 100)
+  if (!Number.isFinite(price) || !Number.isFinite(was) || was <= price) return null
+  return `${Math.round(((was - price) / was) * 100)}%`
+})
 
 const isEdit = computed(() => Boolean(props.product))
 const title = computed(() => (isEdit.value ? 'Edit Product' : 'Add Product'))
@@ -129,12 +140,20 @@ async function save() {
 
   const priceCents = Math.round(parseFloat(form.priceText) * 100)
 
+  // "Compare at" only means anything above the selling price — anything else
+  // (blank, unparseable, or at/below price) stores nothing, so the storefront
+  // never renders a 0% or negative discount badge.
+  const parsedCompareAt = Math.round(parseFloat(form.compareAtText) * 100)
+  const compareAtPriceCents =
+    Number.isFinite(parsedCompareAt) && parsedCompareAt > priceCents ? parsedCompareAt : undefined
+
   const input = {
     name: form.name.trim(),
     categoryId: form.categoryId,
     sku: '',
     barcode: form.barcode.trim(),
     priceCents,
+    compareAtPriceCents,
     taxRate: form.taxRate,
     kind: form.kind,
     unitLabel: form.kind === 'weighted' ? form.unitLabel.trim() : undefined,
@@ -260,6 +279,27 @@ function handleKeydown(e: KeyboardEvent) {
                   step="0.01"
                   placeholder="0.00"
                 />
+              </div>
+
+              <!-- Compare at (optional) -->
+              <div class="ps-field">
+                <p class="section-label">Compare at <span class="section-label--optional">optional</span></p>
+                <input
+                  v-model="form.compareAtText"
+                  class="sheet-input"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                />
+                <p class="ps-hint">
+                  <template v-if="compareAtPreview">
+                    Shows as <strong>{{ compareAtPreview }}</strong> off in the online store.
+                  </template>
+                  <template v-else>
+                    The original price. Set it above the selling price to show a discount badge online.
+                  </template>
+                </p>
               </div>
 
               <!-- Product type -->

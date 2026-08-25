@@ -38,6 +38,8 @@ function devDefaultPairing(): StorePairing | null {
     businessMode,
     storeName: orgSlug,
     storeAddress: import.meta.env.VITE_POS_STORE_ADDRESS ?? '',
+    storeLat: Number(import.meta.env.VITE_POS_STORE_LAT) || null,
+    storeLng: Number(import.meta.env.VITE_POS_STORE_LNG) || null,
   }
 }
 

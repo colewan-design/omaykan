@@ -20,13 +20,8 @@ function entryRouteAliases(): Plugin {
       return
     }
 
-    if (req.url === '/store' || req.url?.startsWith('/store?')) {
-      req.url = req.url.replace('/store', '/store.html')
-      return
-    }
-
-    if (req.url?.startsWith('/store/')) {
-      req.url = '/store.html'
+    if (req.url === '/about' || req.url?.startsWith('/about?')) {
+      req.url = req.url.replace('/about', '/about.html')
       return
     }
 
@@ -73,7 +68,7 @@ export default defineConfig({
         main: path.resolve(__dirname, 'index.html'),
         app: path.resolve(__dirname, 'app.html'),
         landing: path.resolve(__dirname, 'landing.html'),
-        store: path.resolve(__dirname, 'store.html'),
+        about: path.resolve(__dirname, 'about.html'),
         signup: path.resolve(__dirname, 'signup.html'),
         platformAdmin: path.resolve(__dirname, 'platform-admin.html'),
       },

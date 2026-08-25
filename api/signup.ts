@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node'
+import type { ApiRequest, ApiResponse } from './http'
 import { FieldValue, type Firestore } from 'firebase-admin/firestore'
 import { ApiError, getAdminAuth, getDb, setCorsHeaders } from './_lib/admin'
 
@@ -132,7 +132,7 @@ async function signup(body: SignupRequest) {
   return { organizationSlug: orgSlug, storeCode: 'main', pairingCode }
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   setCorsHeaders(res)
   if (req.method === 'OPTIONS') {
     res.status(204).end()

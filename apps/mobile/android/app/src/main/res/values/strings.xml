@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Cole Store</string>
-    <string name="title_activity_main">Cole Store</string>
-    <string name="package_name">com.colepos.storefront</string>
-    <string name="custom_url_scheme">com.colepos.storefront</string>
+    <string name="app_name">Omaykan</string>
+    <string name="title_activity_main">Omaykan</string>
+    <string name="package_name">com.omaykan.storefront</string>
+    <string name="custom_url_scheme">com.omaykan.storefront</string>
 </resources>

@@ -109,10 +109,10 @@ async function openUpdate() {
 
 .settings__row-icon--accent {
   background: #fdece0;
-  color: #f3811f;
+  color: var(--sf-primary);
 }
 
 .settings__chevron {
-  color: #f3811f;
+  color: var(--sf-primary);
 }
 </style>

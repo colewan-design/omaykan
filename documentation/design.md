@@ -1,8 +1,8 @@
 # POS Design System — Apple-Style, Minimal & Modern
 
-> Visual language for the offline-first POS (Vue 3 · Capacitor · Electron · PWA).
+> Visual language for the offline-first POS (Vue 3 · Capacitor · PWA).
 > Direction: Apple HIG-derived. Clarity over decoration, content over chrome, precision in every detail.
-> All values ship as CSS custom properties so the same tokens drive mobile, desktop, and web.
+> All values ship as CSS custom properties so the same tokens drive mobile and web at every screen size.
 
 ---
 

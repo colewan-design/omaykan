@@ -4,6 +4,7 @@ import { computed, reactive, ref } from 'vue'
 import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import { businessModeLabel, type BusinessMode } from '@pos/shared/index'
 import { writePendingInitialSettings, writeStaffTenant } from '@pos/web/tenantBinding'
+import PosMarketing from '@pos/web/landing/PosMarketing.vue'
 import { GCASH_ACCOUNT_NAME, GCASH_NUMBER, PLAN_PRICE_PESOS } from './pricingConstants'
 
 const mode = ref<'signup' | 'pair'>('signup')
@@ -131,18 +132,26 @@ async function submitPairing() {
 </script>
 
 <template>
-  <div class="auth-page">
+  <div class="onboarding-shell">
+    <!-- The Omaykan product story, moved here off the landing page: the
+         landing page is now the customer-facing delivery storefront, so the
+         merchant pitch belongs on the page merchants actually register on.
+         Hidden once signup succeeds — at that point they're a customer, not
+         a prospect, and only need their store code. -->
+    <PosMarketing v-if="!createdPairingCode" signup-href="#register" />
+
+    <div id="register" class="auth-page">
     <section class="auth-card">
       <div class="auth-brand">
-        <div class="auth-brand-mark">C</div>
-        <strong>ColePOS</strong>
+        <div class="auth-brand-mark">B</div>
+        <strong>Omaykan</strong>
       </div>
 
       <template v-if="createdPairingCode">
         <div class="auth-card__hero">
           <h1 class="auth-card__title">Your store is ready</h1>
           <p class="auth-card__copy">
-            Share this store code with customers — they enter it in the ColePOS app to find and order from your
+            Share this store code with customers — they enter it in the Omaykan app to find and order from your
             store. You can find it again anytime in Settings.
           </p>
         </div>
@@ -259,10 +268,30 @@ async function submitPairing() {
         <p v-if="errorMessage" class="auth-error">{{ errorMessage }}</p>
       </template>
     </section>
+    </div>
   </div>
 </template>
 
 <style scoped>
+/* The page is now marketing-first: the PosMarketing block fills the viewport,
+   and the registration card sits below it as the conversion step. */
+.onboarding-shell {
+  min-height: 100vh;
+  background: var(--bg-base);
+  /* The form is built from app components (.primary-button, .segment-button,
+     focus rings) which read --accent — still the app's blue. Re-point it here
+     only, so the card matches the green marketing above it without changing
+     the POS app's own accent. Dark ink rather than white on the bright green:
+     white would be ~2.2:1, this is ~7.5:1. */
+  --accent: #22c55e;
+  --accent-pressed: #16a34a;
+  --accent-text-on: #06240f;
+}
+
+.onboarding-shell .auth-page {
+  scroll-margin-top: 24px;
+}
+
 .onboarding-payment {
   padding: var(--space-4);
   border-radius: var(--radius-lg);

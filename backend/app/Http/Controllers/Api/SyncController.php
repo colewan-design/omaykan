@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\OrderPlaced;
+use App\Events\OrderStatusChanged;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Device;
@@ -236,6 +238,9 @@ class SyncController extends Controller
             throw new \InvalidArgumentException('Order payload is missing required fields.');
         }
 
+        $existing = Order::query()->whereKey($orderData['id'])->first();
+        $previousStatus = $existing?->order_status;
+
         $order = Order::query()->updateOrCreate(
             ['id' => $orderData['id']],
             [
@@ -307,6 +312,21 @@ class SyncController extends Controller
                 'change_cents' => $payment['changeCents'] ?? null,
             ]);
         }
+
+        // Broadcast after the write, but only once the surrounding transaction
+        // commits — otherwise a listener can race ahead and query a row that is
+        // not visible yet, or hear about an order the rollback removed.
+        DB::afterCommit(function () use ($order, $existing, $previousStatus): void {
+            if ($existing === null) {
+                OrderPlaced::dispatch($order);
+
+                return;
+            }
+
+            if ($previousStatus !== $order->order_status) {
+                OrderStatusChanged::dispatch($order, $previousStatus);
+            }
+        });
     }
 
     private function applyCategoryEvent(Device $device, string $entityId, array $payload): void

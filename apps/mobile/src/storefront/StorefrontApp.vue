@@ -162,7 +162,7 @@ function activateTab(tab: 'home' | 'wishlist' | 'cart' | 'history' | 'settings')
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #f3811f;
+  background: var(--sf-primary);
   color: #fff;
   font-size: 0.64rem;
   font-weight: 800;

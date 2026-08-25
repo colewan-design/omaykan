@@ -82,8 +82,8 @@ onMounted(async () => {
   <div class="auth-page">
     <section class="auth-card">
       <div class="auth-brand">
-        <div class="auth-brand-mark">C</div>
-        <strong>ColePOS</strong>
+        <div class="auth-brand-mark">B</div>
+        <strong>Omaykan</strong>
       </div>
 
       <div class="segmented-control auth-mode-switch" role="group" aria-label="Authentication mode">

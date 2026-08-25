@@ -1,4 +1,4 @@
-# Cole POS — Demo Video Script
+# Omaykan — Demo Video Script
 
 **Target length:** ~3 minutes (each scene lists a duration; trim/extend as needed)
 **Format:** Screen recording + voiceover (talking-head optional), light background music
@@ -23,7 +23,7 @@
 **Screen:** Marketing landing page, hero section (`#` / lp-hero).
 **Action:** Let the particle-field background animate a beat, then a slow cursor move across the hero.
 **Voiceover:**
-> "Meet Cole POS — one point-of-sale app that becomes a different system depending on what you run."
+> "Meet Omaykan — one point-of-sale app that becomes a different system depending on what you run."
 
 **On-screen text (optional lower-third):** *One app. Four businesses.*
 
@@ -32,7 +32,7 @@
 ### 2. The pitch (0:12–0:22)
 **Screen:** Scroll to the Highlights section of the landing page.
 **Voiceover:**
-> "Café, grocery store, restaurant, or nail salon — Cole POS reshapes its register, catalog, and reports to match your business. Checkout in under ten seconds."
+> "Café, grocery store, restaurant, or nail salon — Omaykan reshapes its register, catalog, and reports to match your business. Checkout in under ten seconds."
 
 ---
 

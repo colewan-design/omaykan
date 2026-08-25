@@ -3174,6 +3174,19 @@ button {
   font-weight: 400;
 }
 
+/* Helper line under a sheet field (e.g. the Compare at discount preview). */
+.ps-hint {
+  margin: 0;
+  font: var(--type-caption);
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.ps-hint strong {
+  color: var(--accent);
+  font-weight: 700;
+}
+
 /* ── Products page — responsive ─────────────────────────────────────────── */
 
 @media (max-width: 720px) {

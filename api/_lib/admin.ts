@@ -2,10 +2,10 @@ import { cert, getApps, initializeApp, type App } from 'firebase-admin/app'
 import { getAuth, type Auth } from 'firebase-admin/auth'
 import { getFirestore, type Firestore } from 'firebase-admin/firestore'
 
-// Vercel's Node runtime has no ambient Google Cloud credentials the way
-// Firebase Cloud Functions does, so the Admin SDK is initialized from an
-// explicit service account key set as Vercel project env vars. Generate the
-// key from Firebase Console > Project Settings > Service Accounts (a free,
+// The VPS has no ambient Google Cloud credentials the way Firebase Cloud
+// Functions does, so the Admin SDK is initialized from an explicit service
+// account key supplied through server-side env vars. Generate the key from
+// Firebase Console > Project Settings > Service Accounts (a free,
 // Spark-plan-compatible action) and never commit it.
 //
 // Lazily initialized (not a top-level `export const db = ...`) so a missing
@@ -31,7 +31,7 @@ function getAdminApp(): App {
 
   if (!projectId || !clientEmail || !privateKey) {
     throw new Error(
-      'Missing Firebase Admin credentials — set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY in the Vercel project env vars.',
+      'Missing Firebase Admin credentials — set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY in the server environment.',
     )
   }
 

@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node'
+import type { ApiRequest, ApiResponse } from './http'
 import { FieldValue } from 'firebase-admin/firestore'
 import { ApiError, getAdminAuth, getDb, setCorsHeaders } from './_lib/admin'
 
@@ -27,7 +27,7 @@ function syntheticEmail(username: string, orgSlug: string): string {
   return `${username.trim().toLowerCase()}@${orgSlug}.pos`
 }
 
-async function requireCallingAdmin(req: VercelRequest): Promise<{ organizationId: string }> {
+async function requireCallingAdmin(req: ApiRequest): Promise<{ organizationId: string }> {
   const authHeader = req.headers.authorization
   const token = typeof authHeader === 'string' ? authHeader.replace(/^Bearer\s+/i, '') : ''
   if (!token) {
@@ -110,7 +110,7 @@ async function createStaffAccount(organizationId: string, body: StaffCreateReque
   }
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   setCorsHeaders(res)
   if (req.method === 'OPTIONS') {
     res.status(204).end()

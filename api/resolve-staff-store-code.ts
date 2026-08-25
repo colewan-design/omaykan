@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node'
+import type { ApiRequest, ApiResponse } from './http'
 import { ApiError, getDb, setCorsHeaders } from './_lib/admin'
 
 // Looks up a store by pairing code with no businessMode gating — used only
@@ -28,7 +28,7 @@ async function resolveStaffStoreCode(rawCode: unknown) {
   return { organizationSlug: orgRef.id, storeCode: storeDoc.id }
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   setCorsHeaders(res)
   if (req.method === 'OPTIONS') {
     res.status(204).end()

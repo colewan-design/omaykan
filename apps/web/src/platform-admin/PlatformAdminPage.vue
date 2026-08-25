@@ -247,7 +247,7 @@ onMounted(() => {
     <section v-if="!unlocked" class="auth-page">
       <section class="auth-card">
         <div class="auth-brand">
-          <div class="auth-brand-mark">C</div>
+          <div class="auth-brand-mark">B</div>
           <strong>Platform admin</strong>
         </div>
         <form class="auth-form" @submit.prevent="submitSecret">

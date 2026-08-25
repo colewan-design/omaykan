@@ -1,12 +1,12 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node'
+import type { ApiRequest, ApiResponse } from './http'
 import { FieldValue, type Transaction } from 'firebase-admin/firestore'
 import { ApiError, getDb, setCorsHeaders } from './_lib/admin'
 
 // Ported from functions/src/index.ts's createOnlineOrder (Firebase Cloud
-// Function) to a Vercel serverless function — the project stayed on
-// Firebase's free Spark plan, which can't deploy Cloud Functions (that
-// requires the paid Blaze plan). Logic is unchanged; only the transport
-// (onCall/HttpsError -> plain HTTP + ApiError) and hosting differ.
+// Function) to a plain HTTP handler — the project stayed on Firebase's free
+// Spark plan, which can't deploy Cloud Functions (that requires the paid
+// Blaze plan). Logic is unchanged; only the transport (onCall/HttpsError ->
+// plain HTTP + ApiError) and hosting differ. Served by server/main.ts.
 
 type OnlineBusinessMode = 'coffee-shop' | 'grocery' | 'restaurant'
 const SUPPORTED_MODES: readonly OnlineBusinessMode[] = ['coffee-shop', 'grocery', 'restaurant']
@@ -289,7 +289,7 @@ async function createOnlineOrder(data: CreateOnlineOrderRequest) {
   })
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   setCorsHeaders(res)
   if (req.method === 'OPTIONS') {
     res.status(204).end()

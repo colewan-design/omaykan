@@ -83,7 +83,7 @@ onMounted(async () => {
     <section class="auth-card">
       <div class="auth-brand">
         <div class="auth-brand-mark">B</div>
-        <strong>Baguio Online Market</strong>
+        <strong>Omaykan</strong>
       </div>
 
       <div class="segmented-control auth-mode-switch" role="group" aria-label="Authentication mode">

@@ -1,4 +1,4 @@
-# Baguio Online Market
+# Omaykan
 
 Commission-free local commerce for Philippine merchants.
 
@@ -32,11 +32,14 @@ Delivery aggregators take 20–30% from the merchant, squeeze the rider's per-dr
   /web             # PWA: merchant till + customer storefront + platform admin
   /mobile          # Capacitor Android app (customer storefront)
   /mobile-admin    # Capacitor Android app (merchant)
-  /landing         # Marketing site
 /backend           # Laravel 12 + PostgreSQL + Reverb (the target backend)
-/api               # Vercel serverless functions (legacy, being retired)
+/api               # HTTP handlers (legacy, being retired) — served by /server
+/server            # Self-hosted Node runner for /api on the VPS
 /firebase          # Firestore rules and schema (legacy)
 ```
+
+The marketing site is not a separate app — it is `apps/web/src/landing`, built into
+`landing.html`.
 
 ## Running
 
@@ -46,7 +49,31 @@ npm run dev:web      # merchant POS + storefront
 npm run build:web
 ```
 
-`vite dev` does not serve `/api/*.ts` - test those against a Vercel deploy, or run `vercel dev` with Firebase Admin credentials.
+`vite dev` does not serve `/api/*.ts`. To exercise those locally, run the same
+self-hosted runner the VPS uses, with Firebase Admin credentials in the environment:
+
+```bash
+cd server
+npm install && npm run build
+npm start            # listens on 127.0.0.1:3005, /api/health for a liveness probe
+```
+
+### Static hosting
+
+`apps/web` builds to multiple HTML entries, so whatever serves `apps/web/dist`
+needs these rewrites (nginx `try_files`, or equivalent):
+
+| Path | Serves |
+| --- | --- |
+| `/` | `index.html` |
+| `/landing` | `landing.html` |
+| `/app`, `/app/*` | `app.html` |
+| `/store`, `/store/*` | `store.html` |
+| `/signup` | `signup.html` |
+| `/platform-admin` | `platform-admin.html` |
+
+`/api/*` proxies to the runner above. The client build also needs the
+`VITE_FIREBASE_*` / `VITE_POS_*` variables set at build time — see `apps/web/.env`.
 
 ## Status
 
@@ -69,4 +96,4 @@ php artisan queue:work      # required — broadcasts are queued
 php artisan reverb:start    # websocket server
 ```
 
-Firestore and the Vercel functions in `/api` are the legacy path, still live and being retired.
+Firestore and the handlers in `/api` are the legacy path, still live and being retired.

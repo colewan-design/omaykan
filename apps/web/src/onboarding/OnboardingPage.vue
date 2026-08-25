@@ -133,7 +133,7 @@ async function submitPairing() {
 
 <template>
   <div class="onboarding-shell">
-    <!-- The Baguio Online Market product story, moved here off the landing page: the
+    <!-- The Omaykan product story, moved here off the landing page: the
          landing page is now the customer-facing delivery storefront, so the
          merchant pitch belongs on the page merchants actually register on.
          Hidden once signup succeeds — at that point they're a customer, not
@@ -144,14 +144,14 @@ async function submitPairing() {
     <section class="auth-card">
       <div class="auth-brand">
         <div class="auth-brand-mark">B</div>
-        <strong>Baguio Online Market</strong>
+        <strong>Omaykan</strong>
       </div>
 
       <template v-if="createdPairingCode">
         <div class="auth-card__hero">
           <h1 class="auth-card__title">Your store is ready</h1>
           <p class="auth-card__copy">
-            Share this store code with customers — they enter it in the Baguio Online Market app to find and order from your
+            Share this store code with customers — they enter it in the Omaykan app to find and order from your
             store. You can find it again anytime in Settings.
           </p>
         </div>

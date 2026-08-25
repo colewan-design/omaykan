@@ -166,7 +166,7 @@ export function createDemoPosRepository(): PosRepository {
   let suppliers: Supplier[] = []
   let reorderMarks: ReorderMark[] = []
   let orders: OrderSummary[] = seedDemoOrders(customers)
-  let settings: AppSettings = { ...defaultSettings, businessName: 'Baguio Online Market Demo' }
+  let settings: AppSettings = { ...defaultSettings, businessName: 'Omaykan Demo' }
   let appEvents: AppEvent[] = []
   let users: UserAccount[] = []
   let roles: RoleDefinition[] = [...defaultRoles]

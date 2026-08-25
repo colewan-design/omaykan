@@ -1,4 +1,4 @@
-# Baguio Online Market — Firestore schema
+# Omaykan — Firestore schema
 
 Firestore has no DDL, so this file documents the collection layout that
 `packages/data/src/firebase-sync.ts` and `firebase/firestore.rules` assume.

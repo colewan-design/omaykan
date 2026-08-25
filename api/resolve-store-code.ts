@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node'
+import type { ApiRequest, ApiResponse } from './http'
 import { ApiError, getDb, setCorsHeaders } from './_lib/admin'
 
 // Ported from functions/src/index.ts's resolveStoreCode — see
@@ -51,7 +51,7 @@ async function resolveStoreCode(rawCode: unknown) {
   }
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   setCorsHeaders(res)
   if (req.method === 'OPTIONS') {
     res.status(204).end()

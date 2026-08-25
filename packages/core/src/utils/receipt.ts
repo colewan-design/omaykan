@@ -190,7 +190,7 @@ export function printReceipt(order: OrderSummary, business: ReceiptBusinessInfo)
 }
 
 function buildTestReceiptHtml(business: ReceiptBusinessInfo): string {
-  const businessName = escapeHtml(business.name || 'Baguio Online Market')
+  const businessName = escapeHtml(business.name || 'Omaykan')
   const timestamp = escapeHtml(new Date().toLocaleString())
 
   return `<!doctype html>

@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import ParticleField from './ParticleField.vue'
 import { vReveal } from './reveal'
 
-// The Baguio Online Market product story — what the POS is, what sets it apart, and the
+// The Omaykan product story — what the POS is, what sets it apart, and the
 // Register/Dashboard breakdown. This used to sit on the consumer landing page;
 // it now fronts the merchant registration page instead, because the landing
 // page is the customer-facing delivery storefront.
@@ -46,7 +46,7 @@ function onHeroPointerLeave() {
               <span class="lp-line accent hero-in" style="animation-delay:220ms">Four businesses.</span>
             </h1>
             <p class="lp-sub hero-in" style="animation-delay:380ms">
-              Baguio Online Market becomes a different point-of-sale depending on whether you run a café, a grocery, a restaurant, or a nail salon.
+              Omaykan becomes a different point-of-sale depending on whether you run a café, a grocery, a restaurant, or a nail salon.
               <strong>Checkout in under 10 seconds.</strong>
             </p>
             <div class="lp-actions hero-in" style="animation-delay:500ms">
@@ -65,7 +65,7 @@ function onHeroPointerLeave() {
             <img
               class="lp-hero-character"
               src="/hero-character.png"
-              alt="Illustrated cashier ringing up an order on Baguio Online Market"
+              alt="Illustrated cashier ringing up an order on Omaykan"
               width="1448"
               height="1086"
             />
@@ -79,13 +79,13 @@ function onHeroPointerLeave() {
           <p v-reveal class="lp-fortis-eyebrow">Who we are</p>
           <div v-reveal="120" class="lp-fortis-intro">
             <p class="lp-fortis-lead">
-              Built with a focus on speed, reliability, and simplicity, Baguio Online Market becomes a different point-of-sale depending on whether you run a café, a grocery, a restaurant, or a nail salon.
+              Built with a focus on speed, reliability, and simplicity, Omaykan becomes a different point-of-sale depending on whether you run a café, a grocery, a restaurant, or a nail salon.
             </p>
             <p class="lp-fortis-sub">
               Pick a business type once, and the layout, catalog, and checkout flow follow — built to work as hard as you do, online or off.
             </p>
             <a href="/app" class="lp-fortis-btn">
-              More About Baguio Online Market
+              More About Omaykan
               <span class="lp-fortis-btn-arrow">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
               </span>
@@ -98,7 +98,7 @@ function onHeroPointerLeave() {
 
           <div class="lp-fortis-grid">
             <div v-reveal class="lp-fortis-photo-card reveal--scale">
-              <div class="lp-fortis-photo lp-fortis-photo--manufacturing" style="background-image:url(/checkout-counter.png)" role="img" aria-label="A café employee ringing up an order on a Baguio Online Market tablet at the counter"></div>
+              <div class="lp-fortis-photo lp-fortis-photo--manufacturing" style="background-image:url(/checkout-counter.png)" role="img" aria-label="A café employee ringing up an order on a Omaykan tablet at the counter"></div>
               <div class="lp-fortis-photo-copy">
                 <h3>Fast, one-tap checkout</h3>
                 <p>Ring up an order in under 10 seconds with one-tap products and instant totals — on any device, at any counter.</p>
@@ -110,7 +110,7 @@ function onHeroPointerLeave() {
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 4v5c0 4.5-3 8-7 9-4-1-7-4.5-7-9V7l7-4z"/><path d="M9 12l2 2 4-4"/></svg>
               </span>
               <h3><span class="accent">Always On</span>, Even Offline</h3>
-              <p>Baguio Online Market keeps ringing up sales even when the internet drops, then syncs everything the moment you're back online.</p>
+              <p>Omaykan keeps ringing up sales even when the internet drops, then syncs everything the moment you're back online.</p>
             </div>
 
             <div v-reveal="120" class="lp-fortis-card lp-fortis-card--partners reveal--scale">
@@ -131,7 +131,7 @@ function onHeroPointerLeave() {
                   </span>
                 </a>
               </div>
-              <div class="lp-fortis-photo lp-fortis-photo--battery" style="background-image:url(/pos-counter-wide.png)" role="img" aria-label="A grocery employee handing a bagged order to a customer at a counter with a Baguio Online Market tablet"></div>
+              <div class="lp-fortis-photo lp-fortis-photo--battery" style="background-image:url(/pos-counter-wide.png)" role="img" aria-label="A grocery employee handing a bagged order to a customer at a counter with a Omaykan tablet"></div>
             </div>
           </div>
         </div>
@@ -141,13 +141,13 @@ function onHeroPointerLeave() {
             <p v-reveal class="lp-fortis-eyebrow">Our solutions</p>
             <h2 v-reveal="60" class="lp-fortis-heading">The Register &amp; The Dashboard</h2>
             <p v-reveal="120" class="lp-fortis-solutions-sub">
-              From the countertop checkout to the numbers behind it, Baguio Online Market is engineered to keep every order fast and every insight current — for cafés, groceries, restaurants, and nail salons alike.
+              From the countertop checkout to the numbers behind it, Omaykan is engineered to keep every order fast and every insight current — for cafés, groceries, restaurants, and nail salons alike.
             </p>
           </div>
 
           <div class="lp-solutions-grid">
             <div v-reveal class="lp-solution-card reveal--scale">
-              <div class="lp-solution-photo" style="background-image:url(/solution-checkout.png); background-position:58% 62%;" role="img" aria-label="A restaurant server tapping through a one-tap menu grid on a Baguio Online Market tablet"></div>
+              <div class="lp-solution-photo" style="background-image:url(/solution-checkout.png); background-position:58% 62%;" role="img" aria-label="A restaurant server tapping through a one-tap menu grid on a Omaykan tablet"></div>
               <div class="lp-solution-body">
                 <h3>Smart Checkout Register</h3>
                 <p>A fast, one-tap register that adapts its layout and catalog to your business — built to keep lines moving at any counter.</p>
@@ -167,7 +167,7 @@ function onHeroPointerLeave() {
             </div>
 
             <div v-reveal="60" class="lp-solution-card reveal--scale">
-              <div class="lp-solution-photo" style="background-image:url(/solution-analytics.png); background-position:38% 58%;" role="img" aria-label="A nail salon owner reviewing revenue charts on a Baguio Online Market tablet"></div>
+              <div class="lp-solution-photo" style="background-image:url(/solution-analytics.png); background-position:38% 58%;" role="img" aria-label="A nail salon owner reviewing revenue charts on a Omaykan tablet"></div>
               <div class="lp-solution-body">
                 <h3>Real-Time Analytics</h3>
                 <p>Revenue, orders, and top products update the moment they happen — so you're never working off a stale report.</p>

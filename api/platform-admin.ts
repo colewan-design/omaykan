@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node'
+import type { ApiRequest, ApiResponse } from './http'
 import { FieldValue, type Timestamp } from 'firebase-admin/firestore'
 import { ApiError, getAdminAuth, getDb, setCorsHeaders } from './_lib/admin'
 
@@ -8,11 +8,11 @@ import { ApiError, getAdminAuth, getDb, setCorsHeaders } from './_lib/admin'
 // secret, not a Firebase user — this is a cross-tenant "super-admin" tool,
 // not scoped to any one organization's own Admin role.
 //
-// PLATFORM_ADMIN_SECRET must be set as a plain Vercel project env var
-// (dashboard/CLI), never inside vercel.json's build.env — that block is
-// baked into the public client bundle (that's how VITE_POS_ORGANIZATION_SLUG
-// is meant to be public). FIREBASE_PROJECT_ID/CLIENT_EMAIL/PRIVATE_KEY are
-// already absent from vercel.json for this same reason.
+// PLATFORM_ADMIN_SECRET must reach this process as a server-side env var only
+// (systemd unit / .env on the VPS) — never anywhere that feeds the client
+// build, since VITE_-prefixed build env is baked into the public bundle.
+// FIREBASE_PROJECT_ID/CLIENT_EMAIL/PRIVATE_KEY are server-side for the same
+// reason.
 
 type PlatformAdminAction =
   | 'listOrgs'
@@ -246,7 +246,7 @@ async function deleteOrg(organizationSlug: string, confirmSlug: string) {
   await db.recursiveDelete(db.doc(`organizations/${organizationSlug}`))
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   setCorsHeaders(res)
   if (req.method === 'OPTIONS') {
     res.status(204).end()

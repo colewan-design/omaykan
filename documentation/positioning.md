@@ -162,6 +162,6 @@ Ordered by how likely each is to kill the business.
 
 ### Also open
 
-- ~~**Product name.** "ColePOS" describes the least important part of what this is.~~ Resolved — renamed to **Baguio Online Market**, which leads with the market rather than the till.
+- ~~**Product name.** "ColePOS" describes the least important part of what this is.~~ Resolved — renamed first to "Baguio Online Market" (leads with the market rather than the till), then to **Omaykan** on 2026-08-24, dropping the city so the name doesn't cap the product at one market.
 - **Multi-branch tenancy.** The single-store-per-org gap should close before selling to any owner with two locations — multi-branch owners are the ones most able to pay.
 - **Table-stakes POS gaps** that merchants treat as non-negotiable: shift open/close with cash reconciliation, X/Z reports, voids and refunds. "How do I know my cashier isn't stealing?" is usually the first question asked, and it matters to them more than anything on the storefront.

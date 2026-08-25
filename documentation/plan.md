@@ -28,7 +28,7 @@ Honest current state, so the phases below start from reality.
 - **Customer storefront** — on web (`apps/web/src/storefront`) and mobile (`apps/mobile/src/storefront`). Catalog, search, cart, wishlist, pickup/delivery, GCash preference, order history.
 - **Store pairing** — customer enters a **store code** to resolve org + store (`api/resolve-store-code.ts`). One shared mobile app, not per-merchant builds.
 - **Platform admin** — superadmin dashboard for managing stores and owner accounts (`apps/web/src/platform-admin`, `api/platform-admin.ts`).
-- **Landing site** (`apps/landing`), **onboarding/signup** (`api/signup.ts`), **staff accounts** (`api/staff-create.ts`).
+- **Landing site** (`apps/web/src/landing`), **onboarding/signup** (`api/signup.ts`), **staff accounts** (`api/staff-create.ts`).
 - **Order flow into the register** — online orders land and surface on the Register's Track Order panel.
 
 - **Signup and subscription record** (`api/signup.ts`) — creates org, store, owner, pairing code, and a subscription at `status: 'pending_verification'` on a `standard-monthly` plan. Price is a **₱499 placeholder** collected by manual GCash transfer to a placeholder number; there is no gateway, no recurring billing, and no enforcement against non-payers.
@@ -42,7 +42,7 @@ Full page-by-page status is in [feature-log.md](./feature-log.md).
 | Backend | State |
 |---|---|
 | **Laravel + PostgreSQL** (`backend/`) | **The target.** Laravel 12, Sanctum, models, sync/shift/staff controllers, the schema in [backend-multistore-sync.md](./backend-multistore-sync.md), plus queues and Reverb (§3a). Not yet deployed. |
-| **Firebase (Firestore) + Vercel functions** (`api/*.ts`) | Still the live path today. To be migrated off and deleted. |
+| **Firebase (Firestore) + the `api/*.ts` handlers** (self-hosted via `server/`) | Still the live path today. To be migrated off and deleted. |
 | **Firebase Functions** (`functions/src/index.ts`) | Dead. Delete with the rest. |
 
 Self-hosting removes the Spark-plan ceiling entirely — the blocker that shaped Phase 0 — and replaces it with VPS operations work.
@@ -62,7 +62,7 @@ Two customer storefronts exist and have **drifted apart**: the mobile one suppor
 | Backend | Laravel 12 + PostgreSQL on a **VPS** | Sanctum auth; replaces Firestore |
 | Realtime | **Laravel Reverb** (WebSockets) | Replaces Firestore listeners — see §3a |
 | Queue | Laravel queue, `database` driver | Broadcasts and background work; Redis if load demands |
-| Legacy backend | Firebase / Firestore + Vercel (`api/*.ts`) | Live today, being retired |
+| Legacy backend | Firebase / Firestore + `api/*.ts` on `server/` | Live today, being retired |
 | On-device DB (merchant) | IndexedDB (mirrored to `localStorage`) today; SQLite is the target | See §4 |
 | Customer payments | **COD only** — settled at handover | No gateway, deliberately. See §4a |
 | Merchant subscription | Manual GCash transfer | Placeholder; needs a real collection method |
@@ -193,7 +193,7 @@ Nothing else matters if the first paying merchant breaks the app.
 **Migrate off Firestore onto the VPS.** The Spark-plan ceiling disappears with it, and cost becomes a fixed monthly VPS bill instead of a per-read meter — far easier to price against.
 
 1. **Provision the VPS**: PostgreSQL, PHP-FPM, nginx, Redis (optional), TLS. Supervisor units for `queue:work` and `reverb:start`; nginx WebSocket proxy for Reverb.
-2. **Port the Vercel functions to Laravel controllers** — `signup`, `resolve-store-code`, `resolve-staff-store-code`, `staff-create`, `platform-admin`, and `create-online-order`. That last one is what makes `OrderPlaced` fire for real customer orders (§3a).
+2. **Port the `api/*.ts` handlers to Laravel controllers** — `signup`, `resolve-store-code`, `resolve-staff-store-code`, `staff-create`, `platform-admin`, and `create-online-order`. That last one is what makes `OrderPlaced` fire for real customer orders (§3a).
 3. **Replace `firebase-sync.ts`** (~1k lines) with a repository implementation talking to the Laravel API, and add **Laravel Echo** on the client so the register subscribes to `store.{storeId}` instead of a Firestore listener.
 4. **Point the storefronts at the API** — both currently read the catalog straight from Firestore.
 5. **Migrate live data**, then delete `functions/`, the Firebase config, and `api/*.ts`.
@@ -277,7 +277,7 @@ Merchants treat these as non-negotiable, and "how do I know my cashier isn't ste
 - **SQLite migration** for the register — how much of the offline promise is actually delivered today versus claimed.
 - **Storefront rendering.** Public merchant pages benefit from server rendering for link previews when a merchant shares them on Facebook. Worth checking against the current Vite SPA setup.
 - **Android distribution.** Direct APK requires "unknown sources" and triggers Play Protect warnings — a real conversion loss with non-technical merchants. Play Store presence is probably worth the friction.
-- ~~**Product name.** "ColePOS" names the least important part of the product.~~ Resolved — renamed to **Baguio Online Market**.
+- ~~**Product name.** "ColePOS" names the least important part of the product.~~ Resolved — renamed to "Baguio Online Market", then to **Omaykan** (omaykan.com) on 2026-08-24.
 
 ---
 

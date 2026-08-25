@@ -2,7 +2,7 @@ import { createApp } from 'vue'
 import OnboardingPage from './OnboardingPage.vue'
 import '@pos/core/styles/tokens.css'
 import '@pos/core/styles/app.css'
-// Shared marketing chrome — this page now leads with the Baguio Online Market product
+// Shared marketing chrome — this page now leads with the Omaykan product
 // story (PosMarketing.vue) above the signup form.
 import '../landing/marketing.css'
 

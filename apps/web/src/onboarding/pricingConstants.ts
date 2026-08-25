@@ -3,4 +3,4 @@
 // update both when real values are available.
 export const PLAN_PRICE_PESOS = 499
 export const GCASH_NUMBER = '0917-000-0000' // TODO: real GCash number
-export const GCASH_ACCOUNT_NAME = 'Baguio Online Market (placeholder)'
+export const GCASH_ACCOUNT_NAME = 'Omaykan (placeholder)'

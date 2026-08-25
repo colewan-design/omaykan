@@ -7,10 +7,10 @@ import type { BusinessMode } from '@pos/shared/index'
 // staff app's authenticated sync session (Auth, outbox, local cache). The
 // storefront only ever reads the public catalog directly and never signs in
 // or writes Firestore directly; order creation and store-code lookups go
-// through the Vercel API routes in /api instead (see API_BASE below) — this
-// project stays on Firebase's free Spark plan, which can't deploy Cloud
-// Functions (that needs the paid Blaze plan), so those two endpoints live on
-// Vercel's free tier and talk to Firestore via firebase-admin there.
+// through the API routes in /api instead (see API_BASE below) — this project
+// stays on Firebase's free Spark plan, which can't deploy Cloud Functions
+// (that needs the paid Blaze plan), so those two endpoints are self-hosted on
+// the VPS (server/main.ts) and talk to Firestore via firebase-admin there.
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -24,10 +24,9 @@ const app = getApps().length ? getApp() : initializeApp(firebaseConfig)
 
 export const db = getFirestore(app)
 
-// Empty by default so the web deployment (served from the same Vercel
-// domain as /api) uses relative paths. The mobile app is not served from
-// that domain, so it must set VITE_ONLINE_ORDER_API_BASE to the full
-// https://your-app.vercel.app URL.
+// Empty by default so the web deployment (served from the same domain as
+// /api) uses relative paths. The mobile app is not served from that domain,
+// so it must set VITE_ONLINE_ORDER_API_BASE to the full origin.
 const API_BASE = (import.meta.env.VITE_ONLINE_ORDER_API_BASE ?? '').replace(/\/$/, '')
 
 async function postJson<TResult>(path: string, body: unknown): Promise<TResult> {

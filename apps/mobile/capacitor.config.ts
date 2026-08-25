@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
-  appId: 'com.baguioonlinemarket.storefront',
-  appName: 'Baguio Online Market',
+  appId: 'com.omaykan.storefront',
+  appName: 'Omaykan',
   webDir: 'www',
 }
 

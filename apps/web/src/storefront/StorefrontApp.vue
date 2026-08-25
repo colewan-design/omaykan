@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { useRoute, useRouter, RouterLink, RouterView } from 'vue-router'
-import { Heart, Search, ShoppingCart, Store } from '@lucide/vue'
+import { Heart, LayoutGrid, Search, ShoppingCart, Store } from '@lucide/vue'
 import { useStorefrontCart } from '@pos/web/storefront/cart'
+import { useStockedCategories } from '@pos/web/storefront/catalog'
+import { useStorefrontCategory } from '@pos/web/storefront/category'
+import { iconForCategory } from '@pos/web/storefront/icons'
 import { useStorefrontSearch } from '@pos/web/storefront/search'
 import { useStorefrontWishlist } from '@pos/web/storefront/wishlist'
 
@@ -10,18 +13,26 @@ const router = useRouter()
 const { itemCount } = useStorefrontCart()
 const wishlist = useStorefrontWishlist()
 const { query } = useStorefrontSearch()
+const categories = useStockedCategories()
+const { selectedCategoryId, select } = useStorefrontCategory()
 
-function goToSection(id: string) {
+// Awaited rather than fire-and-forget: the section only exists once the
+// catalog page is mounted, so scrolling before the push resolves is a no-op.
+async function goToSection(id: string) {
   if (route.name !== 'catalog') {
-    void router.push({ name: 'catalog', hash: `#${id}` })
-    return
+    await router.push({ name: 'catalog' })
   }
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
+function pickCategory(categoryId: string | null) {
+  select(categoryId)
+  void goToSection('categories')
+}
+
 function toggleLoved() {
   wishlist.toggleLovedOnly()
-  goToSection('categories')
+  void goToSection('categories')
 }
 </script>
 
@@ -32,7 +43,7 @@ function toggleLoved() {
         <RouterLink to="/" class="sf-brand">
           <span class="sf-brand__icon"><Store :size="20" /></span>
           <span class="sf-brand__text">
-            <span class="sf-brand__mark">Baguio Online Market</span>
+            <span class="sf-brand__mark">Omaykan</span>
             <span class="sf-brand__sub">Order online for pickup</span>
           </span>
         </RouterLink>
@@ -69,6 +80,33 @@ function toggleLoved() {
           </RouterLink>
         </div>
       </div>
+
+      <nav v-if="categories.length > 0" class="sf-cats" aria-label="Product categories">
+        <div class="sf-cats__row">
+          <button
+            type="button"
+            class="sf-cat"
+            :class="{ 'sf-cat--active': selectedCategoryId === null }"
+            :aria-current="selectedCategoryId === null ? 'true' : undefined"
+            @click="pickCategory(null)"
+          >
+            <LayoutGrid :size="19" />
+            <span>All</span>
+          </button>
+          <button
+            v-for="category in categories"
+            :key="category.id"
+            type="button"
+            class="sf-cat"
+            :class="{ 'sf-cat--active': selectedCategoryId === category.id }"
+            :aria-current="selectedCategoryId === category.id ? 'true' : undefined"
+            @click="pickCategory(category.id)"
+          >
+            <component :is="iconForCategory(category.name)" :size="19" />
+            <span>{{ category.name }}</span>
+          </button>
+        </div>
+      </nav>
     </header>
 
     <main id="top" class="sf-main">
@@ -77,7 +115,7 @@ function toggleLoved() {
 
     <footer class="sf-footer">
       <div class="sf-footer__row">
-        <span class="sf-brand__mark">Baguio Online Market</span>
+        <span class="sf-brand__mark">Omaykan</span>
         <p>Orders are prepared in store — pay when you pick up. No online payment is collected.</p>
       </div>
     </footer>
@@ -252,6 +290,67 @@ function toggleLoved() {
   font-weight: 800;
 }
 
+/* Second header band, under the brand/search row. Unlike the tiles in
+   CategoryGrid this list is unbounded — an org can define any number of
+   categories — so it scrolls sideways instead of wrapping and pushing the
+   whole page down. */
+.sf-cats {
+  border-top: 1px solid var(--separator);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-elevated));
+}
+
+.sf-cats__row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-1);
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 0 var(--space-6);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.sf-cats__row::-webkit-scrollbar {
+  display: none;
+}
+
+/* Even slots rather than content-width buttons, so a handful of categories
+   still spans the bar. min-width is what tips the row into scrolling once an
+   org has more categories than fit; max-width stops two of them from
+   sprawling across half the header. */
+.sf-cat {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 88px;
+  max-width: 168px;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: var(--space-3) var(--space-2);
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-secondary);
+  font: 600 12.5px/1 inherit;
+  cursor: pointer;
+}
+
+.sf-cat span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sf-cat:hover {
+  color: var(--text-primary);
+}
+
+.sf-cat--active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}
+
 .sf-main {
   flex: 1;
   max-width: 1160px;
@@ -290,6 +389,12 @@ function toggleLoved() {
 
   .sf-search {
     max-width: none;
+  }
+
+  /* The category bar stays — with .sf-nav gone it's the only way to move
+     around the catalog on a phone. */
+  .sf-cats__row {
+    padding: 0 var(--space-4);
   }
 
   .sf-icon-btn--cart span:not(.sf-badge) {

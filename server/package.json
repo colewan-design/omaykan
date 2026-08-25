@@ -1,8 +1,8 @@
 {
-  "name": "colepos-api",
+  "name": "omaykan-api",
   "private": true,
   "version": "0.1.0",
-  "description": "Self-hosted runner for the api/ handlers (same source Vercel deploys).",
+  "description": "Self-hosted runner for the api/ handlers.",
   "type": "commonjs",
   "main": "dist/server/main.js",
   "scripts": {

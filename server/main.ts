@@ -7,14 +7,13 @@ import resolveStoreCode from '../api/resolve-store-code'
 import signup from '../api/signup'
 import staffCreate from '../api/staff-create'
 
-// Self-hosted runner for the same handlers Vercel serves from /api.
+// Self-hosted runner for the handlers in /api — the only thing serving them
+// now that the project is off Vercel.
 //
-// The handlers in api/ are written against Vercel's Node runtime, but they
-// only ever touch a handful of request/response members and their
-// @vercel/node import is type-only (erased at compile time). So rather than
-// forking them for the VPS — which would let the two copies drift — this
-// adapts a plain node:http request/response to the shape they expect and
-// reuses the files verbatim. Vercel remains deployable from the same source.
+// The handlers only ever touch a handful of request/response members, spelled
+// out as ApiRequest/ApiResponse in api/http.ts. This adapts a plain node:http
+// request/response to that shape, so the handlers stay transport-agnostic
+// files rather than being rewritten around node:http directly.
 
 type Handler = (req: any, res: any) => unknown | Promise<unknown>
 
@@ -50,7 +49,7 @@ function readBody(req: IncomingMessage): Promise<string> {
   })
 }
 
-/** Adds the `status()`/`json()` sugar the Vercel handlers call. */
+/** Adds the `status()`/`json()` sugar ApiResponse promises. */
 function decorate(res: ServerResponse) {
   const r = res as ServerResponse & {
     status: (code: number) => typeof r
@@ -98,13 +97,13 @@ const server = createServer(async (req, res) => {
       }
     }
 
-    const vercelReq = Object.assign(req, {
+    const apiReq = Object.assign(req, {
       body,
       query: Object.fromEntries(url.searchParams),
       cookies: {},
     })
 
-    await handler(vercelReq, decorated)
+    await handler(apiReq, decorated)
     if (!res.writableEnded) decorated.status(204).end()
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

@@ -16,7 +16,7 @@ For what the product is and why, see [positioning.md](./positioning.md). For the
 | Merchant Android app | `apps/mobile-admin` | Capacitor wrapper around the POS core |
 | Onboarding / signup | `apps/web/src/onboarding` | Working, with placeholder pricing |
 | Platform admin (superadmin) | `apps/web/src/platform-admin` | Working |
-| Landing site | `apps/landing` | Working |
+| Landing site | `apps/web/src/landing` | Working |
 | **Rider** | — | **Does not exist** |
 
 Stack in use: Vue 3, Vite, TypeScript, Pinia, Vue Router, Capacitor 8. Roughly 30k lines across `packages/` `apps/` `api/`.
@@ -118,7 +118,7 @@ Catalog, category grid, hero/promo sections, product cards, search, cart, wishli
 - **Local persistence: IndexedDB, mirrored into `localStorage`.** Not SQLite. The `DataStore` interface here is a simple key/value `read`/`write`, not the SQL interface described in [plan.md §4](./plan.md)
 - **Sync**: `createFirebaseSync` (~1k lines) against Firestore, gated by the `syncMode` setting (`local-only` / `online-sync`)
 - **No outbox table.** Sync is direct, not the queued-outbox pattern the plan describes
-- **Backend, today**: Vercel serverless functions in `api/` against Firestore. `functions/src/index.ts` is dead
+- **Backend, today**: the HTTP handlers in `api/` against Firestore, self-hosted on the VPS via `server/`. `functions/src/index.ts` is dead
 - **Backend, target**: `backend/` — Laravel 12 + PostgreSQL on a VPS, with models, sync/shift/staff controllers, **queues, and Reverb broadcasting** (`OrderPlaced`, `OrderStatusChanged`, channel auth in `routes/channels.php`). Not yet deployed, and nothing on the Vue side subscribes to it yet — see [plan.md §3a](./plan.md)
 
 ---

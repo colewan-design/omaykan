@@ -69,7 +69,7 @@ function isActive(path: string) {
     <div class="workspace-nav__brand">
       <div class="workspace-nav__brand-mark">B</div>
       <div>
-        <strong>Baguio Online Market</strong>
+        <strong>Omaykan</strong>
         <p>{{ store.settings.businessName || 'Smart POS Solutions' }}</p>
       </div>
     </div>

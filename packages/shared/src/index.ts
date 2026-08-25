@@ -1,3 +1,5 @@
+import { groceryCatalogCategories, groceryCatalogProducts } from './groceryCatalog.generated'
+
 export type BusinessMode = 'coffee-shop' | 'grocery' | 'restaurant' | 'nail-salon'
 export type ProductKind = 'standard' | 'weighted'
 export type OrderType = 'dine_in' | 'takeaway'
@@ -430,6 +432,9 @@ export const demoCategories: Category[] = [
   { id: 'nail-enhancements', name: 'Enhancements' },
   { id: 'nail-addons', name: 'Add-ons' },
   { id: 'salon-retail', name: 'Retail' },
+  // The grocery aisles carried over from the legacy scrape (Bakery, Frozen,
+  // Meat & Seafood, …) — see groceryCatalog.generated.ts.
+  ...groceryCatalogCategories,
 ]
 
 function standardProduct(
@@ -906,6 +911,11 @@ export const demoProducts: Product[] = [
     imageUrl: '/products/nail-strengthener.jpg',
     stockQty: 20, lowStockThreshold: 6,
   }),
+
+  // A real-sized grocery shelf on top of the hand-written one above, so
+  // grocery mode demos with hundreds of priced, photographed items instead of
+  // a dozen placeholders.
+  ...groceryCatalogProducts,
 ]
 
 export function formatCurrency(amountCents: number): string {

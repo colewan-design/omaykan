@@ -1,27 +1,39 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { discountPercent, type Product } from '@pos/shared/index'
-import { loadStorefrontCatalog } from '@pos/web/storefront/catalog'
-import { useStorefrontCart } from '@pos/web/storefront/cart'
-import BrandLogo from '@pos/core/components/BrandLogo.vue'
+import { loadStorefrontCatalog } from '@pos/web/commerce/catalog'
+import FdHeader from './FdHeader.vue'
+import FdFooter from './FdFooter.vue'
 import ProductRow from './ProductRow.vue'
+import { serviceCategories } from './categories'
 import { vReveal } from './reveal'
 
 // Grocery-marketplace landing, modelled on the FreshDirect reference: a dark
 // green utility bar with the search front and centre, then a stack of
 // horizontally-scrolling product shelves interleaved with editorial blocks.
 //
-// Everything on the page is real catalog data — each card deep-links to
-// /store/product/<id>, and the + button writes to the shared cart, which now
-// persists to localStorage so it survives the cross-entry hop to /store.
-
-const cart = useStorefrontCart()
+// Everything on the page is real catalog data. The /store entry has been
+// removed, so nothing here navigates away any more: search filters the
+// shelves in place, and every former /store link points at the shelves.
+// The cart still collects items (localStorage) but has no checkout until the
+// storefront comes back.
 
 const products = ref<Product[]>([])
 const categories = ref<{ id: string; name: string }[]>([])
 const loading = ref(true)
 
-const searchTerm = ref('')
+// Search used to be a real navigation into /store?q=. With the store gone it
+// filters the shelves on this page instead. Seeded from ?q= because searching
+// from the about page is a real navigation back here.
+function initialSearch(): string {
+  try {
+    return new URLSearchParams(window.location.search).get('q')?.trim() ?? ''
+  } catch {
+    return ''
+  }
+}
+
+const activeSearch = ref(initialSearch())
 
 onMounted(() => {
   loadStorefrontCatalog()
@@ -36,13 +48,19 @@ onMounted(() => {
     .finally(() => { loading.value = false })
 })
 
-/** Shelves are v-if'd on non-empty, so a thin catalog just shows fewer rows. */
-const popular = computed(() => products.value.slice(0, 12))
+const visibleProducts = computed(() => {
+  const needle = activeSearch.value.toLowerCase()
+  if (!needle) return products.value
+  return products.value.filter((p) => p.name.toLowerCase().includes(needle))
+})
 
-const deals = computed(() => products.value.filter((p) => discountPercent(p) !== null))
+/** Shelves are v-if'd on non-empty, so a thin catalog just shows fewer rows. */
+const popular = computed(() => visibleProducts.value.slice(0, 12))
+
+const deals = computed(() => visibleProducts.value.filter((p) => discountPercent(p) !== null))
 
 const cheapest = computed(() =>
-  [...products.value].sort((a, b) => a.priceCents - b.priceCents).slice(0, 12),
+  [...visibleProducts.value].sort((a, b) => a.priceCents - b.priceCents).slice(0, 12),
 )
 
 /** Products from the largest category, for the editorial block. */
@@ -55,103 +73,40 @@ const featureCategory = computed(() => {
   return counts.sort((a, b) => b.items.length - a.items.length)[0] ?? null
 })
 
-const serviceCategories = [
-  { slug: 'food', label: 'Food' },
-  { slug: 'groceries', label: 'Groceries' },
-  { slug: 'pharmacy', label: 'Pharmacy' },
-  { slug: 'errands', label: 'Errands' },
-  { slug: 'bakery', label: 'Bakery' },
-  { slug: 'beverages', label: 'Beverages' },
-  { slug: 'laundry', label: 'Laundry' },
-  { slug: 'medicine', label: 'Medicine' },
-]
 
-function submitSearch() {
-  const q = searchTerm.value.trim()
-  // The store is a separate Vite entry, so this is a real navigation; the
-  // query rides along in ?q= and search.ts picks it up on the other side.
-  window.location.href = q ? `/store?q=${encodeURIComponent(q)}` : '/store'
+const header = ref<InstanceType<typeof FdHeader> | null>(null)
+
+function onSearch(term: string) {
+  activeSearch.value = term
+  document.getElementById('shop')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-function backToTop() {
-  window.scrollTo({ top: 0, behavior: 'smooth' })
+function clearSearch() {
+  activeSearch.value = ''
+  header.value?.clear()
 }
 </script>
 
 <template>
   <div class="landing fd">
 
-    <!-- ── Utility bar ───────────────────────────────────────────────── -->
-    <header class="fd-bar">
-      <a href="/" class="fd-brand" aria-label="Omaykan — home">
-        <BrandLogo variant="dark" :size="20" />
-      </a>
-
-      <div class="fd-bar__delivery">
-        <span>Delivery</span>
-        <a href="/store">Enter your address</a>
-      </div>
-
-      <form class="fd-search" @submit.prevent="submitSearch">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-        <input
-          v-model="searchTerm"
-          type="search"
-          placeholder="What's on your shopping list?"
-          aria-label="Search products"
-        />
-        <button type="submit" class="fd-search__go">Search</button>
-      </form>
-
-      <div class="fd-bar__account">
-        <span class="fd-bar__label">Merchants</span>
-        <a href="/signup">Sell with us</a>
-      </div>
-
-      <div class="fd-bar__account">
-        <span class="fd-bar__label">Account</span>
-        <a href="/app/auth">Sign in</a>
-      </div>
-
-      <a href="/store/checkout" class="fd-cart" aria-label="Cart">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
-        <span v-if="cart.itemCount.value > 0" class="fd-cart__count">{{ cart.itemCount.value }}</span>
-      </a>
-    </header>
+    <FdHeader ref="header" @search="onSearch" />
 
     <main class="fd-main">
-
-      <!-- ── Lead promo banner ───────────────────────────────────────── -->
-      <section class="fd-promo">
-        <h1 v-reveal class="fd-promo__title">Skip the trip to the market</h1>
-        <p v-reveal="60" class="fd-promo__sub">
-          Order from the shops you already know in Baguio. Riders in your neighbourhood bring it
-          over the same day — cash or GCash on arrival, and vendors keep every peso.
-        </p>
-        <a v-reveal="60" href="/store" class="fd-promo__link">Start shopping — no commissions, ever</a>
-        <div v-reveal="120" class="fd-promo__art">
-          <img src="/delivery/hero-rider.webp" alt="Rider carrying two bags of fresh groceries" width="900" height="1125" />
-          <div class="fd-promo__art-copy">
-            <span class="fd-promo__kicker">Same-day delivery</span>
-            <span class="fd-promo__fee">Flat ₱49 · first 2&nbsp;km</span>
-          </div>
-        </div>
-      </section>
 
       <div class="fd-wrap">
 
         <!-- ── Shop by category ──────────────────────────────────────── -->
-        <section class="fd-cats-block">
+        <section id="shop" class="fd-cats-block">
           <div class="fdrow-head">
             <h2 class="fd-h2">Shop by category</h2>
-            <a href="/store" class="fd-viewall">View all</a>
           </div>
           <div class="fd-cats">
             <a
               v-for="(cat, i) in serviceCategories"
               :key="cat.slug"
               v-reveal="i * 30"
-              href="/store"
+              href="#shop"
               class="fd-cat"
             >
               <div class="fd-cat__art">
@@ -163,6 +118,17 @@ function backToTop() {
         </section>
 
         <p v-if="loading" class="fd-loading">Loading today's catalog…</p>
+
+        <!-- Without this the shelves would simply vanish on a no-match search,
+             leaving a blank page with no explanation. -->
+        <p v-else-if="activeSearch" class="fd-searchnote">
+          <template v-if="visibleProducts.length > 0">
+            {{ visibleProducts.length }} match{{ visibleProducts.length === 1 ? '' : 'es' }} for
+            &ldquo;{{ activeSearch }}&rdquo;
+          </template>
+          <template v-else>Nothing matches &ldquo;{{ activeSearch }}&rdquo;.</template>
+          <button type="button" class="fd-searchnote__clear" @click="clearSearch">Clear search</button>
+        </p>
 
         <ProductRow title="Popular now" :products="popular" />
 
@@ -211,152 +177,33 @@ function backToTop() {
       </div>
     </main>
 
-    <!-- ── Footer ────────────────────────────────────────────────────── -->
-    <footer class="fd-footer">
-      <button type="button" class="fd-totop" @click="backToTop">Back to Top</button>
+    <FdFooter />
 
-      <div class="fd-footer__cols">
-        <div>
-          <BrandLogo variant="light" :size="17" class="fd-footer__logo" />
-          <a href="/store">Shop</a>
-          <a href="/signup">Become a vendor</a>
-          <a href="/signup">Become a rider</a>
-          <a href="/app/auth">Sign in</a>
-        </div>
-        <div>
-          <p class="fd-footer__title">Help</p>
-          <a href="/store">Delivery information</a>
-          <a href="/store">Track an order</a>
-          <a href="/signup">Contact us</a>
-        </div>
-        <div>
-          <p class="fd-footer__title">Categories</p>
-          <a href="/store">Food</a>
-          <a href="/store">Groceries</a>
-          <a href="/store">Pharmacy</a>
-          <a href="/store">Errands</a>
-        </div>
-        <div>
-          <p class="fd-footer__title">How you pay</p>
-          <p class="fd-footer__note">Cash or GCash on arrival. Nothing is charged online.</p>
-          <p class="fd-footer__note">Flat ₱49 delivery for the first 2&nbsp;km, then ₱15/km.</p>
-        </div>
-      </div>
-
-      <div class="fd-footer__bottom">
-        <span>© 2026 Omaykan. Local vendors, local riders, no commissions.</span>
-      </div>
-    </footer>
   </div>
 </template>
 
 <style scoped>
-/* ── Utility bar ─────────────────────────────────────────────────────
-   Dark green, full width, search dominant — the reference's signature. */
-.fd-bar {
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  gap: 22px;
-  padding: 0 28px;
-  min-height: 76px;
-  background: #1a6b3c;
-  color: #fff;
+.fd-searchnote {
+  margin: 0 0 4px;
+  color: #4a5b52;
+  font-size: 14px;
+  font-weight: 600;
 }
 
-.fd-brand { display: flex; align-items: center; flex-shrink: 0; }
-
-.fd-footer__logo { margin-bottom: 6px; }
-
-.fd-bar__delivery {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.3;
-  padding-left: 22px;
-  border-left: 1px solid rgba(255,255,255,0.22);
-  white-space: nowrap;
-}
-.fd-bar__delivery span { font-size: 13.5px; font-weight: 700; }
-.fd-bar__delivery a {
-  font-size: 13px;
-  color: rgba(255,255,255,0.85);
+.fd-searchnote__clear {
+  margin-left: 10px;
+  border: none;
+  background: none;
+  padding: 0;
+  color: #1a6b3c;
+  font: inherit;
   text-decoration: underline;
-  text-underline-offset: 2px;
-}
-.fd-bar__delivery a:hover { color: #fff; }
-
-.fd-search {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 46px;
-  padding: 0 6px 0 16px;
-  border-radius: 999px;
-  background: #fff;
-  color: #6b7280;
-}
-.fd-search input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
-  font: 500 15px/1 inherit;
-  color: #1a1a1a;
-}
-.fd-search input::placeholder { color: #9ca3af; }
-.fd-search__go {
-  flex-shrink: 0;
-  height: 34px;
-  padding: 0 18px;
-  border: none;
-  border-radius: 999px;
-  background: #22c55e;
-  color: #06240f;
-  font: 700 13.5px/1 inherit;
   cursor: pointer;
-}
-.fd-search__go:hover { background: #16a34a; color: #fff; }
-
-.fd-bar__account {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.3;
-  white-space: nowrap;
-}
-.fd-bar__label { font-size: 13.5px; font-weight: 700; }
-.fd-bar__account a {
-  font-size: 13px;
-  color: rgba(255,255,255,0.85);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-.fd-bar__account a:hover { color: #fff; }
-
-.fd-cart { position: relative; display: grid; place-items: center; color: #fff; }
-.fd-cart__count {
-  position: absolute;
-  top: -6px;
-  right: -8px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  display: grid;
-  place-items: center;
-  border-radius: 999px;
-  background: #bbf451;
-  color: #06240f;
-  font-size: 11px;
-  font-weight: 800;
 }
 
 /* ── Layout ──────────────────────────────────────────────────────── */
 .fd-main { background: #fff; }
-.fd-wrap { max-width: 1180px; margin: 0 auto; padding: 52px 28px 72px; }
+.fd-wrap { padding: 52px var(--fd-gutter) 72px; }
 
 .fd-h2 {
   margin: 0;
@@ -384,90 +231,6 @@ function backToTop() {
 .fd-viewall:hover { color: #1a6b3c; }
 
 .fd-loading { margin: 0 0 40px; color: #9ca3af; font-size: 15px; }
-
-/* ── Lead promo ──────────────────────────────────────────────────── */
-.fd-promo {
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: 44px 28px 8px;
-}
-.fd-promo__title {
-  margin: 0 0 10px;
-  font-size: clamp(2rem, 4.6vw, 3.25rem);
-  font-weight: 800;
-  letter-spacing: -0.04em;
-  line-height: 1.04;
-  color: #1a1a1a;
-}
-.fd-promo__sub {
-  margin: 0 0 8px;
-  max-width: 640px;
-  font-size: 16px;
-  line-height: 1.6;
-  color: #6b7280;
-}
-.fd-promo__link {
-  display: inline-block;
-  margin-bottom: 24px;
-  font-size: 15px;
-  font-weight: 600;
-  color: #16a34a;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-.fd-promo__link:hover { color: #1a6b3c; }
-
-/* Wide banner image, as in the reference's full-bleed promo. */
-.fd-promo__art {
-  position: relative;
-  height: 320px;
-  border-radius: 12px;
-  overflow: hidden;
-  background: radial-gradient(120% 140% at 78% 10%, #5bbf8a 0, #1a6b3c 55%, #103f23);
-  display: flex;
-  align-items: flex-end;
-  justify-content: flex-end;
-}
-/* Bottom-anchored and capped at the banner height: the source is a cutout
-   figure, so anything over 100% crops the rider's head. */
-.fd-promo__art img {
-  height: 100%;
-  max-height: 100%;
-  width: auto;
-  object-fit: contain;
-  object-position: bottom;
-  margin-right: 7%;
-  align-self: flex-end;
-}
-/* Scrim so the script line stays legible over the lighter part of the
-   gradient, and the left half doesn't read as dead space. */
-.fd-promo__art::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, rgba(6,36,15,0.45) 0%, rgba(6,36,15,0.12) 42%, transparent 65%);
-  z-index: 1;
-}
-.fd-promo__art-copy { z-index: 2; }
-.fd-promo__art-copy {
-  position: absolute;
-  left: 40px;
-  bottom: 40px;
-  display: grid;
-  gap: 8px;
-}
-.fd-promo__kicker {
-  font-family: 'Caveat', cursive;
-  font-size: 34px;
-  font-weight: 700;
-  color: #bbf451;
-  line-height: 1;
-}
-.fd-promo__fee {
-  font-size: 14px;
-  font-weight: 600;
-  color: rgba(255,255,255,0.9);
-}
 
 /* ── Categories ──────────────────────────────────────────────────── */
 .fd-cats-block { margin-bottom: 56px; }
@@ -541,74 +304,15 @@ function backToTop() {
 }
 .fd-merchant__cta:hover { background: #fff; }
 
-/* ── Footer ──────────────────────────────────────────────────────── */
-.fd-footer { background: #f7f8f7; padding: 0 28px 40px; }
-.fd-totop {
-  display: block;
-  width: 100%;
-  max-width: 1180px;
-  margin: 0 auto 40px;
-  padding: 15px;
-  border: 1px solid #dfe3e0;
-  border-radius: 999px;
-  background: #fff;
-  color: #1a1a1a;
-  font: 600 14.5px/1 inherit;
-  cursor: pointer;
-}
-.fd-totop:hover { border-color: #1a6b3c; color: #1a6b3c; }
-
-.fd-footer__cols {
-  max-width: 1180px;
-  margin: 0 auto;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 32px;
-}
-.fd-footer__cols > div { display: flex; flex-direction: column; gap: 11px; }
-.fd-footer__title { margin: 0 0 3px; font-size: 14.5px; font-weight: 800; color: #1a1a1a; }
-.fd-footer__cols a { font-size: 13.5px; color: #4b5563; }
-.fd-footer__cols a:hover { color: #1a6b3c; text-decoration: underline; }
-.fd-footer__note { margin: 0; font-size: 13px; line-height: 1.55; color: #6b7280; }
-
-.fd-footer__bottom {
-  max-width: 1180px;
-  margin: 34px auto 0;
-  padding-top: 22px;
-  border-top: 1px solid #e5e7eb;
-  font-size: 13px;
-  color: #9ca3af;
-}
-
 /* ── Responsive ──────────────────────────────────────────────────── */
 @media (max-width: 1080px) {
-  .fd-bar__delivery { display: none; }
   .fd-cats { grid-template-columns: repeat(4, 1fr); }
   .fd-editorial { grid-template-columns: 1fr; gap: 28px; }
-  .fd-footer__cols { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 760px) {
-  .fd-bar {
-    flex-wrap: wrap;
-    gap: 12px;
-    padding: 12px 16px;
-    min-height: 0;
-  }
-  .fd-search { order: 3; flex-basis: 100%; height: 42px; }
-  .fd-bar__account { display: none; }
-  .fd-brand { margin-right: auto; }
-  .fd-wrap { padding: 32px 16px 56px; }
-  .fd-promo { padding: 28px 16px 8px; }
-  .fd-promo__art { height: 240px; }
-  .fd-promo__art-copy { left: 20px; bottom: 20px; }
-  .fd-promo__kicker { font-size: 26px; }
+  .fd-wrap { padding: 32px var(--fd-gutter) 56px; }
   .fd-cats { grid-template-columns: repeat(3, 1fr); gap: 12px; }
   .fd-editorial { padding: 24px; }
   .fd-merchant { padding: 26px 22px; }
-  .fd-footer { padding: 0 16px 32px; }
-}
-@media (max-width: 460px) {
-  .fd-footer__cols { grid-template-columns: 1fr; }
-  .fd-search__go { padding: 0 13px; }
 }
 </style>

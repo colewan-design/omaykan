@@ -121,7 +121,7 @@ async function submitPairing() {
   if (saving.value) return
   saving.value = true
   try {
-    const response = await fetch('/api/resolve-staff-store-code', {
+    const response = await fetch('/api/store-codes/resolve-staff', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code: pairForm.pairingCode }),

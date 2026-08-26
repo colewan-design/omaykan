@@ -13,7 +13,7 @@ interface CartLine {
 
 // Module-level (not per-component) so the cart persists as the customer
 // navigates between the catalog and checkout pages. Totals shown here are
-// for the customer's convenience only — createOnlineOrder in firebase.ts
+// for the customer's convenience only — createOnlineOrder in api.ts
 // recomputes the authoritative subtotal/tax/total server-side from the real
 // product prices, exactly as packages/core/src/stores/pos.ts's cart does for
 // the in-person register.

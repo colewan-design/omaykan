@@ -42,6 +42,53 @@ const quantity = ref(1)
 const justAdded = ref(false)
 let resetTimer = 0
 
+/**
+ * Hover zoom on the pack shot. The frame already clips (overflow:hidden) and
+ * the photo already fits inside it, so magnifying is just a scale on the img
+ * with the transform origin pinned under the cursor — the part you point at is
+ * the part that stays put, which is what makes it read as a magnifier rather
+ * than as the picture lurching.
+ *
+ * Mouse only: on a touchscreen there is no hover to track, and a tap that
+ * silently zoomed would eat the tap. Pointer coordinates are read against the
+ * frame's own box so scrolling mid-hover can't drift the origin.
+ */
+const ZOOM = 2.2
+
+const photo = ref<HTMLImageElement | null>(null)
+const zooming = ref(false)
+const zoomOrigin = ref('50% 50%')
+
+function trackZoom(event: PointerEvent) {
+  if (event.pointerType !== 'mouse' || !photo.value) return
+
+  // Measured against the photo, not the frame around it: the frame is padded
+  // and the shot is letterboxed inside it, so frame coordinates would put the
+  // origin off the spot being pointed at everywhere but dead centre. Read
+  // fresh each move so a scroll mid-hover can't leave a stale box behind.
+  const box = photo.value.getBoundingClientRect()
+  if (!box.width || !box.height) return
+
+  const x = ((event.clientX - box.left) / box.width) * 100
+  const y = ((event.clientY - box.top) / box.height) * 100
+
+  zoomOrigin.value = `${clampPercent(x)}% ${clampPercent(y)}%`
+  zooming.value = true
+}
+
+/** The pointer can sit in the frame's padding, which is off the photo. */
+function clampPercent(value: number) {
+  return Math.min(100, Math.max(0, Math.round(value * 100) / 100))
+}
+
+function endZoom() {
+  zooming.value = false
+}
+
+// A new product in the same face keeps the frame mounted, so the old zoom
+// would otherwise still be applied when the next photo swaps in.
+watch(() => props.product.id, endZoom)
+
 const discount = computed(() => discountPercent(props.product))
 const soldOut = computed(() => props.product.outOfStock === true)
 
@@ -146,9 +193,22 @@ function addToCart() {
     <div class="fdpdp__body">
       <!-- Contain, not cover: a detail shot has to show the whole pack — the
            weight, the variant — where a card only needs to be recognisable. -->
-      <div class="fdpdp__art">
+      <div
+        class="fdpdp__art"
+        :class="{ 'fdpdp__art--zoomable': product.imageUrl, 'fdpdp__art--zooming': zooming }"
+        @pointermove="product.imageUrl && trackZoom($event)"
+        @pointerleave="endZoom"
+        @pointercancel="endZoom"
+      >
         <span v-if="discount !== null" class="fdpdp__flag">SALE — save {{ discount }}%</span>
-        <img v-if="product.imageUrl" :src="product.imageUrl" :alt="product.name" />
+        <img
+          v-if="product.imageUrl"
+          ref="photo"
+          :src="product.imageUrl"
+          :alt="product.name"
+          :style="{ transformOrigin: zoomOrigin, transform: zooming ? `scale(${ZOOM})` : undefined }"
+          draggable="false"
+        />
         <div v-else class="fdpdp__placeholder" aria-hidden="true">🛒</div>
       </div>
 
@@ -304,8 +364,28 @@ function addToCart() {
   background: #fff;
   overflow: hidden;
 }
-.fdpdp__art img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.fdpdp__art img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  /* The origin comes from the pointer, so only the scale is animated here. */
+  transition: transform 220ms ease-out;
+  will-change: transform;
+}
+
 .fdpdp__placeholder { font-size: 72px; }
+
+/* The scale itself is bound inline, and only a mouse ever sets it; this is the
+   affordance that says the photo will do something when you point at it. */
+@media (hover: hover) and (pointer: fine) {
+  .fdpdp__art--zoomable { cursor: zoom-in; }
+}
+
+/* The zoom is a way of reading the label, not decoration, so it stays — what
+   goes is the glide into it. */
+@media (prefers-reduced-motion: reduce) {
+  .fdpdp__art img { transition: none; }
+}
 
 .fdpdp__flag {
   position: absolute;

@@ -11,6 +11,15 @@ export const STAFF_TENANT_STORAGE_KEY = 'pos_staff_tenant'
 export interface StaffTenant {
   organizationSlug: string
   storeCode: string
+  /**
+   * The store's public code, kept because the till pairs with it.
+   *
+   * The Laravel backend authenticates a register as a *device*, and a device
+   * proves which store it belongs to by presenting this. Firestore
+   * authenticated as a user instead, which is why the register never used to
+   * need one; a binding without it cannot sync at all.
+   */
+  pairingCode: string
 }
 
 export function writeStaffTenant(tenant: StaffTenant) {
@@ -23,7 +32,13 @@ export function readStaffTenant(): StaffTenant | null {
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<StaffTenant>
     return parsed.organizationSlug && parsed.storeCode
-      ? { organizationSlug: parsed.organizationSlug, storeCode: parsed.storeCode }
+      ? {
+          organizationSlug: parsed.organizationSlug,
+          storeCode: parsed.storeCode,
+          // Empty for a browser bound before pairing was required. main.ts
+          // sends those back through /signup rather than failing silently.
+          pairingCode: parsed.pairingCode ?? '',
+        }
       : null
   } catch {
     return null

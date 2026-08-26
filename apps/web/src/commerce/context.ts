@@ -9,7 +9,8 @@ import type { BusinessMode } from '@pos/shared/index'
 // importer just sees the current value, so nothing downstream has to handle an
 // "unresolved yet" state, as long as nothing reads them before pairing.
 //
-// Lives here rather than in firebase.ts so it survives that file's deletion —
+// Lives here rather than in the transport module so it survives that file's
+// replacement —
 // this is store identity, and has nothing to do with the transport.
 export let ORG_SLUG: string = import.meta.env.VITE_POS_ORGANIZATION_SLUG
 export let STORE_CODE: string = import.meta.env.VITE_POS_STORE_CODE

@@ -51,15 +51,26 @@ function messageFrom(body: { error?: string; message?: string }, fallback: strin
   return body.error || body.message || fallback
 }
 
+/**
+ * `pairingCode` is passed in rather than read off the body because the two
+ * routes here learn it differently: signup is told the code the server just
+ * generated, while pairing an existing store is handed the one the owner read
+ * out and typed. Either way the till needs it to authenticate as a device.
+ */
 function bindAndEnter(
   body: { organizationSlug?: string; storeCode?: string; error?: string; message?: string },
   fallbackError: string,
+  pairingCode: string,
 ): boolean {
   if (!body.organizationSlug || !body.storeCode) {
     errorMessage.value = messageFrom(body, fallbackError)
     return false
   }
-  writeStaffTenant({ organizationSlug: body.organizationSlug, storeCode: body.storeCode })
+  writeStaffTenant({
+    organizationSlug: body.organizationSlug,
+    storeCode: body.storeCode,
+    pairingCode: pairingCode.trim().toUpperCase(),
+  })
   return true
 }
 
@@ -84,7 +95,7 @@ async function submitSignup() {
       errorMessage.value = messageFrom(body, 'Unable to create your store.')
       return
     }
-    if (bindAndEnter(body, 'Unable to create your store.')) {
+    if (bindAndEnter(body, 'Unable to create your store.', body.pairingCode ?? '')) {
       // Only on signup — pairing binds to an *existing* store, which already
       // has its own settings that must not be reset.
       writePendingInitialSettings({
@@ -136,7 +147,7 @@ async function submitPairing() {
       errorMessage.value = messageFrom(body, 'Unable to find that store.')
       return
     }
-    if (bindAndEnter(body, 'Unable to find that store.')) {
+    if (bindAndEnter(body, 'Unable to find that store.', pairForm.pairingCode)) {
       window.location.href = '/app'
     }
   } catch {

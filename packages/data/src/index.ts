@@ -36,13 +36,12 @@ import {
   type UserAccount,
 } from '@pos/shared/index'
 import {
-  createFirebaseSync,
-  type FirebaseSyncConfig,
-  type FirebaseSyncSession,
-  type FirebaseSync,
-} from './firebase-sync'
+  createLaravelSync,
+  type LaravelSyncSession,
+  type LaravelSync,
+} from './laravel-sync'
 
-export type { FirebaseSyncConfig }
+export type { LaravelSyncSession }
 
 export interface DataStore {
   read<T>(key: string, fallback: T): Promise<T>
@@ -166,7 +165,7 @@ export interface PosRepository {
 
 export interface BrowserPosRepositoryOptions {
   store?: DataStore
-  sync?: Partial<SyncConfig> | Partial<FirebaseSyncConfig>
+  sync?: Partial<SyncConfig>
 }
 
 interface SyncConfig {
@@ -179,14 +178,8 @@ interface SyncConfig {
   appVersion: string
 }
 
-interface SyncSession {
-  token: string
-  deviceId: string
-  storeId: string
-  storeName: string
-  organizationId: string
-  organizationSlug: string
-}
+/** The paired till's device session. Shaped by laravel-sync.ts, stored here. */
+type SyncSession = LaravelSyncSession
 
 interface SyncOutboxEvent {
   id: string
@@ -462,7 +455,7 @@ export async function clearLocalPosCache(): Promise<void> {
   })
 }
 
-function normalizeSyncConfig(input?: Partial<SyncConfig> | Partial<FirebaseSyncConfig>): SyncConfig | null {
+function normalizeSyncConfig(input?: Partial<SyncConfig>): SyncConfig | null {
   const cfg = input as Partial<SyncConfig>
   if (!cfg?.apiBaseUrl || !cfg.organizationSlug || !cfg.storeCode || !cfg.pairingCode) {
     return null
@@ -473,24 +466,6 @@ function normalizeSyncConfig(input?: Partial<SyncConfig> | Partial<FirebaseSyncC
     organizationSlug: cfg.organizationSlug,
     storeCode: cfg.storeCode,
     pairingCode: cfg.pairingCode,
-    deviceName: cfg.deviceName?.trim() || defaultDeviceName(),
-    platform: cfg.platform?.trim() || 'web',
-    appVersion: cfg.appVersion?.trim() || '0.1.0',
-  }
-}
-
-function normalizeFirebaseSyncConfig(
-  input?: Partial<SyncConfig> | Partial<FirebaseSyncConfig>,
-): FirebaseSyncConfig | null {
-  const cfg = input as Partial<FirebaseSyncConfig>
-  if (!cfg?.firebaseConfig?.apiKey || !cfg.organizationSlug || !cfg.storeCode) {
-    return null
-  }
-
-  return {
-    firebaseConfig: cfg.firebaseConfig,
-    organizationSlug: cfg.organizationSlug,
-    storeCode: cfg.storeCode,
     deviceName: cfg.deviceName?.trim() || defaultDeviceName(),
     platform: cfg.platform?.trim() || 'web',
     appVersion: cfg.appVersion?.trim() || '0.1.0',
@@ -576,25 +551,6 @@ class RemoteAuthError extends Error {
     super(message)
     this.name = 'RemoteAuthError'
   }
-}
-
-async function responseMessage(response: Response, fallback: string): Promise<string> {
-  const body = await response.clone().json().catch(() => null)
-
-  if (body && typeof body === 'object') {
-    const payload = body as { message?: unknown; error?: unknown }
-
-    if (typeof payload.error === 'string' && payload.error) {
-      return payload.error
-    }
-
-    if (typeof payload.message === 'string' && payload.message) {
-      return payload.message
-    }
-  }
-
-  const text = (await response.text().catch(() => '')).trim()
-  return text || fallback
 }
 
 function generateSku(name: string): string {
@@ -1074,13 +1030,21 @@ function createDemoOrders(createdByUserId: string | null): OrderSummary[] {
 
 export function createBrowserPosRepository(options: BrowserPosRepositoryOptions = {}): PosRepository {
   const store = options.store ?? new BrowserIndexedDbStore()
-  const firebaseConfig = normalizeFirebaseSyncConfig(options.sync)
-  const syncConfig = firebaseConfig ? null : normalizeSyncConfig(options.sync)
-  const firebaseSync: FirebaseSync | null = firebaseConfig ? createFirebaseSync(firebaseConfig) : null
-  const appVersion = firebaseConfig?.appVersion ?? syncConfig?.appVersion ?? '0.1.0'
+  const syncConfig = normalizeSyncConfig(options.sync)
+  // Null until the till is paired: normalizeSyncConfig needs a pairing code,
+  // and without one there is no store to sync with. The register still runs
+  // entirely from its local cache in that state.
+  const laravelSync: LaravelSync | null = syncConfig
+    ? createLaravelSync({
+        tenant: { organizationSlug: syncConfig.organizationSlug, storeCode: syncConfig.storeCode },
+        request: (path, init) => backendFetch(path, init),
+        session: () => ensureRemoteSession(),
+      })
+    : null
+  const appVersion = syncConfig?.appVersion ?? '0.1.0'
 
   async function isOnlineSyncEnabled() {
-    if (!syncConfig && !firebaseSync) {
+    if (!syncConfig || !laravelSync) {
       return false
     }
 
@@ -1088,22 +1052,17 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     return settings.syncMode === 'online-sync'
   }
 
-  async function readFirebaseSession(): Promise<FirebaseSyncSession | null> {
-    return store.read<FirebaseSyncSession | null>(storageKeys.syncSession, null)
-  }
+  async function getSyncSession(): Promise<SyncSession | null> {
+    if (!laravelSync) return null
 
-  async function writeFirebaseSession(session: FirebaseSyncSession | null): Promise<void> {
-    await store.write(storageKeys.syncSession, session)
-  }
-
-  async function getFirebaseSession(): Promise<FirebaseSyncSession | null> {
-    if (!firebaseSync) return null
-    const cached = await readFirebaseSession()
-    const live = await firebaseSync.getCurrentSession(cached)
-    if (live && (!cached || live.organizationId !== cached.organizationId)) {
-      await writeFirebaseSession(live)
+    try {
+      // Pairs on first use and persists the token; a cached session short
+      // circuits it. Errors mean an unpaired or offline till, which the
+      // callers all treat as "work from the local cache".
+      return await ensureRemoteSession()
+    } catch {
+      return null
     }
-    return live
   }
 
   async function getDeviceId() {
@@ -1188,10 +1147,10 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
   }
 
   async function refreshRemoteShift() {
-    if (firebaseSync) {
-      const session = await getFirebaseSession()
+    if (laravelSync) {
+      const session = await getSyncSession()
       if (!session) return null
-      const shift = await firebaseSync.getCurrentShift(session.storeId)
+      const shift = await laravelSync.getCurrentShift(session.storeId)
       await writeActiveShift(shift)
       return shift
     }
@@ -1299,10 +1258,10 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
   }
 
   async function syncCatalogFromBootstrap() {
-    if (firebaseSync) {
-      const session = await getFirebaseSession()
-      if (!session) throw new Error('No Firebase session for bootstrap.')
-      const result = await firebaseSync.bootstrapCatalog(session.organizationId, session.storeId)
+    if (laravelSync) {
+      const session = await getSyncSession()
+      if (!session) throw new Error('The till is not paired, so there is nothing to bootstrap from.')
+      const result = await laravelSync.bootstrapCatalog(session.organizationId, session.storeId)
       await store.write(storageKeys.categories, result.categories)
       await store.write(storageKeys.products, result.products)
       await writeSyncCursor(result.cursor)
@@ -1332,12 +1291,12 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
   }
 
   async function pullCatalogChanges() {
-    if (firebaseSync) {
-      const session = await getFirebaseSession()
+    if (laravelSync) {
+      const session = await getSyncSession()
       if (!session) return
       const cursor = await readSyncCursor()
       if (!cursor) return
-      const result = await firebaseSync.pullChanges(session.organizationId, session.storeId, cursor)
+      const result = await laravelSync.pullChanges(session.organizationId, session.storeId, cursor)
 
       const currentCategories = await store.read<Category[]>(storageKeys.categories, [])
       const currentProducts = await store.read<Product[]>(storageKeys.products, [])
@@ -1412,10 +1371,10 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       return new Set()
     }
 
-    if (firebaseSync) {
-      const session = await getFirebaseSession()
+    if (laravelSync) {
+      const session = await getSyncSession()
       if (!session) return new Set()
-      const appliedIds = await firebaseSync.pushEvents(events, session)
+      const appliedIds = await laravelSync.pushEvents(events, session)
       if (appliedIds.size > 0) {
         await writeOutbox(events.filter((event) => !appliedIds.has(event.id)))
         await markAppEventsSent(appliedIds)
@@ -1593,10 +1552,10 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       return null
     }
 
-    if (firebaseSync) {
-      const session = await getFirebaseSession()
+    if (laravelSync) {
+      const session = await getSyncSession()
       if (!session) return null
-      const users = await firebaseSync.loadUsers(session.organizationId)
+      const users = await laravelSync.loadUsers(session.organizationId)
       await store.write(storageKeys.users, users)
       return users
     }
@@ -1611,10 +1570,10 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       return null
     }
 
-    if (firebaseSync) {
-      const session = await getFirebaseSession()
+    if (laravelSync) {
+      const session = await getSyncSession()
       if (!session) return null
-      const roles = await firebaseSync.loadRoles(session.organizationId)
+      const roles = await laravelSync.loadRoles(session.organizationId)
       await store.write(storageKeys.roles, roles)
       return roles
     }
@@ -1761,10 +1720,10 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     async loadShiftHistory() {
       if (await isOnlineSyncEnabled()) {
         try {
-          if (firebaseSync) {
-            const session = await getFirebaseSession()
+          if (laravelSync) {
+            const session = await getSyncSession()
             if (session) {
-              const shifts = await firebaseSync.getShiftHistory(session.storeId)
+              const shifts = await laravelSync.getShiftHistory(session.storeId)
               await store.write(storageKeys.shiftHistory, shifts)
               return shifts
             }
@@ -1775,7 +1734,7 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
             return shifts
           }
         } catch {
-          // Fall back to the cached history if the backend/Firebase is unavailable.
+          // Fall back to the cached history if the backend is unavailable.
         }
       }
 
@@ -1934,62 +1893,42 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     // their own pull, and a local-only store has no storefront to receive them
     // from at all.
     //
-    // The API is the live path: the storefront POSTs to Laravel, so that is
-    // where today's orders are. Firestore is the legacy one, kept for stores
-    // still on the old sync — without it, every order a shop took before the
-    // migration would vanish from the dashboard.
     async loadOnlineOrders() {
-      if (!(await isOnlineSyncEnabled())) {
+      if (!(await isOnlineSyncEnabled()) || !laravelSync) {
         return []
       }
 
-      if (syncConfig) {
-        try {
-          const payload = await backendFetch<{ orders: OrderSummary[] }>('/api/seller/online-orders')
-          return (payload.orders ?? []).map(normalizeOrder)
-        } catch {
-          // Fall through to Firestore rather than blanking the dashboard: a
-          // store mid-migration may still have its orders on the old transport.
-        }
-      }
-
-      if (!firebaseSync) {
-        return []
-      }
-
-      const session = await getFirebaseSession()
+      const session = await getSyncSession()
       if (!session) {
         return []
       }
 
-      return firebaseSync.pullOnlineOrders(session.storeId)
+      try {
+        return (await laravelSync.pullOnlineOrders(session.storeId)).map(normalizeOrder)
+      } catch {
+        // An empty list beats a blank dashboard with an error on it: the
+        // register's own sales are local and unaffected by this failing.
+        return []
+      }
     },
 
     async settleOrderPayment(orderId, input) {
-      if (syncConfig) {
-        const payload = await backendFetch<{ order: OrderSummary }>(
-          `/api/seller/online-orders/${encodeURIComponent(orderId)}/settle-payment`,
-          { method: 'POST', body: JSON.stringify(input) },
-        )
-        return normalizeOrder(payload.order)
-      }
-
-      if (!firebaseSync) {
+      if (!laravelSync) {
         throw new Error('Settling an online order requires online sync to be enabled.')
       }
 
-      const session = await getFirebaseSession()
+      const session = await getSyncSession()
       if (!session) {
-        throw new Error('Settling an online order requires an active Firebase session.')
+        throw new Error('Settling an online order requires a paired till.')
       }
 
-      return firebaseSync.settleOrderPayment(session.storeId, orderId, input)
+      return normalizeOrder(await laravelSync.settleOrderPayment(session.storeId, orderId, input))
     },
 
-    // The three below are API-only: the Firestore transport never grew a
-    // rider or a delivery stage, so a store still on it cannot dispatch from
-    // here. backendFetch throws without a sync config, and the dashboard shows
-    // that message on the card rather than looking like the rider was told.
+    // Dispatch, straight through backendFetch: these have no offline meaning
+    // — a rider cannot be told anything by a till with no connection — so
+    // there is no local fallback, and backendFetch's message is what the
+    // dashboard shows on the card.
     async updateOnlineOrderStatus(orderId, status) {
       const payload = await backendFetch<{ order: OrderSummary }>(
         `/api/seller/online-orders/${encodeURIComponent(orderId)}/status`,
@@ -2190,10 +2129,10 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
     async openShift(input) {
       if (await isOnlineSyncEnabled()) {
-        if (firebaseSync) {
-          const session = await getFirebaseSession()
+        if (laravelSync) {
+          const session = await getSyncSession()
           if (session) {
-            const shift = await firebaseSync.openShift({
+            const shift = await laravelSync.openShift({
               openingCashCents: input.openingCashCents,
               userId: input.userId ?? null,
               storeId: session.storeId,
@@ -2240,11 +2179,11 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
     async addCashMovement(input) {
       if (await isOnlineSyncEnabled()) {
-        if (firebaseSync) {
-          const session = await getFirebaseSession()
+        if (laravelSync) {
+          const session = await getSyncSession()
           const current = await readActiveShift()
           if (session && current && !current.closedAt) {
-            const shift = await firebaseSync.addCashMovement({
+            const shift = await laravelSync.addCashMovement({
               shiftId: current.id,
               storeId: session.storeId,
               organizationId: session.organizationId,
@@ -2307,11 +2246,11 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
     async closeShift(input) {
       if (await isOnlineSyncEnabled()) {
-        if (firebaseSync) {
-          const session = await getFirebaseSession()
+        if (laravelSync) {
+          const session = await getSyncSession()
           const current = await readActiveShift()
           if (session && current && !current.closedAt) {
-            const shift = await firebaseSync.closeShift({
+            const shift = await laravelSync.closeShift({
               shiftId: current.id,
               countedCashCents: input.countedCashCents,
               expectedCashCents: current.expectedCashCents,
@@ -2396,7 +2335,7 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
       if (settings.syncMode === 'online-sync') {
         try {
-          if (!firebaseSync) {
+          if (!laravelSync) {
             await ensureRemoteSession()
           }
           await enqueuePendingAppTelemetryEvents()
@@ -2426,64 +2365,26 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     },
 
     async loginUser(username, password) {
-      if (await isOnlineSyncEnabled()) {
+      if (await isOnlineSyncEnabled() && laravelSync) {
         try {
-          if (firebaseSync) {
-            const result = await firebaseSync.loginUser(username, password)
-            if (result) {
-              const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
-              await store.write(storageKeys.users, [
-                result.user,
-                ...existingUsers.filter((u) => u.id !== result.user.id),
-              ])
-              await store.write(storageKeys.session, result.session)
-              await writeFirebaseSession(result.syncSession)
-              // Firebase Auth is keyed on a synthetic address and sends no
-              // verification mail - see firebase-sync.ts. This path is being
-              // retired; the real address is recorded but nothing checks it.
-              return { user: result.user, session: result.session, verificationRequired: false }
-            }
-          } else {
-            const response = await fetch(`${syncConfig?.apiBaseUrl}/api/staff-sessions`, {
-              method: 'POST',
-              headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                organizationSlug: syncConfig?.organizationSlug,
-                storeCode: syncConfig?.storeCode,
-                username,
-                password,
-              }),
-            })
-
-            if (response.ok) {
-              const body = await response.json() as {
-                user: UserAccount
-                session: AuthSession
-              }
-              const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
-              await store.write(storageKeys.users, [
-                body.user,
-                ...existingUsers.filter((entry) => entry.id !== body.user.id),
-              ])
-              await store.write(storageKeys.session, body.session)
-              return body
-            }
-
-            if (response.status === 403) {
-              throw new RemoteAuthError(
-                await responseMessage(response, 'Please verify your email first.'),
-              )
-            }
+          const result = await laravelSync.loginUser(username, password)
+          if (result) {
+            const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
+            await store.write(storageKeys.users, [
+              result.user,
+              ...existingUsers.filter((u) => u.id !== result.user.id),
+            ])
+            await store.write(storageKeys.session, result.session)
+            await writeSyncSession(result.syncSession)
+            return { user: result.user, session: result.session }
           }
         } catch (error) {
           if (error instanceof RemoteAuthError) {
             throw error
           }
 
-          // Fall back to local auth below.
+          // Offline, or the till is not paired. Fall back to local auth below,
+          // which is what lets a register keep taking money through an outage.
         }
       }
 
@@ -2516,79 +2417,35 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     },
 
     async registerUser(input) {
-      if (await isOnlineSyncEnabled()) {
+      if (await isOnlineSyncEnabled() && laravelSync) {
         try {
-          if (firebaseSync) {
-            const result = await firebaseSync.registerUser(input)
-            if (result) {
-              const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
-              await store.write(storageKeys.users, [
-                result.user,
-                ...existingUsers.filter((u) => u.id !== result.user.id),
-              ])
-              await store.write(storageKeys.session, result.session)
-              await writeFirebaseSession(result.syncSession)
-              // Firebase Auth is keyed on a synthetic address and sends no
-              // verification mail - see firebase-sync.ts. This path is being
-              // retired; the real address is recorded but nothing checks it.
-              return { user: result.user, session: result.session, verificationRequired: false }
-            }
-          } else {
-            const response = await fetch(`${syncConfig?.apiBaseUrl}/api/staff-register`, {
-              method: 'POST',
-              headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                organizationSlug: syncConfig?.organizationSlug,
-                storeCode: syncConfig?.storeCode,
-                fullName: input.fullName,
-                username: input.username,
-                email: input.email,
-                password: input.password,
-              }),
-            })
+          const result = await laravelSync.registerUser(input)
 
-            if (response.ok) {
-              const body = await response.json() as {
-                user: UserAccount
-                session?: AuthSession
-                verificationRequired?: boolean
-                message?: string
-              }
-              const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
-              await store.write(storageKeys.users, [
-                body.user,
-                ...existingUsers.filter((entry) => entry.id !== body.user.id),
-              ])
+          // The server answered and said no - a taken username or email.
+          // Falling through to the local branch would quietly make an account
+          // the server had just refused, on a till that is plainly online.
+          if (!result) {
+            return null
+          }
 
-              // No session means the address has to be verified before this
-              // account can sign in. Nothing is written to storageKeys.session:
-              // a stored session with no token would look signed-in to the app
-              // and be refused by every request it made.
-              if (body.session) {
-                await store.write(storageKeys.session, body.session)
-              }
+          const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
+          await store.write(storageKeys.users, [
+            result.user,
+            ...existingUsers.filter((entry) => entry.id !== result.user.id),
+          ])
 
-              return {
-                user: body.user,
-                session: body.session ?? null,
-                verificationRequired: body.verificationRequired === true || !body.session,
-                message: body.message,
-              }
-            }
-
-            // The server answered, and said no - a taken username or email, a
-            // rejected address. Falling through to the local branch would
-            // quietly make an account the server had just refused, on a till
-            // that is plainly online. Better to fail where the reason is known.
-            if (response.status >= 400 && response.status < 500) {
-              return null
-            }
+          // Nothing is written to storageKeys.session: registering does not
+          // sign anyone in until the emailed link is clicked, and a stored
+          // session with no token would look signed-in to the app while every
+          // request it made was refused.
+          return {
+            user: result.user,
+            session: null,
+            verificationRequired: result.verificationRequired,
+            message: result.message,
           }
         } catch {
-          // Fall back to local registration below.
+          // Could not reach the server at all. Fall back to local registration.
         }
       }
 
@@ -2640,8 +2497,8 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         throw new Error('Full name, username, password, and role are required.')
       }
 
-      if (await isOnlineSyncEnabled() && firebaseSync) {
-        const session = await getFirebaseSession()
+      if (await isOnlineSyncEnabled() && laravelSync) {
+        const session = await getSyncSession()
         if (!session) {
           throw new Error('Your admin session has expired — please sign in again.')
         }
@@ -2649,7 +2506,7 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         // No try/catch here: a remote failure must propagate so the admin sees a
         // real error, rather than silently creating a local-only account the new
         // employee could never actually log into from another device.
-        const user = await firebaseSync.createStaffAccount({ fullName, username, password, roleId })
+        const user = await laravelSync.createStaffAccount({ fullName, username, password, roleId })
         const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
         await store.write(storageKeys.users, [user, ...existingUsers.filter((u) => u.id !== user.id)])
         return user
@@ -2681,10 +2538,10 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
       if (await isOnlineSyncEnabled()) {
         try {
-          if (firebaseSync) {
-            const session = await getFirebaseSession()
+          if (laravelSync) {
+            const session = await getSyncSession()
             if (session) {
-              await firebaseSync.updateUserRole(userId, roleId, session.organizationId)
+              await laravelSync.updateUserRole(userId, roleId, session.organizationId)
               const refreshedUsers = await tryLoadRemoteUsers()
               if (refreshedUsers) return
             }
@@ -2721,10 +2578,10 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
       if (await isOnlineSyncEnabled()) {
         try {
-          if (firebaseSync) {
-            const session = await getFirebaseSession()
+          if (laravelSync) {
+            const session = await getSyncSession()
             if (session) {
-              const saved = await firebaseSync.saveRoles(roles, session.organizationId)
+              const saved = await laravelSync.saveRoles(roles, session.organizationId)
               await store.write(storageKeys.roles, saved)
             }
           } else {
@@ -2748,12 +2605,12 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       await store.write(storageKeys.session, session)
 
       if (!session || session.userId === guestSessionUserId) {
-        await writeFirebaseSession(null)
-        if (firebaseSync) {
+        await writeSyncSession(null)
+        if (laravelSync) {
           try {
-            await firebaseSync.signOut()
+            await laravelSync.signOut()
           } catch {
-            // Clearing the local session is the priority even if Firebase sign-out fails.
+            // Clearing the local session is the priority even if the remote call fails.
           }
         }
       }

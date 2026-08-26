@@ -56,7 +56,13 @@ class CustomerAuthController extends Controller
             'password' => $data['password'],
         ]);
 
-        return $this->sessionResponse($account, $request, 201);
+        $this->sendVerificationLink($account);
+
+        return response()->json([
+            'account' => $account->toStorefrontArray(),
+            'verificationRequired' => true,
+            'message' => 'Check your email for a verification link before signing in.',
+        ], 201);
     }
 
     public function login(Request $request): JsonResponse
@@ -83,6 +89,14 @@ class CustomerAuthController extends Controller
         if (! Hash::check($data['password'], $account->password)) {
             throw ValidationException::withMessages([
                 'email' => 'That email and password don\'t match an account.',
+            ]);
+        }
+
+        if (! $account->hasVerifiedEmail()) {
+            $this->sendVerificationLink($account);
+
+            throw ValidationException::withMessages([
+                'email' => 'Please verify your email first. We just sent you another verification link.',
             ]);
         }
 
@@ -141,6 +155,7 @@ class CustomerAuthController extends Controller
                 $account->forceFill([
                     'password' => $password,
                     'remember_token' => Str::random(60),
+                    'email_verified_at' => $account->email_verified_at ?? now(),
                 ])->save();
 
                 // Someone resetting a password may be doing it because someone
@@ -170,5 +185,14 @@ class CustomerAuthController extends Controller
             'account' => $account->toStorefrontArray(),
             'token' => $token,
         ], $status);
+    }
+
+    private function sendVerificationLink(CustomerAccount $account): void
+    {
+        try {
+            $account->sendEmailVerificationNotification();
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 }

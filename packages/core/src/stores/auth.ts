@@ -175,7 +175,14 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function login(username: string, password: string) {
     clearAuthError()
-    const result = await repository.loginUser(username, password)
+    let result: Awaited<ReturnType<typeof repository.loginUser>>
+
+    try {
+      result = await repository.loginUser(username, password)
+    } catch (err) {
+      authError.value = err instanceof Error ? err.message : 'Unable to sign you in.'
+      return false
+    }
 
     if (!result) {
       authError.value = 'Incorrect username or password.'

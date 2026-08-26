@@ -294,7 +294,7 @@ async function submitPairing() {
           <h1 class="auth-card__title">You're live on Omaykan.</h1>
           <p class="auth-card__copy">
             Share this store code with your customers — they enter it in the Omaykan app to find your
-            shop and order from it. It's in Settings whenever you need it again.
+            shop and order from it. Verify the email we just sent before signing in. It's in Settings whenever you need it again.
           </p>
         </div>
 

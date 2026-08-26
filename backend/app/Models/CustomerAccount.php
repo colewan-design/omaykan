@@ -2,7 +2,10 @@
 
 namespace App\Models;
 
+use App\Notifications\CustomerEmailVerification;
 use App\Notifications\CustomerPasswordReset;
+use Illuminate\Auth\MustVerifyEmail as MustVerifyEmailTrait;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -21,9 +24,9 @@ use Laravel\Sanctum\HasApiTokens;
  * accounts differing only in case would be two accounts to the database and
  * one account to the person typing.
  */
-class CustomerAccount extends Authenticatable
+class CustomerAccount extends Authenticatable implements MustVerifyEmail
 {
-    use HasApiTokens, HasUuids, Notifiable;
+    use HasApiTokens, HasUuids, MustVerifyEmailTrait, Notifiable;
 
     protected $fillable = [
         'name',
@@ -135,5 +138,10 @@ class CustomerAccount extends Authenticatable
     public function sendPasswordResetNotification(#[\SensitiveParameter] $token): void
     {
         $this->notify(new CustomerPasswordReset($token));
+    }
+
+    public function sendEmailVerificationNotification(): void
+    {
+        $this->notify(new CustomerEmailVerification());
     }
 }

@@ -33,6 +33,11 @@ class StaffSessionController extends Controller
             abort(403, 'This account does not have access to the selected store.');
         }
 
+        if ($user->email && ! $user->hasVerifiedEmail()) {
+            $this->sendVerificationLink($user);
+            abort(403, 'Please verify your email first. We just sent you another verification link.');
+        }
+
         $token = $user->createToken("staff-session:{$store->id}", ['staff'])->plainTextToken;
 
         return response()->json([
@@ -139,5 +144,14 @@ class StaffSessionController extends Controller
             'roleId' => $roleId,
             'createdAt' => $user->created_at?->toIso8601String() ?? now()->toIso8601String(),
         ];
+    }
+
+    private function sendVerificationLink(User $user): void
+    {
+        try {
+            $user->sendEmailVerificationNotification();
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 }

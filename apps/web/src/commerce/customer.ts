@@ -166,7 +166,7 @@ export function useCustomerAccount() {
   // -- Session -------------------------------------------------------------
 
   async function register(input: { name: string; email: string; phone?: string; password: string }) {
-    return adopt(await registerCustomer(input))
+    return registerCustomer(input)
   }
 
   async function signIn(email: string, password: string) {

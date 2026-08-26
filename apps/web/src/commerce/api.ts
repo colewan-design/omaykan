@@ -314,6 +314,11 @@ interface SessionEnvelope extends AccountEnvelope {
   token: string
 }
 
+interface VerificationEnvelope extends AccountEnvelope {
+  verificationRequired: boolean
+  message: string
+}
+
 function patchJson<TResult>(path: string, body: unknown, fallbackError?: string): Promise<TResult> {
   return request<TResult>(path, { method: 'PATCH', body: JSON.stringify(body), fallbackError })
 }
@@ -327,8 +332,8 @@ export function registerCustomer(input: {
   email: string
   phone?: string
   password: string
-}): Promise<SessionEnvelope> {
-  return postJson<SessionEnvelope>(
+}): Promise<VerificationEnvelope> {
+  return postJson<VerificationEnvelope>(
     '/api/customer/register',
     { ...input, password_confirmation: input.password },
     'Could not create your account.',

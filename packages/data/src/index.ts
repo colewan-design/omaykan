@@ -554,6 +554,32 @@ function defaultDeviceName() {
   return `Web Register (${host})`
 }
 
+class RemoteAuthError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'RemoteAuthError'
+  }
+}
+
+async function responseMessage(response: Response, fallback: string): Promise<string> {
+  const body = await response.clone().json().catch(() => null)
+
+  if (body && typeof body === 'object') {
+    const payload = body as { message?: unknown; error?: unknown }
+
+    if (typeof payload.error === 'string' && payload.error) {
+      return payload.error
+    }
+
+    if (typeof payload.message === 'string' && payload.message) {
+      return payload.message
+    }
+  }
+
+  const text = (await response.text().catch(() => '')).trim()
+  return text || fallback
+}
+
 function generateSku(name: string): string {
   const prefix = name.slice(0, 3).toUpperCase().padEnd(3, 'X').replace(/[^A-Z]/g, 'X')
   return `${prefix}-${crypto.randomUUID().slice(0, 4).toUpperCase()}`
@@ -2425,8 +2451,18 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
               await store.write(storageKeys.session, body.session)
               return body
             }
+
+            if (response.status === 403) {
+              throw new RemoteAuthError(
+                await responseMessage(response, 'Please verify your email first.'),
+              )
+            }
           }
-        } catch {
+        } catch (error) {
+          if (error instanceof RemoteAuthError) {
+            throw error
+          }
+
           // Fall back to local auth below.
         }
       }

@@ -5,13 +5,14 @@ namespace Tests\Feature\Api;
 use App\Models\CustomerAccount;
 use App\Models\Order;
 use App\Models\Product;
+use App\Notifications\CustomerEmailVerification;
 use App\Notifications\CustomerPasswordReset;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Support\Facades\Notification;
 use Tests\TestCase;
 
 /**
- * The storefront's own identity — accounts for the people who buy.
+ * The storefront's own identity â€” accounts for the people who buy.
  *
  * DatabaseMigrations rather than RefreshDatabase, matching the other API
  * tests: placing an order broadcasts from DB::afterCommit, which never fires
@@ -21,27 +22,65 @@ class CustomerAuthApiTest extends TestCase
 {
     use DatabaseMigrations;
 
-    /** @return array{token: string, account: array<string, mixed>} */
-    private function register(array $overrides = []): array
+    private function payload(array $overrides = []): array
     {
-        $payload = array_merge([
+        return array_merge([
             'name' => 'Christian Colewan',
             'email' => 'shopper@example.com',
             'phone' => '09171234567',
             'password' => 'baguio-pines-2026',
             'password_confirmation' => 'baguio-pines-2026',
         ], $overrides);
+    }
 
+    /** @return array{payload: array<string, mixed>, account: array<string, mixed>, verificationRequired: bool, message: string} */
+    private function register(array $overrides = []): array
+    {
+        $payload = $this->payload($overrides);
         $response = $this->postJson('/api/customer/register', $payload)->assertCreated();
 
-        return ['token' => $response->json('token'), 'account' => $response->json('account')];
+        return [
+            'payload' => $payload,
+            'account' => $response->json('account'),
+            'verificationRequired' => $response->json('verificationRequired'),
+            'message' => $response->json('message'),
+        ];
+    }
+
+    /** @return array{payload: array<string, mixed>, token: string, account: array<string, mixed>} */
+    private function registerVerified(array $overrides = []): array
+    {
+        $payload = $this->payload($overrides);
+        $this->register($overrides);
+        $this->verifyAccount($payload['email']);
+
+        $response = $this->postJson('/api/customer/login', [
+            'email' => $payload['email'],
+            'password' => $payload['password'],
+        ])->assertOk();
+
+        return [
+            'payload' => $payload,
+            'token' => $response->json('token'),
+            'account' => $response->json('account'),
+        ];
+    }
+
+    private function verifyAccount(string $email): CustomerAccount
+    {
+        $account = CustomerAccount::findByEmail($email);
+        $this->assertNotNull($account);
+
+        $account->forceFill(['email_verified_at' => now()])->save();
+
+        return $account->fresh();
     }
 
     /**
      * Guards are container singletons and cache the user they resolved, and
      * the container survives between requests inside one test. Without the
      * forget, the second request in a test authenticates as the first one's
-     * owner however the header changed — which would make every "one customer
+     * owner however the header changed â€” which would make every "one customer
      * cannot touch another's" assertion here pass for the wrong reason.
      */
     private function withCustomer(string $token): self
@@ -53,21 +92,40 @@ class CustomerAuthApiTest extends TestCase
 
     // -- Registration and sign-in -------------------------------------------
 
-    public function test_registration_creates_an_account_and_returns_a_token(): void
+    public function test_registration_creates_an_account_and_sends_a_verification_link(): void
     {
+        Notification::fake();
+        config([
+            'app.customer_account_url' => 'http://storefront.test/account',
+            'mail.reply_to.address' => 'support@omaykan.com',
+        ]);
+
         $result = $this->register();
 
-        $this->assertNotEmpty($result['token']);
+        $this->assertTrue($result['verificationRequired']);
+        $this->assertSame('Check your email for a verification link before signing in.', $result['message']);
         $this->assertSame('shopper@example.com', $result['account']['email']);
         $this->assertSame([], $result['account']['addresses']);
-        // Defaults arrive without ever having been written.
         $this->assertTrue($result['account']['preferences']['emailUpdates']);
         $this->assertFalse($result['account']['preferences']['marketingEmails']);
+
+        $account = CustomerAccount::findByEmail('shopper@example.com');
+        $this->assertNotNull($account);
+        $this->assertNull($account->email_verified_at);
+
+        Notification::assertSentTo($account, CustomerEmailVerification::class, function (CustomerEmailVerification $notification) use ($account) {
+            $mail = $notification->toMail($account);
+
+            $this->assertSame('support@omaykan.com', $mail->from[0] ?? null);
+            $this->assertStringContainsString('/email/verify/customer/', $mail->actionUrl);
+
+            return true;
+        });
     }
 
     public function test_registration_rejects_an_email_that_differs_only_in_case(): void
     {
-        $this->register();
+        $this->registerVerified();
 
         $this->postJson('/api/customer/register', [
             'name' => 'Someone Else',
@@ -87,9 +145,44 @@ class CustomerAuthApiTest extends TestCase
         ])->assertStatus(422)->assertJsonValidationErrors('password');
     }
 
-    public function test_sign_in_works_and_is_case_insensitive_on_the_email(): void
+    public function test_an_unverified_customer_cannot_sign_in_and_gets_a_fresh_link(): void
     {
+        Notification::fake();
+
         $this->register();
+
+        $response = $this->postJson('/api/customer/login', [
+            'email' => 'shopper@example.com',
+            'password' => 'baguio-pines-2026',
+        ])->assertStatus(422);
+
+        $this->assertSame(
+            ['Please verify your email first. We just sent you another verification link.'],
+            $response->json('errors.email'),
+        );
+        Notification::assertCount(2);
+    }
+
+    public function test_verifying_the_email_marks_the_account_verified_and_sign_in_is_case_insensitive(): void
+    {
+        Notification::fake();
+        config(['app.customer_account_url' => 'http://storefront.test/account']);
+
+        $this->register();
+        $account = CustomerAccount::findByEmail('shopper@example.com');
+        $this->assertNotNull($account);
+
+        $verificationUrl = null;
+
+        Notification::assertSentTo($account, CustomerEmailVerification::class, function (CustomerEmailVerification $notification) use ($account, &$verificationUrl) {
+            $verificationUrl = $notification->toMail($account)->actionUrl;
+
+            return $verificationUrl !== null;
+        });
+
+        $this->get($verificationUrl)->assertRedirect('http://storefront.test/account?verified=1');
+
+        $this->assertNotNull($account->fresh()->email_verified_at);
 
         $this->postJson('/api/customer/login', [
             'email' => 'SHOPPER@example.com',
@@ -99,7 +192,7 @@ class CustomerAuthApiTest extends TestCase
 
     public function test_sign_in_says_the_same_thing_for_a_wrong_password_and_an_unknown_email(): void
     {
-        $this->register();
+        $this->registerVerified();
 
         $wrongPassword = $this->postJson('/api/customer/login', [
             'email' => 'shopper@example.com',
@@ -111,8 +204,6 @@ class CustomerAuthApiTest extends TestCase
             'password' => 'not-the-password',
         ])->assertStatus(422);
 
-        // Identical replies: this endpoint must not answer "does this person
-        // shop here?" for anyone who cares to ask.
         $this->assertSame(
             $wrongPassword->json('errors.email'),
             $unknownEmail->json('errors.email'),
@@ -126,7 +217,7 @@ class CustomerAuthApiTest extends TestCase
 
     public function test_signing_out_revokes_only_this_device(): void
     {
-        $phone = $this->register()['token'];
+        $phone = $this->registerVerified()['token'];
         $laptop = $this->postJson('/api/customer/login', [
             'email' => 'shopper@example.com',
             'password' => 'baguio-pines-2026',
@@ -142,11 +233,8 @@ class CustomerAuthApiTest extends TestCase
 
     public function test_a_customer_token_cannot_reach_the_seller_api(): void
     {
-        $token = $this->register()['token'];
+        $token = $this->registerVerified()['token'];
 
-        // auth:sanctum has no configured provider, so Sanctum itself will
-        // happily accept this token; `merchant.token` is what turns it away.
-        // 403 rather than 401 — the token is real, just not for this API.
         $this->withCustomer($token)->getJson('/api/seller/online-orders')->assertForbidden();
         $this->withCustomer($token)->getJson('/api/user')->assertForbidden();
     }
@@ -155,13 +243,12 @@ class CustomerAuthApiTest extends TestCase
 
     public function test_preferences_are_merged_not_replaced(): void
     {
-        $token = $this->register()['token'];
+        $token = $this->registerVerified()['token'];
 
         $this->withCustomer($token)
             ->patchJson('/api/customer/account', ['preferences' => ['smsUpdates' => true]])
             ->assertOk()
             ->assertJsonPath('account.preferences.smsUpdates', true)
-            // Untouched by a single-key write.
             ->assertJsonPath('account.preferences.emailUpdates', true);
 
         $this->withCustomer($token)
@@ -173,7 +260,7 @@ class CustomerAuthApiTest extends TestCase
 
     public function test_changing_the_email_requires_the_current_password(): void
     {
-        $token = $this->register()['token'];
+        $token = $this->registerVerified()['token'];
 
         $this->withCustomer($token)
             ->patchJson('/api/customer/account/email', [
@@ -194,11 +281,11 @@ class CustomerAuthApiTest extends TestCase
 
     public function test_changing_the_password_signs_out_other_devices_but_not_this_one(): void
     {
-        $phone = $this->register()['token'];
+        $phone = $this->registerVerified()['token'];
         $laptop = $this->postJson('/api/customer/login', [
             'email' => 'shopper@example.com',
             'password' => 'baguio-pines-2026',
-        ])->json('token');
+        ])->assertOk()->json('token');
 
         $this->withCustomer($phone)
             ->patchJson('/api/customer/account/password', [
@@ -229,7 +316,7 @@ class CustomerAuthApiTest extends TestCase
 
     public function test_the_first_address_becomes_the_default_and_the_second_does_not(): void
     {
-        $token = $this->register()['token'];
+        $token = $this->registerVerified()['token'];
 
         $first = $this->addAddress($token);
         $this->assertTrue($first['account']['addresses'][0]['isDefault']);
@@ -241,7 +328,7 @@ class CustomerAuthApiTest extends TestCase
 
     public function test_making_an_address_default_clears_the_previous_one(): void
     {
-        $token = $this->register()['token'];
+        $token = $this->registerVerified()['token'];
         $this->addAddress($token);
         $workId = $this->addAddress($token, ['label' => 'Work', 'line1' => '2 Session Road'])['addressId'];
 
@@ -256,7 +343,7 @@ class CustomerAuthApiTest extends TestCase
 
     public function test_deleting_the_default_promotes_another_address(): void
     {
-        $token = $this->register()['token'];
+        $token = $this->registerVerified()['token'];
         $homeId = $this->addAddress($token)['addressId'];
         $this->addAddress($token, ['label' => 'Work', 'line1' => '2 Session Road']);
 
@@ -271,10 +358,10 @@ class CustomerAuthApiTest extends TestCase
 
     public function test_one_customer_cannot_touch_anothers_address(): void
     {
-        $mine = $this->register()['token'];
+        $mine = $this->registerVerified()['token'];
         $addressId = $this->addAddress($mine)['addressId'];
 
-        $theirs = $this->register([
+        $theirs = $this->registerVerified([
             'email' => 'someone-else@example.com',
             'password' => 'a-different-password',
             'password_confirmation' => 'a-different-password',
@@ -293,7 +380,7 @@ class CustomerAuthApiTest extends TestCase
 
     public function test_cash_can_only_be_saved_once_but_wallets_can_repeat(): void
     {
-        $token = $this->register()['token'];
+        $token = $this->registerVerified()['token'];
 
         $this->withCustomer($token)->postJson('/api/customer/payment-methods', ['kind' => 'cash'])->assertCreated();
         $this->withCustomer($token)->postJson('/api/customer/payment-methods', ['kind' => 'cash'])
@@ -311,7 +398,7 @@ class CustomerAuthApiTest extends TestCase
 
     public function test_an_ewallet_needs_a_number(): void
     {
-        $token = $this->register()['token'];
+        $token = $this->registerVerified()['token'];
 
         $this->withCustomer($token)
             ->postJson('/api/customer/payment-methods', ['kind' => 'ewallet'])
@@ -326,8 +413,6 @@ class CustomerAuthApiTest extends TestCase
         $product = Product::query()->where('sku', 'ESP-0001')->firstOrFail();
 
         if ($token === null) {
-            // Guest checkout has to be genuinely tokenless — see withCustomer
-            // for why a stale guard would otherwise answer for it.
             $this->app['auth']->forgetGuards();
         }
 
@@ -346,11 +431,10 @@ class CustomerAuthApiTest extends TestCase
     public function test_an_order_placed_while_signed_in_belongs_to_the_account(): void
     {
         $this->seed();
-        $token = $this->register()['token'];
+        $token = $this->registerVerified()['token'];
 
         $orderId = $this->placeOrder($token);
 
-        // The contact details came off the account — the form sent none.
         $order = Order::query()->findOrFail($orderId);
         $this->assertNotNull($order->customer_account_id);
         $this->assertSame('Christian Colewan', $order->guest_contact['name']);
@@ -366,10 +450,8 @@ class CustomerAuthApiTest extends TestCase
     public function test_a_guest_order_stays_unattached(): void
     {
         $this->seed();
-        $token = $this->register()['token'];
+        $token = $this->registerVerified()['token'];
 
-        // Same email, no token: this must NOT be claimed by the account, or
-        // anyone could harvest an order list by typing someone's address.
         $orderId = $this->placeOrder(null, ['name' => 'Christian Colewan', 'email' => 'shopper@example.com']);
 
         $this->assertNull(Order::query()->findOrFail($orderId)->customer_account_id);
@@ -379,10 +461,10 @@ class CustomerAuthApiTest extends TestCase
     public function test_a_customer_cannot_fetch_another_customers_order_through_the_account_route(): void
     {
         $this->seed();
-        $mine = $this->register()['token'];
+        $mine = $this->registerVerified()['token'];
         $orderId = $this->placeOrder($mine);
 
-        $theirs = $this->register([
+        $theirs = $this->registerVerified([
             'email' => 'someone-else@example.com',
             'password' => 'a-different-password',
             'password_confirmation' => 'a-different-password',
@@ -402,13 +484,13 @@ class CustomerAuthApiTest extends TestCase
         $unknown = $this->postJson('/api/customer/forgot-password', ['email' => 'nobody@example.com'])->assertOk();
 
         $this->assertSame($known->json('message'), $unknown->json('message'));
-        Notification::assertCount(1);
+        Notification::assertSentTo(CustomerAccount::findByEmail('shopper@example.com'), CustomerPasswordReset::class);
     }
 
     public function test_a_reset_link_sets_a_new_password_and_revokes_every_session(): void
     {
         Notification::fake();
-        $oldToken = $this->register()['token'];
+        $oldToken = $this->registerVerified()['token'];
 
         $this->postJson('/api/customer/forgot-password', ['email' => 'shopper@example.com'])->assertOk();
 
@@ -417,8 +499,6 @@ class CustomerAuthApiTest extends TestCase
 
         Notification::assertSentTo($account, CustomerPasswordReset::class, function ($notification) use ($account, &$resetToken) {
             $url = $notification->toMail($account)->actionUrl;
-            // The link has to land on the portal, not on a Blade route that
-            // this application does not have.
             $this->assertStringContainsString('/account?', $url);
             parse_str(parse_url($url, PHP_URL_QUERY) ?: '', $query);
             $resetToken = $query['token'] ?? null;
@@ -433,14 +513,38 @@ class CustomerAuthApiTest extends TestCase
             'password_confirmation' => 'a-freshly-chosen-password',
         ])->assertOk()->assertJsonPath('account.email', 'shopper@example.com');
 
-        // Whoever had the old session no longer does — that is the point of
-        // resetting a password you think somebody else knows.
         $this->withCustomer($oldToken)->getJson('/api/customer/me')->assertUnauthorized();
 
         $this->postJson('/api/customer/login', [
             'email' => 'shopper@example.com',
             'password' => 'a-freshly-chosen-password',
         ])->assertOk();
+    }
+
+    public function test_resetting_the_password_marks_an_unverified_account_verified(): void
+    {
+        Notification::fake();
+        $this->register();
+        $this->postJson('/api/customer/forgot-password', ['email' => 'shopper@example.com'])->assertOk();
+
+        $account = CustomerAccount::findByEmail('shopper@example.com');
+        $resetToken = null;
+
+        Notification::assertSentTo($account, CustomerPasswordReset::class, function ($notification) use ($account, &$resetToken) {
+            parse_str(parse_url($notification->toMail($account)->actionUrl, PHP_URL_QUERY) ?: '', $query);
+            $resetToken = $query['token'] ?? null;
+
+            return $resetToken !== null;
+        });
+
+        $this->postJson('/api/customer/reset-password', [
+            'token' => $resetToken,
+            'email' => 'shopper@example.com',
+            'password' => 'a-freshly-chosen-password',
+            'password_confirmation' => 'a-freshly-chosen-password',
+        ])->assertOk();
+
+        $this->assertNotNull($account->fresh()->email_verified_at);
     }
 
     public function test_a_used_reset_token_stops_working(): void

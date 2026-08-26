@@ -138,14 +138,20 @@ async function submit() {
 
   try {
     switch (mode.value) {
-      case 'register':
-        await account.register({
+      case 'register': {
+        const result = await account.register({
           name: name.trim(),
           email: email.trim(),
           phone: phone.trim() || undefined,
           password,
         })
+        notice.value = result.message
+        mode.value = 'signin'
+        form.value.name = ''
+        form.value.phone = ''
+        form.value.password = ''
         break
+      }
 
       case 'forgot': {
         const result = await account.sendPasswordReset(email.trim())

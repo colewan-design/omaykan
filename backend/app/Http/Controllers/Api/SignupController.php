@@ -146,6 +146,7 @@ class SignupController extends Controller
             // queue is the database, a worker could pick the job up before the
             // rows it describes are visible. Matches the OrderPlaced broadcast.
             DB::afterCommit(fn () => $this->announce($owner, $organization, $store));
+            DB::afterCommit(fn () => $this->sendVerificationLink($owner));
 
             return compact('organization', 'store');
         });
@@ -156,6 +157,8 @@ class SignupController extends Controller
             // The code the owner hands to customers. Returned once here
             // and also readable later from Settings > Online Store.
             'pairingCode' => $result['store']->public_store_code,
+            'verificationRequired' => true,
+            'message' => 'Check your email for a verification link before signing in.',
         ], 201);
     }
 
@@ -179,6 +182,15 @@ class SignupController extends Controller
             if (is_string($alertsTo) && trim($alertsTo) !== '') {
                 Mail::to($alertsTo)->queue(new SellerSignupAlertMail($owner, $organization, $store));
             }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    private function sendVerificationLink(User $owner): void
+    {
+        try {
+            $owner->sendEmailVerificationNotification();
         } catch (\Throwable $e) {
             report($e);
         }

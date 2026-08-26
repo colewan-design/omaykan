@@ -49,6 +49,22 @@ export interface DataStore {
   write<T>(key: string, value: T): Promise<void>
 }
 
+/**
+ * What registering produced.
+ *
+ * `session` is null when the account was made but cannot be signed into yet:
+ * the API requires the email address to be verified first, and deliberately
+ * mints no token at registration. A local-only register has nobody to verify
+ * with and signs straight in, so it fills the session and leaves
+ * `verificationRequired` false.
+ */
+export interface RegisterUserResult {
+  user: UserAccount
+  session: AuthSession | null
+  verificationRequired: boolean
+  message?: string
+}
+
 export interface PosRepository {
   loadCatalog(): Promise<CatalogSnapshot>
   loadOrders(): Promise<OrderSummary[]>
@@ -121,8 +137,9 @@ export interface PosRepository {
   registerUser(input: {
     fullName: string
     username: string
+    email: string
     password: string
-  }): Promise<{ user: UserAccount; session: AuthSession } | null>
+  }): Promise<RegisterUserResult | null>
   createStaffAccount(input: {
     fullName: string
     username: string
@@ -2421,7 +2438,10 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
               ])
               await store.write(storageKeys.session, result.session)
               await writeFirebaseSession(result.syncSession)
-              return { user: result.user, session: result.session }
+              // Firebase Auth is keyed on a synthetic address and sends no
+              // verification mail - see firebase-sync.ts. This path is being
+              // retired; the real address is recorded but nothing checks it.
+              return { user: result.user, session: result.session, verificationRequired: false }
             }
           } else {
             const response = await fetch(`${syncConfig?.apiBaseUrl}/api/staff-sessions`, {
@@ -2508,7 +2528,10 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
               ])
               await store.write(storageKeys.session, result.session)
               await writeFirebaseSession(result.syncSession)
-              return { user: result.user, session: result.session }
+              // Firebase Auth is keyed on a synthetic address and sends no
+              // verification mail - see firebase-sync.ts. This path is being
+              // retired; the real address is recorded but nothing checks it.
+              return { user: result.user, session: result.session, verificationRequired: false }
             }
           } else {
             const response = await fetch(`${syncConfig?.apiBaseUrl}/api/staff-register`, {
@@ -2522,6 +2545,7 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
                 storeCode: syncConfig?.storeCode,
                 fullName: input.fullName,
                 username: input.username,
+                email: input.email,
                 password: input.password,
               }),
             })
@@ -2529,15 +2553,38 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
             if (response.ok) {
               const body = await response.json() as {
                 user: UserAccount
-                session: AuthSession
+                session?: AuthSession
+                verificationRequired?: boolean
+                message?: string
               }
               const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
               await store.write(storageKeys.users, [
                 body.user,
                 ...existingUsers.filter((entry) => entry.id !== body.user.id),
               ])
-              await store.write(storageKeys.session, body.session)
-              return body
+
+              // No session means the address has to be verified before this
+              // account can sign in. Nothing is written to storageKeys.session:
+              // a stored session with no token would look signed-in to the app
+              // and be refused by every request it made.
+              if (body.session) {
+                await store.write(storageKeys.session, body.session)
+              }
+
+              return {
+                user: body.user,
+                session: body.session ?? null,
+                verificationRequired: body.verificationRequired === true || !body.session,
+                message: body.message,
+              }
+            }
+
+            // The server answered, and said no - a taken username or email, a
+            // rejected address. Falling through to the local branch would
+            // quietly make an account the server had just refused, on a till
+            // that is plainly online. Better to fail where the reason is known.
+            if (response.status >= 400 && response.status < 500) {
+              return null
             }
           }
         } catch {
@@ -2578,7 +2625,9 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       }
       await store.write(storageKeys.session, session)
 
-      return { user, session }
+      // Local-only: there is no server to mail anything, so there is nothing to
+      // verify against and the account is usable immediately.
+      return { user, session, verificationRequired: false }
     },
 
     async createStaffAccount(input) {

@@ -545,8 +545,15 @@ export function createDemoPosRepository(): PosRepository {
     async registerUser(input) {
       const fullName = input.fullName.trim()
       const username = input.username.trim().toLowerCase()
+      const email = input.email.trim().toLowerCase()
       const password = input.password.trim()
-      if (!fullName || !username || !password || users.some((user) => user.username === username)) {
+      if (
+        !fullName ||
+        !username ||
+        !email ||
+        !password ||
+        users.some((user) => user.username === username)
+      ) {
         return null
       }
 
@@ -566,7 +573,7 @@ export function createDemoPosRepository(): PosRepository {
         authSource: 'local',
       }
 
-      return { user, session }
+      return { user, session, verificationRequired: false }
     },
 
     async createStaffAccount(input) {

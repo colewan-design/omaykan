@@ -194,36 +194,62 @@ export const useAuthStore = defineStore('auth', () => {
     return true
   }
 
+  /**
+   * Returns what happened rather than a bare boolean: an account can now be
+   * created successfully and still not be signed in, because the server wants
+   * the email address verified first. The caller has to tell those apart -
+   * routing into the app on a null session lands on a screen every request
+   * fails from.
+   */
   async function register(input: {
     fullName: string
     username: string
+    email: string
     password: string
-  }) {
+  }): Promise<{ ok: false } | { ok: true; verificationRequired: boolean; message?: string }> {
     clearAuthError()
 
     const fullName = input.fullName.trim()
     const username = input.username.trim().toLowerCase()
+    const email = input.email.trim().toLowerCase()
     const password = input.password.trim()
 
-    if (!fullName || !username || !password) {
+    if (!fullName || !username || !email || !password) {
       authError.value = 'Complete all registration fields.'
-      return false
+      return { ok: false }
+    }
+
+    // Only the obvious mistake, to spare a round trip. The server validates the
+    // address properly and its message wins when the two disagree.
+    if (!email.includes('@')) {
+      authError.value = "That doesn't look like an email address."
+      return { ok: false }
     }
 
     if (users.value.some((user) => user.username === username)) {
       authError.value = 'That username is already in use.'
-      return false
+      return { ok: false }
     }
 
-    const result = await repository.registerUser({ fullName, username, password })
+    const result = await repository.registerUser({ fullName, username, email, password })
     if (!result) {
-      authError.value = 'Unable to create that account.'
-      return false
+      authError.value = 'Unable to create that account. That username or email may already be taken.'
+      return { ok: false }
     }
 
     users.value = await repository.loadUsers()
-    session.value = result.session
-    return true
+
+    // Left alone when there is no session: signing in is the next step, and it
+    // is gated on the verification link.
+    if (result.session) {
+      session.value = result.session
+    }
+
+    return {
+      ok: true,
+      verificationRequired: result.verificationRequired,
+      message: result.message,
+    }
   }
 
   async function loginAsGuest() {

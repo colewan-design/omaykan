@@ -18,8 +18,16 @@ const loginForm = ref({
 const registerForm = ref({
   fullName: '',
   username: '',
+  email: '',
   password: '',
 })
+
+/**
+ * Set once an account has been created that cannot be signed into yet: the
+ * server sent a verification link and wants it clicked first. Kept separate
+ * from authError because it is not a failure - the account was made.
+ */
+const verificationNotice = ref('')
 const loginPasswordVisible = ref(false)
 const registerPasswordVisible = ref(false)
 const showGuestAccess = computed(() => auth.canUseGuestAccess)
@@ -57,8 +65,22 @@ async function submitLogin() {
 }
 
 async function submitRegistration() {
-  const success = await auth.register(registerForm.value)
-  if (!success) {
+  verificationNotice.value = ''
+
+  const result = await auth.register(registerForm.value)
+  if (!result.ok) {
+    return
+  }
+
+  // Verification pending: the account exists but has no session behind it, so
+  // there is nowhere to route to. Hand the person back to the sign-in tab with
+  // the reason, rather than into an app that would fail on its first request.
+  if (result.verificationRequired) {
+    verificationNotice.value =
+      result.message ?? 'Check your email for a verification link before signing in.'
+    loginForm.value.username = registerForm.value.username.trim().toLowerCase()
+    registerForm.value.password = ''
+    mode.value = 'login'
     return
   }
 
@@ -127,7 +149,7 @@ onMounted(async () => {
           class="segment-button"
           :class="{ active: mode === 'register' }"
           type="button"
-          @click="mode = 'register'; auth.clearAuthError()"
+          @click="mode = 'register'; auth.clearAuthError(); verificationNotice = ''"
         >
           <span>Register</span>
         </button>
@@ -177,6 +199,20 @@ onMounted(async () => {
             <input v-model="registerForm.username" class="sheet-input" type="text" autocomplete="username">
           </label>
           <label class="settings-field">
+            <span class="settings-row__label">Email</span>
+            <input
+              v-model="registerForm.email"
+              class="sheet-input"
+              type="email"
+              inputmode="email"
+              autocomplete="email"
+            >
+            <span class="auth-field-hint">
+              We send a verification link here. It is also the only way to reach you if you are
+              ever locked out — the username is what you sign in with.
+            </span>
+          </label>
+          <label class="settings-field">
             <span class="settings-row__label">Password</span>
             <div class="auth-password-field">
               <input
@@ -201,6 +237,7 @@ onMounted(async () => {
         </form>
       </Transition>
 
+      <p v-if="verificationNotice" class="auth-notice" role="status">{{ verificationNotice }}</p>
       <p v-if="auth.authError" class="auth-error">{{ auth.authError }}</p>
 
       <div v-if="showGuestAccess" class="auth-guest">

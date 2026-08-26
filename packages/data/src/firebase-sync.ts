@@ -625,8 +625,14 @@ export function createFirebaseSync(config: FirebaseSyncConfig) {
     async registerUser(input: {
       fullName: string
       username: string
+      email: string
       password: string
     }): Promise<{ user: UserAccount; session: AuthSession; syncSession: FirebaseSyncSession } | null> {
+      // Firebase Auth is keyed on the synthetic address, not the real one, and
+      // changing that would re-key every existing account. The address the
+      // person actually typed is recorded on the user document below so it
+      // survives the move to the Laravel backend, which verifies it properly.
+      // Nothing here sends a verification mail: this path is being retired.
       const email = syntheticEmail(input.username, config.organizationSlug)
 
       let cred
@@ -662,6 +668,7 @@ export function createFirebaseSync(config: FirebaseSyncConfig) {
             organizationId,
             fullName,
             username,
+            contactEmail: input.email.trim().toLowerCase(),
             status: 'active',
             roleKey: resolvedRoleKey,
             createdAt: serverTimestamp(),

@@ -51,6 +51,19 @@ class StaffSessionController extends Controller
         ]);
     }
 
+    /**
+     * Creates a staff account for a store.
+     *
+     * Email is required, and no session comes back: the account exists but
+     * cannot be signed into until the address is verified. That is the whole
+     * point of asking for one — an unverified address is a string somebody
+     * typed, and it is the only way to reach an account holder who can no
+     * longer sign in. `store()` already refuses an unverified user and resends
+     * the link, so it is that check this feeds.
+     *
+     * The username stays the sign-in credential; the email is for proving
+     * identity and for recovery, not for logging in.
+     */
     public function register(Request $request)
     {
         $validated = $request->validate([
@@ -58,14 +71,24 @@ class StaffSessionController extends Controller
             'storeCode' => ['required', 'string'],
             'fullName' => ['required', 'string', 'max:120'],
             'username' => ['required', 'string', 'max:60'],
+            'email' => ['required', 'email', 'max:190'],
             'password' => ['required', 'string', 'min:4'],
         ]);
 
         $store = $this->resolveStore($validated['organizationSlug'], $validated['storeCode']);
         $username = strtolower(trim($validated['username']));
+        $email = strtolower(trim($validated['email']));
 
         if (User::query()->where('username', $username)->exists()) {
             abort(422, 'That username is already in use.');
+        }
+
+        // Checked by hand rather than with `unique:` so the comparison happens
+        // against the same lowercased value the column stores - `unique` would
+        // let "Ana@x.com" through when "ana@x.com" is already taken. Matches
+        // SignupController and CustomerAuthController.
+        if (User::query()->where('email', $email)->exists()) {
+            abort(422, 'That email address already has an Omaykan account.');
         }
 
         $hasExistingMembers = OrganizationMembership::query()
@@ -77,6 +100,7 @@ class StaffSessionController extends Controller
         $user = User::query()->create([
             'name' => trim($validated['fullName']),
             'username' => $username,
+            'email' => $email,
             'password' => $validated['password'],
             'status' => 'active',
         ]);
@@ -93,17 +117,16 @@ class StaffSessionController extends Controller
             'membership_role' => $roleId,
         ]);
 
-        $token = $user->createToken("staff-session:{$store->id}", ['staff'])->plainTextToken;
+        $this->sendVerificationLink($user);
 
+        // Deliberately no token. Signing the account straight in would make
+        // verification decorative for the whole of that first session, which
+        // is exactly the session in which a mistyped address does its damage.
         return response()->json([
             'user' => $this->serializeUser($user, $roleId),
-            'session' => [
-                'userId' => $user->id,
-                'signedInAt' => now()->toIso8601String(),
-                'authToken' => $token,
-                'authSource' => 'remote',
-            ],
-        ]);
+            'verificationRequired' => true,
+            'message' => 'Check your email for a verification link before signing in.',
+        ], 201);
     }
 
     private function resolveStore(string $organizationSlug, string $storeCode): Store

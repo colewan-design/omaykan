@@ -229,11 +229,11 @@ const steps = [
             <p>Every sale moves the same number, whichever counter it came from — with low-stock alerts before you run out.</p>
           </article>
 
-          <article v-reveal="60" class="pm-point pm-point--dark reveal--scale">
+          <article v-reveal="60" class="pm-point reveal--scale">
             <span class="pm-point__icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 4v5c0 4.5-3 8-7 9-4-1-7-4.5-7-9V7l7-4z"/><path d="M9 12l2 2 4-4"/></svg>
             </span>
-            <h3><span class="accent">Always on</span>, even offline</h3>
+            <h3>Always on, even offline</h3>
             <p>Omaykan keeps ringing up sales when the internet drops, then syncs everything the moment you're back.</p>
           </article>
 
@@ -502,10 +502,6 @@ const steps = [
   padding: 28px 26px 30px; border-radius: 22px;
   border: 1px solid rgba(0,0,0,0.08); background: var(--bg-surface);
 }
-.pm-point--dark { border-color: transparent; background: var(--marketing-dark); }
-.pm-point--dark h3 { color: #fff; }
-.pm-point--dark h3 .accent { color: var(--accent); }
-.pm-point--dark p { color: rgba(255,255,255,0.62); }
 .pm-point h3 {
   margin: 0 0 10px;
   font-size: 1.05rem; font-weight: 800; letter-spacing: -0.02em; color: var(--text-primary);

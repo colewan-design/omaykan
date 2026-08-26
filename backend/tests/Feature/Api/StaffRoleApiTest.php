@@ -147,13 +147,17 @@ class StaffRoleApiTest extends TestCase
                 ],
             ])->assertOk();
 
+        // Registering takes an email and answers 201 without a session now -
+        // the account has to verify before it can sign in. This test only needs
+        // the account to exist so its role can be changed, which is unaffected.
         $this->postJson('/api/staff-register', [
             'organizationSlug' => 'demo-coffee',
             'storeCode' => 'main',
             'fullName' => 'Barista User',
             'username' => 'barista1',
+            'email' => 'barista1@example.com',
             'password' => 'secret',
-        ])->assertOk();
+        ])->assertCreated();
 
         $user = User::query()->where('username', 'barista1')->firstOrFail();
         $organization = Organization::query()->where('slug', 'demo-coffee')->firstOrFail();

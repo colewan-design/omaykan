@@ -2352,6 +2352,29 @@ button {
   font: var(--type-caption);
 }
 
+/* Not an error: the account was created, it just cannot be signed into until
+   the emailed link is clicked. Given its own colour so it does not read as a
+   failure the way .auth-error does. */
+.auth-notice {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-md, 10px);
+  background: color-mix(in srgb, var(--auth-green-deep) 8%, transparent);
+  color: var(--auth-green-deep);
+  font: var(--type-caption);
+  line-height: 1.5;
+}
+
+/* Sits under an input rather than beside a label, so it reuses the muted tone
+   of .auth-helper but stays tight to the field above it. */
+.auth-field-hint {
+  display: block;
+  margin-top: 6px;
+  color: var(--auth-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .auth-guest {
   display: grid;
   gap: var(--space-4);

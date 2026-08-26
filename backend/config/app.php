@@ -59,16 +59,18 @@ return [
     | Storefront URL
     |--------------------------------------------------------------------------
     |
-    | The root the customer-facing storefront is served from. Order mail links
-    | to its tracking page, which lives at /order/{id} underneath this — see
-    | apps/mobile/src/storefront/router.ts, which mounts the SPA at /store/.
+    | The root the customer-facing storefront is served from — apps/web's
+    | landing entry, which is the shop. Order mail links to its tracking page,
+    | which is this root with ?order={id} rather than a path of its own: the
+    | storefront is one page that reads the view out of the query string (see
+    | apps/web/src/landing/LandingPage.vue).
     |
     | Kept separate from 'url' because the storefront is its own build and can
     | be deployed apart from the API; it just defaults to sitting beside it.
     |
     */
 
-    'storefront_url' => env('STOREFRONT_URL', rtrim((string) env('APP_URL', 'http://localhost'), '/').'/store'),
+    'storefront_url' => env('STOREFRONT_URL', rtrim((string) env('APP_URL', 'http://localhost'), '/')),
 
     /*
     |--------------------------------------------------------------------------

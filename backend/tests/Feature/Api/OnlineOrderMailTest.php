@@ -84,7 +84,7 @@ class OnlineOrderMailTest extends TestCase
         $this->seed();
         Event::fake([OrderPlaced::class]);
         Mail::fake();
-        config(['app.storefront_url' => 'https://omaykan.test/store']);
+        config(['app.storefront_url' => 'https://omaykan.test']);
 
         $created = $this->asShopper()->postJson('/api/online-orders', $this->payload([
             'guest' => ['email' => 'maria@example.test'],
@@ -99,8 +99,10 @@ class OnlineOrderMailTest extends TestCase
         });
 
         $this->assertStringContainsString($created['ticketNumber'], (string) $body);
+        // The storefront root with ?order=, not a /order/ path: the shop is a
+        // single page that reads the tracking view out of the query string.
         $this->assertStringContainsString(
-            'https://omaykan.test/store/order/'.$created['orderId'],
+            'https://omaykan.test/?order='.$created['orderId'],
             (string) $body,
         );
         // Espresso is ₱120.00 at 12% tax; two of them, no delivery fee.

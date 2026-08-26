@@ -52,6 +52,21 @@ const products = computed(() => catalog.products.filter((p) => !p.outOfStock))
 // nav), a product card is a real link anyone can copy or open in a new tab, and
 // keeping all three there afterwards is what makes Back walk the browsing back
 // out rather than leaving the site.
+// Confirmation mail used to link to /order/<id>, a path this page has never
+// served — nginx's SPA fallback answers it with this document, so those links
+// land on the shop with no order in the query and look broken. Rewrite them to
+// the real shape before anything reads the URL; mail sent since carries
+// /?order=<id> directly, but the ones already in inboxes have to keep working.
+function normalizeLegacyOrderPath(): void {
+  try {
+    const legacy = /^\/order\/([^/?#]+)\/?$/.exec(window.location.pathname)
+    if (!legacy) return
+    window.history.replaceState({}, '', `/?order=${encodeURIComponent(decodeURIComponent(legacy[1]))}`)
+  } catch {
+    // A malformed escape in the path is not worth failing the page over.
+  }
+}
+
 function readUrl(): { q: string; category: string; product: string; checkout: boolean; order: string } {
   try {
     const params = new URLSearchParams(window.location.search)
@@ -66,6 +81,8 @@ function readUrl(): { q: string; category: string; product: string; checkout: bo
     return { q: '', category: '', product: '', checkout: false, order: '' }
   }
 }
+
+normalizeLegacyOrderPath()
 
 const initialUrl = readUrl()
 const activeSearch = ref(initialUrl.q)

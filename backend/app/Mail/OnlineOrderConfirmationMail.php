@@ -61,12 +61,16 @@ class OnlineOrderConfirmationMail extends OmaykanMailable
     }
 
     /**
-     * Where the storefront renders this order's status. Mirrors the SPA route
-     * in apps/mobile/src/storefront/router.ts.
+     * Where the storefront renders this order's status: its own root with
+     * ?order=<id>, which is how apps/web/src/landing/LandingPage.vue reads the
+     * tracking view out of the URL. Not a path segment — the storefront is a
+     * single page, so /order/<id> is a 404 on every host it ships from.
      */
     private function trackUrl(): string
     {
-        return rtrim((string) config('app.storefront_url'), '/').'/order/'.$this->order->id;
+        $base = rtrim((string) config('app.storefront_url'), '/');
+
+        return $base.'/?order='.urlencode((string) $this->order->id);
     }
 
     /** Matches formatCurrency() in packages/shared, which every screen uses. */

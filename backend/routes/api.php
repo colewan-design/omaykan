@@ -218,5 +218,7 @@ Route::middleware(['auth:sanctum', 'merchant.token'])->group(function () {
     Route::get('/staff-roles', [StaffRoleController::class, 'index']);
     Route::put('/staff-roles', [StaffRoleController::class, 'sync']);
     Route::get('/staff-users', [StaffUserController::class, 'index']);
+    // An admin adding staff from the till. Replaces api/staff-create.ts.
+    Route::post('/staff-users', [StaffUserController::class, 'store']);
     Route::patch('/staff-users/{user}/role', [StaffUserController::class, 'updateRole']);
 });

@@ -182,4 +182,90 @@ class StaffRoleApiTest extends TestCase
             'membership_role' => 'barista',
         ]);
     }
+    // -- Admin-created staff accounts ---------------------------------------
+    //
+    // The till-side counterpart to self-service registration: someone already
+    // trusted with the store making an account for a person in front of them.
+    // Replaces api/staff-create.ts on the Firestore path.
+
+    public function test_a_paired_device_can_create_a_staff_account(): void
+    {
+        $this->seed();
+        $token = $this->pairDevice();
+
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/staff-users', [
+                'fullName' => 'Nina Cruz',
+                'username' => 'nina',
+                'password' => 'secret',
+                'roleId' => 'cashier',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('user.username', 'nina')
+            ->assertJsonPath('user.roleId', 'cashier')
+            // Never echoed back, whatever the caller sent.
+            ->assertJsonPath('user.passwordHash', '');
+
+        $user = User::query()->where('username', 'nina')->firstOrFail();
+        $organization = Organization::query()->where('slug', 'demo-coffee')->firstOrFail();
+        $store = Store::query()->where('organization_id', $organization->id)->where('code', 'main')->firstOrFail();
+
+        $this->assertDatabaseHas('organization_memberships', [
+            'organization_id' => $organization->id,
+            'user_id' => $user->id,
+            'membership_role' => 'cashier',
+        ]);
+
+        $this->assertDatabaseHas('store_memberships', [
+            'store_id' => $store->id,
+            'user_id' => $user->id,
+            'membership_role' => 'cashier',
+        ]);
+    }
+
+    public function test_creating_a_staff_account_rejects_a_role_the_organization_does_not_have(): void
+    {
+        $this->seed();
+        $token = $this->pairDevice();
+
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/staff-users', [
+                'fullName' => 'Nina Cruz',
+                'username' => 'nina',
+                'password' => 'secret',
+                'roleId' => 'sorcerer',
+            ])
+            ->assertStatus(422);
+
+        $this->assertDatabaseMissing('users', ['username' => 'nina']);
+    }
+
+    public function test_creating_a_staff_account_rejects_a_taken_username(): void
+    {
+        $this->seed();
+        $token = $this->pairDevice();
+
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/staff-users', [
+                'fullName' => 'Another Admin',
+                'username' => 'admin',
+                'password' => 'secret',
+                'roleId' => 'cashier',
+            ])
+            ->assertStatus(422);
+    }
+
+    public function test_creating_a_staff_account_needs_a_paired_device(): void
+    {
+        $this->seed();
+
+        $this->postJson('/api/staff-users', [
+            'fullName' => 'Nina Cruz',
+            'username' => 'nina',
+            'password' => 'secret',
+            'roleId' => 'cashier',
+        ])->assertUnauthorized();
+
+        $this->assertDatabaseMissing('users', ['username' => 'nina']);
+    }
 }

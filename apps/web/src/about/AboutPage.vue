@@ -2,6 +2,7 @@
 import FdHeader from '@pos/web/landing/FdHeader.vue'
 import FdFooter from '@pos/web/landing/FdFooter.vue'
 import { vReveal } from '@pos/web/landing/reveal'
+import { SUPPORT_EMAIL, supportMailto } from '@pos/shared/index'
 
 // The lead promo used to open the landing page, above the shelves. It reads as
 // a statement of what Omaykan is rather than a shopping surface, so it lives
@@ -36,6 +37,14 @@ function search(term: string) {
             <span class="fd-promo__fee">Flat ₱49 · first 2&nbsp;km</span>
           </div>
         </div>
+
+        <!-- The story page is where someone lands when they want to know who
+             they'd be dealing with, so it is where the address to reach us
+             belongs, spelled out rather than hidden behind a link. -->
+        <p v-reveal="60" class="fd-promo__contact">
+          Questions, a problem with an order, or a shop you'd like to see on here?
+          Write to <a :href="supportMailto('Omaykan hello')">{{ SUPPORT_EMAIL }}</a> and a person will answer.
+        </p>
       </section>
     </main>
 
@@ -65,6 +74,21 @@ function search(term: string) {
   line-height: 1.6;
   color: #6b7280;
 }
+.fd-promo__contact {
+  margin: 32px 0 0;
+  max-width: 640px;
+  font-size: 15px;
+  line-height: 1.65;
+  color: #6b7280;
+}
+.fd-promo__contact a {
+  color: #1a6b3c;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.fd-promo__contact a:hover { color: #16a34a; }
+
 .fd-promo__link {
   display: inline-block;
   margin-bottom: 24px;

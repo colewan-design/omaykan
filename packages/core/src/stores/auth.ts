@@ -31,19 +31,38 @@ function withAllPermissionKeys(role: RoleDefinition): RoleDefinition {
   }
 }
 
+function applyBuiltInRoleUpgrades(role: RoleDefinition): RoleDefinition {
+  if (role.id !== 'cashier') {
+    return role
+  }
+
+  // Seller-style cashier accounts need the settings page for local
+  // preferences like appearance and business profile.
+  return {
+    ...role,
+    permissions: {
+      ...role.permissions,
+      settings: true,
+    },
+  }
+}
+
 function mergeRoles(savedRoles: RoleDefinition[]) {
   const roleMap = new Map(
-    savedRoles.map((role) => [role.id, withAllPermissionKeys(clonePermissions(role))]),
+    savedRoles.map((role) => {
+      const normalizedRole = withAllPermissionKeys(clonePermissions(role))
+      return [role.id, applyBuiltInRoleUpgrades(normalizedRole)]
+    }),
   )
 
   for (const role of defaultRoles) {
     if (lockedRoleIds.has(role.id)) {
-      roleMap.set(role.id, clonePermissions(role))
+      roleMap.set(role.id, applyBuiltInRoleUpgrades(clonePermissions(role)))
       continue
     }
 
     if (!roleMap.has(role.id)) {
-      roleMap.set(role.id, clonePermissions(role))
+      roleMap.set(role.id, applyBuiltInRoleUpgrades(clonePermissions(role)))
     }
   }
 

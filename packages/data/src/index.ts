@@ -1,4 +1,5 @@
 import {
+  calculateTax,
   defaultRoles,
   defaultSettings,
   demoCategories,
@@ -9,6 +10,7 @@ import {
   type AppEventType,
   type AppSettings,
   type AuthSession,
+  type BusinessMode,
   type CashMovementSummary,
   type CashMovementType,
   type CatalogSnapshot,
@@ -20,8 +22,10 @@ import {
   type CreateSupplierInput,
   type CreateTableInput,
   type Customer,
+  type DeliveryStage,
   type OrderStatus,
   type OrderSummary,
+  type OrderType,
   type PaymentMethod,
   type Product,
   type ReorderMark,
@@ -59,6 +63,16 @@ export interface PosRepository {
     orderId: string,
     input: { paymentMethod: PaymentMethod; tenderedCents: number; changeCents: number; userId?: string | null },
   ): Promise<OrderSummary>
+  /**
+   * Online orders only, and API-backed only — they live server-side, not in
+   * the offline outbox, so unlike a register sale these need the network.
+   */
+  updateOnlineOrderStatus(orderId: string, status: OrderStatus): Promise<OrderSummary>
+  assignOrderRider(
+    orderId: string,
+    input: { riderName: string; riderPhone?: string | null },
+  ): Promise<OrderSummary>
+  updateOrderDeliveryStage(orderId: string, stage: DeliveryStage): Promise<OrderSummary>
   saveCustomer(input: CreateCustomerInput): Promise<Customer>
   updateCustomer(customer: Customer): Promise<Customer>
   deleteCustomer(id: string): Promise<void>
@@ -672,6 +686,349 @@ function mergeDemoCatalog(storedProducts: Product[], storedCategories: Category[
   }
 }
 
+interface DemoSeedOrderPlan {
+  id: string
+  dayOffset: number
+  hour: number
+  minute: number
+  businessMode: BusinessMode
+  customerName: string
+  paymentMethod: PaymentMethod
+  orderType: OrderType
+  lineItems: Array<{ productId: string; quantity: number }>
+  status?: OrderStatus
+  tableNumber?: string | null
+  voidAfterMinutes?: number
+  voidReason?: string | null
+}
+
+const demoProductMap = new Map(demoProducts.map((product) => [product.id, product]))
+
+function demoTimestamp(daysAgo: number, hour: number, minute: number, extraMinutes = 0) {
+  const date = new Date()
+  date.setDate(date.getDate() - daysAgo)
+  date.setHours(hour, minute, 0, 0)
+  if (extraMinutes !== 0) {
+    date.setMinutes(date.getMinutes() + extraMinutes)
+  }
+  return date.toISOString()
+}
+
+function cashTenderedAmount(totalCents: number) {
+  return Math.ceil(totalCents / 5000) * 5000
+}
+
+function demoLineItem(productId: string, quantity: number) {
+  const product = demoProductMap.get(productId)
+  if (!product) {
+    throw new Error(`Demo product ${productId} not found.`)
+  }
+
+  return {
+    productId: product.id,
+    name: product.name,
+    quantity,
+    unitPriceCents: product.priceCents,
+    lineTotalCents: Math.round(product.priceCents * quantity),
+  }
+}
+
+function createDemoOrders(createdByUserId: string | null): OrderSummary[] {
+  const plans: DemoSeedOrderPlan[] = [
+    {
+      id: 'demo0001',
+      dayOffset: 0,
+      hour: 9,
+      minute: 15,
+      businessMode: 'coffee-shop',
+      customerName: 'Mia Santos',
+      paymentMethod: 'cash',
+      orderType: 'takeaway',
+      lineItems: [
+        { productId: 'latte', quantity: 1 },
+        { productId: 'glazed-donut', quantity: 2 },
+      ],
+      status: 'preparing',
+    },
+    {
+      id: 'demo0002',
+      dayOffset: 0,
+      hour: 10,
+      minute: 40,
+      businessMode: 'coffee-shop',
+      customerName: guestCustomerName,
+      paymentMethod: 'card',
+      orderType: 'takeaway',
+      lineItems: [
+        { productId: 'iced-mocha', quantity: 1 },
+        { productId: 'sandwich', quantity: 1 },
+        { productId: 'lemonade', quantity: 1 },
+      ],
+      status: 'ready',
+    },
+    {
+      id: 'demo0003',
+      dayOffset: 0,
+      hour: 13,
+      minute: 5,
+      businessMode: 'grocery',
+      customerName: 'Paolo Reyes',
+      paymentMethod: 'ewallet',
+      orderType: 'takeaway',
+      lineItems: [
+        { productId: 'milk', quantity: 2 },
+        { productId: 'bread-loaf', quantity: 1 },
+        { productId: 'canned-sardines', quantity: 4 },
+      ],
+      status: 'preparing',
+    },
+    {
+      id: 'demo0004',
+      dayOffset: 1,
+      hour: 11,
+      minute: 20,
+      businessMode: 'restaurant',
+      customerName: 'Cruz Family',
+      paymentMethod: 'card',
+      orderType: 'dine_in',
+      tableNumber: '4',
+      lineItems: [
+        { productId: 'chicken-adobo', quantity: 1 },
+        { productId: 'steamed-rice', quantity: 2 },
+        { productId: 'iced-tea', quantity: 2 },
+      ],
+      status: 'served',
+    },
+    {
+      id: 'demo0005',
+      dayOffset: 1,
+      hour: 15,
+      minute: 10,
+      businessMode: 'coffee-shop',
+      customerName: guestCustomerName,
+      paymentMethod: 'cash',
+      orderType: 'takeaway',
+      lineItems: [
+        { productId: 'cappuccino', quantity: 1 },
+        { productId: 'croissant', quantity: 2 },
+      ],
+      status: 'served',
+    },
+    {
+      id: 'demo0006',
+      dayOffset: 1,
+      hour: 17,
+      minute: 45,
+      businessMode: 'nail-salon',
+      customerName: 'Ava Lim',
+      paymentMethod: 'ewallet',
+      orderType: 'takeaway',
+      lineItems: [
+        { productId: 'gel-manicure', quantity: 1 },
+        { productId: 'french-tip', quantity: 1 },
+      ],
+      status: 'served',
+    },
+    {
+      id: 'demo0007',
+      dayOffset: 2,
+      hour: 8,
+      minute: 30,
+      businessMode: 'grocery',
+      customerName: 'Lorenzo Tan',
+      paymentMethod: 'cash',
+      orderType: 'takeaway',
+      lineItems: [
+        { productId: 'bananas', quantity: 2 },
+        { productId: 'potatoes', quantity: 1 },
+        { productId: 'yogurt-cup', quantity: 2 },
+      ],
+      status: 'served',
+    },
+    {
+      id: 'demo0008',
+      dayOffset: 2,
+      hour: 12,
+      minute: 25,
+      businessMode: 'restaurant',
+      customerName: guestCustomerName,
+      paymentMethod: 'card',
+      orderType: 'dine_in',
+      tableNumber: '2',
+      lineItems: [
+        { productId: 'calamari', quantity: 1 },
+        { productId: 'grilled-bangus', quantity: 1 },
+        { productId: 'calamansi-juice', quantity: 2 },
+        { productId: 'leche-flan', quantity: 1 },
+      ],
+      status: 'served',
+    },
+    {
+      id: 'demo0009',
+      dayOffset: 3,
+      hour: 9,
+      minute: 5,
+      businessMode: 'coffee-shop',
+      customerName: 'Nina Garcia',
+      paymentMethod: 'cash',
+      orderType: 'takeaway',
+      lineItems: [
+        { productId: 'espresso', quantity: 2 },
+        { productId: 'banana-bread', quantity: 1 },
+      ],
+      status: 'served',
+    },
+    {
+      id: 'demo0010',
+      dayOffset: 5,
+      hour: 14,
+      minute: 50,
+      businessMode: 'nail-salon',
+      customerName: guestCustomerName,
+      paymentMethod: 'cash',
+      orderType: 'takeaway',
+      lineItems: [
+        { productId: 'classic-manicure', quantity: 1 },
+        { productId: 'cuticle-oil', quantity: 1 },
+      ],
+      status: 'served',
+    },
+    {
+      id: 'demo0011',
+      dayOffset: 8,
+      hour: 18,
+      minute: 10,
+      businessMode: 'restaurant',
+      customerName: 'Marco Villanueva',
+      paymentMethod: 'ewallet',
+      orderType: 'takeaway',
+      lineItems: [
+        { productId: 'pork-bbq', quantity: 2 },
+        { productId: 'steamed-rice', quantity: 2 },
+        { productId: 'buko-juice', quantity: 1 },
+      ],
+      status: 'served',
+    },
+    {
+      id: 'demo0012',
+      dayOffset: 10,
+      hour: 16,
+      minute: 35,
+      businessMode: 'grocery',
+      customerName: 'Rafael Sy',
+      paymentMethod: 'card',
+      orderType: 'takeaway',
+      lineItems: [
+        { productId: 'rice', quantity: 1 },
+        { productId: 'soy-sauce', quantity: 1 },
+        { productId: 'instant-noodles', quantity: 6 },
+      ],
+      status: 'served',
+      voidAfterMinutes: 22,
+      voidReason: 'Duplicate basket',
+    },
+    {
+      id: 'demo0013',
+      dayOffset: 12,
+      hour: 11,
+      minute: 0,
+      businessMode: 'coffee-shop',
+      customerName: guestCustomerName,
+      paymentMethod: 'cash',
+      orderType: 'takeaway',
+      lineItems: [
+        { productId: 'iced-latte', quantity: 1 },
+        { productId: 'apple-danish', quantity: 1 },
+      ],
+      status: 'served',
+    },
+    {
+      id: 'demo0014',
+      dayOffset: 15,
+      hour: 13,
+      minute: 40,
+      businessMode: 'restaurant',
+      customerName: 'Table 8',
+      paymentMethod: 'cash',
+      orderType: 'dine_in',
+      tableNumber: '8',
+      lineItems: [
+        { productId: 'beef-caldereta', quantity: 1 },
+        { productId: 'steamed-rice', quantity: 3 },
+        { productId: 'soda-can', quantity: 3 },
+        { productId: 'turon', quantity: 1 },
+      ],
+      status: 'served',
+    },
+    {
+      id: 'demo0015',
+      dayOffset: 20,
+      hour: 10,
+      minute: 15,
+      businessMode: 'coffee-shop',
+      customerName: 'Julia Fernandez',
+      paymentMethod: 'cash',
+      orderType: 'takeaway',
+      lineItems: [
+        { productId: 'caramel-macchiato', quantity: 1 },
+        { productId: 'blueberry-muffin', quantity: 2 },
+      ],
+      status: 'served',
+      voidAfterMinutes: 15,
+      voidReason: 'Accidental duplicate charge',
+    },
+    {
+      id: 'demo0016',
+      dayOffset: 27,
+      hour: 9,
+      minute: 45,
+      businessMode: 'nail-salon',
+      customerName: 'Camille Dela Cruz',
+      paymentMethod: 'card',
+      orderType: 'takeaway',
+      lineItems: [
+        { productId: 'spa-pedicure', quantity: 1 },
+        { productId: 'paraffin-wax-treatment', quantity: 1 },
+      ],
+      status: 'served',
+    },
+  ]
+
+  return plans.map((plan) => {
+    const items = plan.lineItems.map((line) => demoLineItem(line.productId, line.quantity))
+    const subtotalCents = items.reduce((sum, item) => sum + item.lineTotalCents, 0)
+    const taxCents = calculateTax(subtotalCents, 0.12)
+    const totalCents = subtotalCents + taxCents
+    const tenderedCents = plan.paymentMethod === 'cash' ? cashTenderedAmount(totalCents) : totalCents
+    const createdAt = demoTimestamp(plan.dayOffset, plan.hour, plan.minute)
+
+    return {
+      id: plan.id,
+      ticketNumber: slugTicket(plan.id),
+      businessMode: plan.businessMode,
+      createdByUserId,
+      customerId: null,
+      customerName: plan.customerName,
+      orderType: plan.orderType,
+      tableNumber: plan.tableNumber ?? null,
+      status: plan.status ?? 'served',
+      paymentMethod: plan.paymentMethod,
+      subtotalCents,
+      taxCents,
+      totalCents,
+      tenderedCents,
+      changeCents: Math.max(tenderedCents - totalCents, 0),
+      createdAt,
+      items,
+      voidedAt: plan.voidAfterMinutes != null
+        ? demoTimestamp(plan.dayOffset, plan.hour, plan.minute, plan.voidAfterMinutes)
+        : null,
+      voidedByUserId: null,
+      voidReason: plan.voidReason ?? null,
+    }
+  })
+}
+
 export function createBrowserPosRepository(options: BrowserPosRepositoryOptions = {}): PosRepository {
   const store = options.store ?? new BrowserIndexedDbStore()
   const firebaseConfig = normalizeFirebaseSyncConfig(options.sync)
@@ -1257,6 +1614,7 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     return {
       ...order,
       businessMode: order.businessMode || 'coffee-shop',
+      createdByUserId: 'createdByUserId' in order ? order.createdByUserId ?? null : null,
       customerId: 'customerId' in order ? order.customerId ?? null : null,
       customerName:
         'customerName' in order && typeof order.customerName === 'string' && order.customerName.trim()
@@ -1290,7 +1648,43 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         // Keep the POS usable even when sync fails.
       }
 
-      const orders = await store.read<OrderSummary[]>(storageKeys.orders, [])
+      const currentSession = await store.read<AuthSession | null>(storageKeys.session, null)
+      let orders = await store.read<OrderSummary[]>(storageKeys.orders, [])
+      if (orders.length === 0 && !(await isOnlineSyncEnabled())) {
+        orders = createDemoOrders(currentSession?.userId ?? null)
+        await store.write(storageKeys.orders, orders)
+      } else if (!(await isOnlineSyncEnabled())) {
+        const demoOrdersById = new Map(
+          createDemoOrders(currentSession?.userId ?? null).map((order) => [order.id, order] as const),
+        )
+        const patchedOrders = orders.map((order) => {
+          if (!order.id.startsWith('demo')) {
+            return order
+          }
+
+          const seededOrder = demoOrdersById.get(order.id)
+          if (!seededOrder) {
+            return currentSession?.userId && order.createdByUserId !== currentSession.userId
+              ? { ...order, createdByUserId: currentSession.userId }
+              : order
+          }
+
+          const nextCreatedByUserId = currentSession?.userId ?? order.createdByUserId ?? null
+          if (order.status === seededOrder.status && order.createdByUserId === nextCreatedByUserId) {
+            return order
+          }
+
+          return {
+            ...order,
+            status: seededOrder.status,
+            createdByUserId: nextCreatedByUserId,
+          }
+        })
+        if (JSON.stringify(patchedOrders) !== JSON.stringify(orders)) {
+          orders = patchedOrders
+          await store.write(storageKeys.orders, orders)
+        }
+      }
       return orders
         .map((order) => normalizeOrder(order))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -1355,6 +1749,7 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         id: orderId,
         ticketNumber: slugTicket(ticketSeed),
         businessMode: input.businessMode,
+        createdByUserId: (await store.read<AuthSession | null>(storageKeys.session, null))?.userId ?? null,
         customerId: input.customerId ?? null,
         customerName: input.customerName?.trim() || guestCustomerName,
         orderType: input.orderType,
@@ -1491,12 +1886,31 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       return updated
     },
 
-    // Online orders are written directly to Firestore by the createOnlineOrder
-    // Cloud Function, not by this device — unlike in-person sales, they aren't
-    // in the local cache/outbox, so they need their own pull. Requires online
-    // sync; a local-only store has no storefront to receive orders from.
+    // Storefront orders are written server-side, not by this device — unlike
+    // in-person sales they are not in the local cache/outbox, so they need
+    // their own pull, and a local-only store has no storefront to receive them
+    // from at all.
+    //
+    // The API is the live path: the storefront POSTs to Laravel, so that is
+    // where today's orders are. Firestore is the legacy one, kept for stores
+    // still on the old sync — without it, every order a shop took before the
+    // migration would vanish from the dashboard.
     async loadOnlineOrders() {
-      if (!firebaseSync || !(await isOnlineSyncEnabled())) {
+      if (!(await isOnlineSyncEnabled())) {
+        return []
+      }
+
+      if (syncConfig) {
+        try {
+          const payload = await backendFetch<{ orders: OrderSummary[] }>('/api/seller/online-orders')
+          return (payload.orders ?? []).map(normalizeOrder)
+        } catch {
+          // Fall through to Firestore rather than blanking the dashboard: a
+          // store mid-migration may still have its orders on the old transport.
+        }
+      }
+
+      if (!firebaseSync) {
         return []
       }
 
@@ -1509,6 +1923,14 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     },
 
     async settleOrderPayment(orderId, input) {
+      if (syncConfig) {
+        const payload = await backendFetch<{ order: OrderSummary }>(
+          `/api/seller/online-orders/${encodeURIComponent(orderId)}/settle-payment`,
+          { method: 'POST', body: JSON.stringify(input) },
+        )
+        return normalizeOrder(payload.order)
+      }
+
       if (!firebaseSync) {
         throw new Error('Settling an online order requires online sync to be enabled.')
       }
@@ -1519,6 +1941,34 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       }
 
       return firebaseSync.settleOrderPayment(session.storeId, orderId, input)
+    },
+
+    // The three below are API-only: the Firestore transport never grew a
+    // rider or a delivery stage, so a store still on it cannot dispatch from
+    // here. backendFetch throws without a sync config, and the dashboard shows
+    // that message on the card rather than looking like the rider was told.
+    async updateOnlineOrderStatus(orderId, status) {
+      const payload = await backendFetch<{ order: OrderSummary }>(
+        `/api/seller/online-orders/${encodeURIComponent(orderId)}/status`,
+        { method: 'POST', body: JSON.stringify({ status }) },
+      )
+      return normalizeOrder(payload.order)
+    },
+
+    async assignOrderRider(orderId, input) {
+      const payload = await backendFetch<{ order: OrderSummary }>(
+        `/api/seller/online-orders/${encodeURIComponent(orderId)}/rider`,
+        { method: 'POST', body: JSON.stringify(input) },
+      )
+      return normalizeOrder(payload.order)
+    },
+
+    async updateOrderDeliveryStage(orderId, stage) {
+      const payload = await backendFetch<{ order: OrderSummary }>(
+        `/api/seller/online-orders/${encodeURIComponent(orderId)}/delivery-stage`,
+        { method: 'POST', body: JSON.stringify({ stage }) },
+      )
+      return normalizeOrder(payload.order)
     },
 
     async saveCustomer(input) {

@@ -49,7 +49,10 @@ async function signup(body) {
     const password = body.password?.trim() ?? '';
     const businessMode = body.businessMode?.trim() ?? '';
     const gcashReference = body.gcashReference?.trim() ?? '';
-    if (!businessName || !ownerFullName || !username || !password || !gcashReference) {
+    // gcashReference is deliberately not required: the signup form stopped
+    // collecting payment when early access was made free. It is still read and
+    // stored, so reinstating the step needs no change here.
+    if (!businessName || !ownerFullName || !username || !password) {
         throw new admin_1.ApiError(400, 'Please fill in every field.');
     }
     if (password.length < 6) {

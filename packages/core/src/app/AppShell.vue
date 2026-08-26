@@ -17,6 +17,7 @@ const hydratedSessionUserId = ref<string | null | undefined>(undefined)
 
 const showShellChrome = computed(() => route.name !== 'auth' && !!auth.currentUser)
 const isRegisterRoute = computed(() => route.name === 'register')
+const canOpenSettings = computed(() => auth.canAccess('settings'))
 
 async function handleLogout() {
   await auth.logout()
@@ -37,6 +38,9 @@ function closeProfileMenu() {
 
 async function goToSettings() {
   closeProfileMenu()
+  if (!canOpenSettings.value) {
+    return
+  }
   await router.push({ name: 'settings' })
 }
 
@@ -143,7 +147,12 @@ onUnmounted(() => {
                 <span>{{ auth.currentUser?.fullName }}</span>
               </button>
               <div v-if="profileOpen" class="workspace-topbar__profile-menu">
-                <button class="workspace-topbar__profile-item" type="button" @click="goToSettings">
+                <button
+                  v-if="canOpenSettings"
+                  class="workspace-topbar__profile-item"
+                  type="button"
+                  @click="goToSettings"
+                >
                   Settings
                 </button>
                 <button class="workspace-topbar__profile-item workspace-topbar__profile-item--danger" type="button" @click="handleLogout">
@@ -191,8 +200,11 @@ onUnmounted(() => {
   min-height: 100vh;
 }
 
+/* No padding: the sign-in screen paints its own full-bleed ground and owns its
+   gutters (see .auth-page in app.css). A frame of app background around that
+   green would read as a box sitting on the page rather than the page itself. */
 .workspace-shell__auth {
-  padding: var(--space-4);
+  padding: 0;
 }
 
 .workspace-shell__register {

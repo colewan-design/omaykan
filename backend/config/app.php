@@ -56,6 +56,38 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Storefront URL
+    |--------------------------------------------------------------------------
+    |
+    | The root the customer-facing storefront is served from. Order mail links
+    | to its tracking page, which lives at /order/{id} underneath this — see
+    | apps/mobile/src/storefront/router.ts, which mounts the SPA at /store/.
+    |
+    | Kept separate from 'url' because the storefront is its own build and can
+    | be deployed apart from the API; it just defaults to sitting beside it.
+    |
+    */
+
+    'storefront_url' => env('STOREFRONT_URL', rtrim((string) env('APP_URL', 'http://localhost'), '/').'/store'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Customer Account URL
+    |--------------------------------------------------------------------------
+    |
+    | Where the customer portal is served from — apps/web's /account entry. A
+    | password reset mail has to send someone to a page that can finish the
+    | reset, and that page is the portal, not the API.
+    |
+    | Separate from 'storefront_url' because that one still points at the old
+    | /store mount; the portal is part of the main web build.
+    |
+    */
+
+    'customer_account_url' => env('CUSTOMER_ACCOUNT_URL', rtrim((string) env('APP_URL', 'http://localhost'), '/').'/account'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

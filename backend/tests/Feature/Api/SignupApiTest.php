@@ -19,7 +19,7 @@ class SignupApiTest extends TestCase
 
     private function payload(array $overrides = []): array
     {
-        return array_merge([
+        $merged = array_merge([
             'businessName' => 'Hill Station Cafe',
             'ownerFullName' => 'Ana Reyes',
             'username' => 'AnaReyes',
@@ -27,6 +27,11 @@ class SignupApiTest extends TestCase
             'businessMode' => 'coffee-shop',
             'gcashReference' => 'GC-99881',
         ], $overrides);
+
+        // Derived from the username unless a case explicitly sets one, so that
+        // the tests signing up a *second* merchant don't collide on the unique
+        // email index and fail for a reason they aren't about.
+        return $merged + ['email' => strtolower($merged['username']).'@example.test'];
     }
 
     public function test_signup_creates_a_working_store_in_one_shot(): void
@@ -136,9 +141,26 @@ class SignupApiTest extends TestCase
             ->assertJsonValidationErrors('businessMode');
     }
 
+    public function test_the_form_can_sign_up_without_a_payment_reference(): void
+    {
+        // What the signup form now sends: early access is free, so it collects
+        // no GCash reference. The subscription is still created, pending, with
+        // nothing yet to verify.
+        $payload = $this->payload();
+        unset($payload['gcashReference']);
+
+        $response = $this->postJson('/api/signup', $payload)->assertCreated();
+
+        $organization = Organization::query()->where('slug', $response->json('organizationSlug'))->firstOrFail();
+        $subscription = Subscription::query()->where('organization_id', $organization->id)->firstOrFail();
+
+        $this->assertSame(Subscription::STATUS_PENDING, $subscription->status);
+        $this->assertSame('', $subscription->gcash_reference);
+    }
+
     public function test_a_failed_signup_leaves_nothing_behind(): void
     {
-        $this->postJson('/api/signup', $this->payload(['gcashReference' => '']))
+        $this->postJson('/api/signup', $this->payload(['businessName' => '']))
             ->assertStatus(422);
 
         // The Firestore version created the auth user before the batch write,

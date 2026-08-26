@@ -17,6 +17,7 @@ class Order extends Model
         'store_id',
         'device_id',
         'user_id',
+        'customer_account_id',
         'ticket_number',
         'order_status',
         'order_type',
@@ -39,6 +40,10 @@ class Order extends Model
         'delivery_stage',
         'rider_name',
         'rider_phone',
+        'rider_id',
+        'rider_accepted_at',
+        'payment_confirmed_at',
+        'payment_confirmed_by_user_id',
         'guest_contact',
     ];
 
@@ -47,6 +52,8 @@ class Order extends Model
         return [
             'business_date' => 'date',
             'completed_at' => 'datetime',
+            'payment_confirmed_at' => 'datetime',
+            'rider_accepted_at' => 'datetime',
             'guest_contact' => 'array',
             'delivery_lat' => 'float',
             'delivery_lng' => 'float',
@@ -78,5 +85,70 @@ class Order extends Model
     public function device()
     {
         return $this->belongsTo(Device::class);
+    }
+
+    public function store()
+    {
+        return $this->belongsTo(Store::class);
+    }
+
+    /**
+     * Set when a rider claims the order in the rider portal. Null on an order
+     * whose rider was typed in at the till — `rider_name` carries those, and
+     * always has.
+     */
+    public function rider()
+    {
+        return $this->belongsTo(Rider::class);
+    }
+
+    /** Null for guest checkout, which is still the default way to order. */
+    public function customerAccount()
+    {
+        return $this->belongsTo(CustomerAccount::class);
+    }
+
+    /**
+     * The customer's own view of an order: enough to track it, nothing that
+     * would matter if the link were forwarded.
+     *
+     * Lives on the model because two endpoints return it — the public
+     * order-tracking page, keyed on the unguessable UUID, and the signed-in
+     * customer's order list. Two copies of this would drift, and the one that
+     * drifted would be leaking something.
+     *
+     * Notably absent: guest_contact. The customer already has their own phone
+     * number, and nobody else should get it from here.
+     *
+     * @return array<string, mixed>
+     */
+    public function toTrackedArray(): array
+    {
+        $this->loadMissing('items');
+
+        return [
+            'orderId' => $this->id,
+            'ticketNumber' => $this->ticket_number,
+            'status' => $this->order_status,
+            'paymentStatus' => $this->payment_status,
+            'paymentMethod' => $this->payment_method,
+            'subtotalCents' => $this->subtotal_cents,
+            'taxCents' => $this->tax_cents,
+            'deliveryFeeCents' => $this->delivery_fee_cents,
+            'totalCents' => $this->total_cents,
+            'fulfillmentMethod' => $this->fulfillment_method,
+            'deliveryAddress' => $this->delivery_address,
+            'deliveryStage' => $this->delivery_stage,
+            'riderName' => $this->rider_name,
+            'riderPhone' => $this->rider_phone,
+            'placedAt' => $this->created_at?->toIso8601String(),
+            'items' => $this->items->map(fn ($item) => [
+                'productId' => $item->product_id ?? '',
+                'name' => $item->product_name,
+                'quantity' => (float) $item->quantity,
+                'unitPriceCents' => $item->unit_price_cents,
+                'lineTotalCents' => $item->line_total_cents,
+            ])->values(),
+        ];
     }
 }

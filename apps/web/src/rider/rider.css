@@ -1,0 +1,657 @@
+/*
+ * Chrome for the rider portal (/rider).
+ *
+ * Global rather than a scoped block per component, for the reason account.css
+ * gives: the registration form, the status screen and the two work screens
+ * have to agree on one card, one field and one button, and scoped styles let
+ * that drift.
+ *
+ * Namespaced under `.rdr` so none of it reaches the storefront or the POS if
+ * their stylesheets are ever loaded alongside.
+ *
+ * The sizing is not the customer portal's. This screen is read one-handed, on
+ * a phone, outdoors, often in sunlight and sometimes in the rain: controls are
+ * 48px rather than 42, body type is 15.5px rather than 14, and the contrast is
+ * pushed harder than the storefront's quiet grey-on-white. The palette is
+ * still the brand's — the green means "go" and is spent only on the control
+ * that actually moves a delivery forward.
+ */
+
+/* This stylesheet is loaded by the rider entry and nothing else, so the reset
+   can live here rather than pulling in app.css — which paints a gradient the
+   portal would have to undo, and drags the whole POS stylesheet along with it
+   for a page that shares none of it. */
+body {
+  margin: 0;
+  min-width: 320px;
+  background: #f4f6f5;
+}
+
+.rdr {
+  --rdr-ink: #14181a;
+  --rdr-muted: #5c6b73;
+  --rdr-faint: #8a969c;
+  --rdr-rule: #e4e8e6;
+  --rdr-ground: #f4f6f5;
+  --rdr-surface: #ffffff;
+  --rdr-green: #1a6b3c;
+  --rdr-green-dark: #14572f;
+  --rdr-danger: #b42318;
+  --rdr-warn: #9a6700;
+  --rdr-radius: 14px;
+
+  min-height: 100vh;
+  background: var(--rdr-ground);
+  color: var(--rdr-ink);
+  font-family: var(--font-sans, system-ui, -apple-system, 'Segoe UI', sans-serif);
+  -webkit-font-smoothing: antialiased;
+}
+
+.rdr *,
+.rdr *::before,
+.rdr *::after {
+  box-sizing: border-box;
+}
+
+/* ── Page furniture ──────────────────────────────────────────────────── */
+
+.rdr-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 20px;
+  background: var(--rdr-green);
+  color: #fff;
+}
+
+.rdr-bar__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.rdr-bar__tag {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.rdr-bar__who {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  font-size: 13.5px;
+}
+
+.rdr-bar__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rdr-bar__out {
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #fff;
+  font: 700 13.5px/1 inherit;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  cursor: pointer;
+}
+
+.rdr-main {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 28px 20px 72px;
+}
+
+.rdr-main--narrow {
+  max-width: 520px;
+}
+
+/* ── Headings ────────────────────────────────────────────────────────── */
+
+.rdr-title {
+  margin: 0 0 8px;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.12;
+}
+
+.rdr-sub {
+  margin: 0 0 26px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--rdr-muted);
+}
+
+.rdr-section-title {
+  margin: 32px 0 14px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--rdr-faint);
+}
+
+/* ── Cards ───────────────────────────────────────────────────────────── */
+
+.rdr-card {
+  padding: 20px;
+  border: 1px solid var(--rdr-rule);
+  border-radius: var(--rdr-radius);
+  background: var(--rdr-surface);
+}
+
+.rdr-card + .rdr-card {
+  margin-top: 12px;
+}
+
+/* ── Fields ──────────────────────────────────────────────────────────── */
+
+.rdr-field {
+  display: block;
+  margin-bottom: 18px;
+}
+
+.rdr-field__label {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.rdr-field__hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--rdr-faint);
+}
+
+.rdr-field__error {
+  display: block;
+  margin-top: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--rdr-danger);
+}
+
+.rdr-input {
+  width: 100%;
+  height: 48px;
+  padding: 0 14px;
+  border: 1px solid #d5dbd8;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--rdr-ink);
+  /* 16px minimum: anything smaller makes iOS Safari zoom the page on focus,
+     which on a form this long leaves the rider scrolled sideways. */
+  font: 500 16px/1.4 inherit;
+}
+
+.rdr-input:focus {
+  outline: none;
+  border-color: var(--rdr-green);
+  box-shadow: 0 0 0 3px rgba(26, 107, 60, 0.14);
+}
+
+.rdr-input--error {
+  border-color: var(--rdr-danger);
+}
+
+.rdr-input::placeholder {
+  color: var(--rdr-faint);
+}
+
+/* Plate and licence are read back character by character by an operator, so
+   they are shown the way they are stored: upper case, evenly spaced. */
+.rdr-input--code {
+  font-variant-ligatures: none;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.rdr-row {
+  display: grid;
+  gap: 0 14px;
+  grid-template-columns: 1fr 1fr;
+}
+
+@media (max-width: 560px) {
+  .rdr-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Document upload ─────────────────────────────────────────────────── */
+
+/* The real <input type="file"> is hidden but still focusable and still the
+   click target, via the wrapping <label> — so the keyboard and the screen
+   reader get the native control and the eye gets this one. */
+.rdr-doc__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.rdr-doc {
+  display: block;
+  margin-bottom: 18px;
+}
+
+.rdr-doc__drop {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border: 1.5px dashed #ccd4cf;
+  border-radius: 12px;
+  background: #fbfcfb;
+  cursor: pointer;
+}
+
+.rdr-doc__input:focus-visible + .rdr-doc__drop {
+  border-color: var(--rdr-green);
+  box-shadow: 0 0 0 3px rgba(26, 107, 60, 0.14);
+}
+
+.rdr-doc__drop:hover {
+  border-color: var(--rdr-green);
+  background: #f6faf7;
+}
+
+.rdr-doc__drop--filled {
+  border-style: solid;
+  border-color: var(--rdr-rule);
+  background: var(--rdr-surface);
+}
+
+.rdr-doc__drop--error {
+  border-color: var(--rdr-danger);
+  background: #fdf6f5;
+}
+
+/* Fixed box so a portrait phone photo and a landscape scan produce the same
+   row height — a list of documents that jumps around as each one loads reads
+   as broken. */
+.rdr-doc__thumb {
+  flex-shrink: 0;
+  width: 76px;
+  height: 76px;
+  border-radius: 9px;
+  object-fit: cover;
+  background: #eef1ef;
+}
+
+.rdr-doc__icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 76px;
+  height: 76px;
+  border-radius: 9px;
+  background: #eef1ef;
+  color: var(--rdr-muted);
+}
+
+.rdr-doc__body {
+  min-width: 0;
+}
+
+.rdr-doc__name {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 700;
+}
+
+.rdr-doc__note {
+  display: block;
+  margin-top: 4px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--rdr-muted);
+  overflow-wrap: anywhere;
+}
+
+.rdr-doc__swap {
+  margin-top: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--rdr-green);
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────── */
+
+.rdr-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 48px;
+  padding: 0 22px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--rdr-green);
+  color: #fff;
+  font: 700 15px/1 inherit;
+  cursor: pointer;
+}
+
+.rdr-btn:hover:not(:disabled) {
+  background: var(--rdr-green-dark);
+}
+
+.rdr-btn:disabled {
+  background: #d6dbd8;
+  color: #8a938e;
+  cursor: not-allowed;
+}
+
+.rdr-btn--block {
+  width: 100%;
+}
+
+.rdr-btn--ghost {
+  background: transparent;
+  border-color: #d5dbd8;
+  color: var(--rdr-ink);
+}
+
+.rdr-btn--ghost:hover:not(:disabled) {
+  background: #eef1ef;
+}
+
+.rdr-btn--danger {
+  background: transparent;
+  border-color: #e6c9c6;
+  color: var(--rdr-danger);
+}
+
+.rdr-btn--danger:hover:not(:disabled) {
+  background: #fdf6f5;
+}
+
+.rdr-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--rdr-green);
+  font: 700 14px/1 inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.rdr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+/* ── Flashes ─────────────────────────────────────────────────────────── */
+
+.rdr-flash {
+  margin: 0 0 18px;
+  padding: 13px 15px;
+  border-radius: 11px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.rdr-flash--error {
+  background: #fdf2f1;
+  color: var(--rdr-danger);
+}
+
+.rdr-flash--ok {
+  background: #eef7f1;
+  color: var(--rdr-green);
+}
+
+/* ── Status pills ────────────────────────────────────────────────────── */
+
+.rdr-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 11px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.rdr-pill--pending {
+  background: rgba(154, 103, 0, 0.12);
+  color: var(--rdr-warn);
+}
+
+.rdr-pill--approved {
+  background: rgba(26, 107, 60, 0.12);
+  color: var(--rdr-green);
+}
+
+.rdr-pill--rejected,
+.rdr-pill--suspended {
+  background: rgba(180, 35, 24, 0.1);
+  color: var(--rdr-danger);
+}
+
+/* ── Empty states ────────────────────────────────────────────────────── */
+
+.rdr-empty {
+  padding: 40px 26px;
+  border: 1px dashed #d9dfdb;
+  border-radius: var(--rdr-radius);
+  background: var(--rdr-surface);
+  text-align: center;
+}
+
+.rdr-empty__title {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.rdr-empty__note {
+  margin: 0 auto;
+  max-width: 44ch;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--rdr-muted);
+}
+
+/* ── Tabs ────────────────────────────────────────────────────────────── */
+
+.rdr-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 22px;
+}
+
+.rdr-tab {
+  flex: 1;
+  height: 44px;
+  border: 1px solid var(--rdr-rule);
+  border-radius: 999px;
+  background: var(--rdr-surface);
+  color: var(--rdr-muted);
+  font: 700 14px/1 inherit;
+  cursor: pointer;
+}
+
+.rdr-tab--on {
+  border-color: var(--rdr-green);
+  background: var(--rdr-green);
+  color: #fff;
+}
+
+.rdr-tab__count {
+  margin-left: 6px;
+  opacity: 0.75;
+}
+
+/* ── Job cards ───────────────────────────────────────────────────────── */
+
+.rdr-job + .rdr-job {
+  margin-top: 12px;
+}
+
+.rdr-job__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.rdr-job__shop {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.rdr-job__where {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--rdr-muted);
+  overflow-wrap: anywhere;
+}
+
+.rdr-job__fee {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.rdr-job__fee-value {
+  display: block;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--rdr-green);
+}
+
+.rdr-job__fee-label {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--rdr-faint);
+}
+
+.rdr-job__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.rdr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: #f1f4f2;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--rdr-muted);
+}
+
+/* Money the rider has to physically collect at the door — the one thing on
+   the card that costs them their own cash if they misread it. */
+.rdr-chip--collect {
+  background: rgba(154, 103, 0, 0.12);
+  color: var(--rdr-warn);
+  font-weight: 800;
+}
+
+.rdr-job__line {
+  margin: 14px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--rdr-rule);
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--rdr-muted);
+}
+
+.rdr-job__line strong {
+  color: var(--rdr-ink);
+}
+
+.rdr-job__items {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--rdr-muted);
+}
+
+/* A phone number on a delivery is a control, not text: it has to be one tap
+   from the moment the rider cannot find the gate. */
+.rdr-call {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: var(--rdr-green);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ── Steps ───────────────────────────────────────────────────────────── */
+
+.rdr-steps {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.rdr-step {
+  flex: 1;
+  height: 5px;
+  border-radius: 999px;
+  background: #e4e8e6;
+}
+
+.rdr-step--on {
+  background: var(--rdr-green);
+}
+
+.rdr-stage {
+  margin: 10px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--rdr-muted);
+}

@@ -30,6 +30,16 @@ function entryRouteAliases(): Plugin {
       return
     }
 
+    if (req.url === '/account' || req.url?.startsWith('/account?')) {
+      req.url = req.url.replace('/account', '/account.html')
+      return
+    }
+
+    if (req.url === '/rider' || req.url?.startsWith('/rider?')) {
+      req.url = req.url.replace('/rider', '/rider.html')
+      return
+    }
+
     if (req.url === '/platform-admin' || req.url?.startsWith('/platform-admin?')) {
       req.url = req.url.replace('/platform-admin', '/platform-admin.html')
     }
@@ -70,6 +80,8 @@ export default defineConfig({
         landing: path.resolve(__dirname, 'landing.html'),
         about: path.resolve(__dirname, 'about.html'),
         signup: path.resolve(__dirname, 'signup.html'),
+        account: path.resolve(__dirname, 'account.html'),
+        rider: path.resolve(__dirname, 'rider.html'),
         platformAdmin: path.resolve(__dirname, 'platform-admin.html'),
       },
     },

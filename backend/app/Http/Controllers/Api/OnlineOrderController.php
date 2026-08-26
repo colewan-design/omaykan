@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Events\OrderPlaced;
 use App\Http\Controllers\Controller;
+use App\Mail\OnlineOrderConfirmationMail;
 use App\Models\InventoryAdjustment;
 use App\Models\InventoryLevel;
 use App\Models\Order;
@@ -16,6 +17,7 @@ use App\Services\OutsideDeliveryAreaException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -40,6 +42,28 @@ class OnlineOrderController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        // Optional, and read without any auth middleware on the route: a
+        // bearer token from the customer portal names who is ordering, and no
+        // token at all is still a perfectly good guest order. A *staff* token
+        // resolves to null here, because the `customer` guard has its own
+        // provider — see config/auth.php.
+        $customer = $request->user('customer');
+
+        // A signed-in customer shouldn't have to send their own name back to
+        // us, so anything the form left out is filled from the account before
+        // the contact rules below are applied.
+        if ($customer !== null) {
+            $guest = (array) $request->input('guest', []);
+
+            $request->merge([
+                'guest' => array_filter([
+                    'name' => $guest['name'] ?? $customer->name,
+                    'phone' => $guest['phone'] ?? $customer->phone,
+                    'email' => $guest['email'] ?? $customer->email,
+                ], fn ($value) => $value !== null && $value !== ''),
+            ]);
+        }
+
         $data = $request->validate([
             'orgSlug' => ['required', 'string'],
             'storeCode' => ['required', 'string'],
@@ -103,16 +127,22 @@ class OnlineOrderController extends Controller
         }
 
         $result = DB::transaction(function () use (
-            $data, $organization, $store, $fulfillment, $isDelivery, $deliveryFeeCents, $deliveryDistanceKm
+            $data, $organization, $store, $fulfillment, $isDelivery, $deliveryFeeCents, $deliveryDistanceKm, $customer
         ) {
             $order = $this->recordOrder(
-                $data, $organization, $store, $fulfillment, $isDelivery, $deliveryFeeCents, $deliveryDistanceKm
+                $data, $organization, $store, $fulfillment, $isDelivery, $deliveryFeeCents, $deliveryDistanceKm,
+                $customer?->getKey(),
             );
 
             // Broadcast only once the transaction commits, or a listener can
             // race ahead and query a row that is not visible yet — or hear
-            // about an order a rollback removed. Matches SyncController.
-            DB::afterCommit(fn () => OrderPlaced::dispatch($order));
+            // about an order a rollback removed. Matches SyncController. The
+            // customer's receipt is queued from the same place, for the same
+            // reason: the queue is the database.
+            DB::afterCommit(function () use ($order, $store) {
+                OrderPlaced::dispatch($order);
+                $this->emailConfirmation($order, $store);
+            });
 
             return $order;
         });
@@ -139,30 +169,36 @@ class OnlineOrderController extends Controller
     {
         abort_unless($order->isOnline(), 404);
 
-        return response()->json([
-            'orderId' => $order->id,
-            'ticketNumber' => $order->ticket_number,
-            'status' => $order->order_status,
-            'paymentStatus' => $order->payment_status,
-            'paymentMethod' => $order->payment_method,
-            'subtotalCents' => $order->subtotal_cents,
-            'taxCents' => $order->tax_cents,
-            'deliveryFeeCents' => $order->delivery_fee_cents,
-            'totalCents' => $order->total_cents,
-            'fulfillmentMethod' => $order->fulfillment_method,
-            'deliveryAddress' => $order->delivery_address,
-            'deliveryStage' => $order->delivery_stage,
-            'riderName' => $order->rider_name,
-            'riderPhone' => $order->rider_phone,
-            'placedAt' => $order->created_at?->toIso8601String(),
-            'items' => $order->items->map(fn ($item) => [
-                'productId' => $item->product_id ?? '',
-                'name' => $item->product_name,
-                'quantity' => (float) $item->quantity,
-                'unitPriceCents' => $item->unit_price_cents,
-                'lineTotalCents' => $item->line_total_cents,
-            ])->values(),
-        ]);
+        // The shape lives on the model, because the signed-in customer's order
+        // list returns the same view of an order — see Order::toTrackedArray.
+        return response()->json($order->toTrackedArray());
+    }
+
+    /**
+     * The customer's receipt, when there is somewhere to send it.
+     *
+     * Checkout takes a phone number or an email, not both (see the validation
+     * above), so a good half of orders have no address and simply get nothing
+     * — that is not a failure, and it is not worth logging.
+     *
+     * Failures are swallowed for the same reason they are in SignupController:
+     * the order is already recorded and its confirmation is already on its way
+     * back to the browser. Losing the receipt must not turn a placed order
+     * into a 500 that invites the customer to order again.
+     */
+    private function emailConfirmation(Order $order, Store $store): void
+    {
+        $email = $order->guest_contact['email'] ?? null;
+
+        if (! is_string($email) || trim($email) === '') {
+            return;
+        }
+
+        try {
+            Mail::to($email)->queue(new OnlineOrderConfirmationMail($order, $store));
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 
     /**
@@ -177,6 +213,7 @@ class OnlineOrderController extends Controller
         bool $isDelivery,
         int $deliveryFeeCents,
         ?float $deliveryDistanceKm,
+        ?string $customerAccountId = null,
     ): Order {
         $lines = $this->priceLines($data['items'], $organization, $store, $data['businessMode']);
 
@@ -193,6 +230,11 @@ class OnlineOrderController extends Controller
             // No till rang this up, and nobody is serving it yet.
             'device_id' => null,
             'user_id' => null,
+            // Set when the order was placed from a signed-in portal session,
+            // null for guest checkout. It is what makes "your orders" a
+            // question the server can answer on a device that has never seen
+            // this order before.
+            'customer_account_id' => $customerAccountId,
             'ticket_number' => $this->ticketNumberFor($store, $orderId),
             'order_status' => 'preparing',
             'order_type' => 'takeaway',

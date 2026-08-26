@@ -1,25 +1,61 @@
+import type { Component } from 'vue'
 import {
-  Bike,
+  Beef,
+  Cookie,
+  CookingPot,
   Croissant,
   CupSoda,
-  Pill,
+  Coffee,
+  Carrot,
+  Globe,
+  IceCreamCone,
+  Leaf,
+  Milk,
+  Salad,
   ShoppingBasket,
-  Stethoscope,
+  Snowflake,
+  Sparkles,
   UtensilsCrossed,
-  WashingMachine,
 } from '@lucide/vue'
 
-// The marketplace taxonomy, not one shop's catalog categories — the site is a
-// front door to every store in the city. Shared because the header nav, the
-// "Shop by category" block and the footer all have to name the same set.
-// `icon` is only used by the nav bar; the block uses the photo cards.
-export const serviceCategories = [
-  { slug: 'food', label: 'Food', icon: UtensilsCrossed },
-  { slug: 'groceries', label: 'Groceries', icon: ShoppingBasket },
-  { slug: 'pharmacy', label: 'Pharmacy', icon: Pill },
-  { slug: 'errands', label: 'Errands', icon: Bike },
-  { slug: 'bakery', label: 'Bakery', icon: Croissant },
-  { slug: 'beverages', label: 'Beverages', icon: CupSoda },
-  { slug: 'laundry', label: 'Laundry', icon: WashingMachine },
-  { slug: 'medicine', label: 'Medicine', icon: Stethoscope },
-]
+// The header nav lists the store's real, stocked categories — clicking one has
+// to produce a product list, so the nav can only name categories the catalog
+// actually has. What lives here is the decoration: a lucide glyph per known
+// category id, since Category itself carries only an id and a name.
+//
+// Ids come from the seeded taxonomy (packages/shared/src/index.ts and
+// groceryCatalog.generated.ts). A tenant's own category falls through to the
+// basket, so an unknown id costs an icon, never a nav item.
+const categoryIcons: Record<string, Component> = {
+  // Grocery aisles
+  groceries: ShoppingBasket,
+  produce: Carrot,
+  dairy: Milk,
+  snacks: Cookie,
+  bakery: Croissant,
+  frozen: Snowflake,
+  'meat-seafood': Beef,
+  international: Globe,
+  'ready-to-cook': CookingPot,
+  'ready-to-eat': UtensilsCrossed,
+  // Coffee shop
+  coffee: Coffee,
+  tea: Leaf,
+  pastry: Croissant,
+  'cold-drinks': CupSoda,
+  beverages: CupSoda,
+  // Restaurant
+  starters: Salad,
+  mains: UtensilsCrossed,
+  desserts: IceCreamCone,
+  // Salon
+  manicures: Sparkles,
+  pedicures: Sparkles,
+  'nail-enhancements': Sparkles,
+  'nail-addons': Sparkles,
+  'salon-retail': ShoppingBasket,
+}
+
+export function categoryIcon(categoryId: string): Component {
+  return categoryIcons[categoryId] ?? ShoppingBasket
+}

@@ -68,8 +68,10 @@ needs these rewrites (nginx `try_files`, or equivalent):
 | `/` | `index.html` |
 | `/landing` | `landing.html` |
 | `/app`, `/app/*` | `app.html` |
-| `/store`, `/store/*` | `store.html` |
+| `/about` | `about.html` |
 | `/signup` | `signup.html` |
+| `/account` | `account.html` |
+| `/rider` | `rider.html` |
 | `/platform-admin` | `platform-admin.html` |
 
 `/api/*` proxies to the runner above. The client build also needs the
@@ -79,9 +81,16 @@ needs these rewrites (nginx `try_files`, or equivalent):
 
 Working: merchant POS (17 pages, four business modes, shifts with cash reconciliation, full-order voids, inventory), customer storefront on web and mobile, store pairing by code, signup, and the platform admin dashboard.
 
+The rider side is now built too: riders apply at `/rider` with their licence and
+plate — number and photo of each — and can do nothing until an operator has
+approved them from the **Riders** tab of `/platform-admin`. Once approved they
+see every unclaimed delivery across all shops, take one, and move it from
+pickup to the door. The licence and plate photos are held on the private disk
+and are readable only by the operator, never by a shop or a customer.
+
 Customer payment is **COD only** — cash at handover, no online collection, by design.
 
-Not built: the rider side, loyalty, and discounts. The merchant subscription is a ₱499 placeholder collected by manual GCash transfer.
+Not built: loyalty, and discounts. The merchant subscription is a ₱499 placeholder collected by manual GCash transfer.
 
 See [feature-log.md](documentation/feature-log.md) for audited detail and [plan.md](documentation/plan.md) for the phase order. Phase 0 — migrating off Firestore onto the Laravel VPS backend and verifying BIR requirements — blocks charging anyone.
 

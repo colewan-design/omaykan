@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { Check, Copy, Eye, EyeOff } from '@lucide/vue'
-import { computed, reactive, ref } from 'vue'
+import { reactive, ref } from 'vue'
 import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
-import { businessModeLabel, type BusinessMode } from '@pos/shared/index'
+import BrandLogo from '@pos/core/components/BrandLogo.vue'
+import { businessModeLabel, SUPPORT_EMAIL, supportMailto, type BusinessMode } from '@pos/shared/index'
 import { writePendingInitialSettings, writeStaffTenant } from '@pos/web/tenantBinding'
-import PosMarketing from '@pos/web/landing/PosMarketing.vue'
-import { GCASH_ACCOUNT_NAME, GCASH_NUMBER, PLAN_PRICE_PESOS } from './pricingConstants'
+import MerchantFooter from './MerchantFooter.vue'
+import MerchantHeader from './MerchantHeader.vue'
+import MerchantPitch from './MerchantPitch.vue'
 
 const mode = ref<'signup' | 'pair'>('signup')
 const saving = ref(false)
@@ -20,17 +22,15 @@ const businessModeOptions = (['coffee-shop', 'grocery', 'restaurant', 'nail-salo
 const signupForm = reactive({
   businessName: '',
   ownerFullName: '',
+  email: '',
   username: '',
   password: '',
   businessMode: 'coffee-shop' as BusinessMode,
-  gcashReference: '',
 })
 
 const pairForm = reactive({
   pairingCode: '',
 })
-
-const priceLabel = computed(() => `₱${PLAN_PRICE_PESOS.toLocaleString('en-PH')}/month`)
 
 // Set once signup succeeds, holding the UI on a confirmation step (instead of
 // redirecting straight to /app) so the owner actually sees the code their
@@ -42,12 +42,21 @@ function clearError() {
   errorMessage.value = ''
 }
 
+/**
+ * Laravel returns validation failures as `{ message, errors }`, not `{ error }`
+ * — reading only `error` swallowed the useful ones ("that username is already
+ * taken") behind the generic fallback.
+ */
+function messageFrom(body: { error?: string; message?: string }, fallback: string): string {
+  return body.error || body.message || fallback
+}
+
 function bindAndEnter(
-  body: { organizationSlug?: string; storeCode?: string; error?: string },
+  body: { organizationSlug?: string; storeCode?: string; error?: string; message?: string },
   fallbackError: string,
 ): boolean {
   if (!body.organizationSlug || !body.storeCode) {
-    errorMessage.value = body.error || fallbackError
+    errorMessage.value = messageFrom(body, fallbackError)
     return false
   }
   writeStaffTenant({ organizationSlug: body.organizationSlug, storeCode: body.storeCode })
@@ -69,9 +78,10 @@ async function submitSignup() {
       storeCode?: string
       pairingCode?: string
       error?: string
+      message?: string
     }
     if (!response.ok) {
-      errorMessage.value = body.error || 'Unable to create your store.'
+      errorMessage.value = messageFrom(body, 'Unable to create your store.')
       return
     }
     if (bindAndEnter(body, 'Unable to create your store.')) {
@@ -83,6 +93,7 @@ async function submitSignup() {
         pairingCode: body.pairingCode ?? '',
       })
       createdPairingCode.value = body.pairingCode ?? ''
+      window.scrollTo({ top: 0 })
     }
   } catch {
     errorMessage.value = 'Something went wrong — check your connection and try again.'
@@ -115,9 +126,14 @@ async function submitPairing() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code: pairForm.pairingCode }),
     })
-    const body = await response.json().catch(() => ({})) as { organizationSlug?: string; storeCode?: string; error?: string }
+    const body = await response.json().catch(() => ({})) as {
+      organizationSlug?: string
+      storeCode?: string
+      error?: string
+      message?: string
+    }
     if (!response.ok) {
-      errorMessage.value = body.error || 'Unable to find that store.'
+      errorMessage.value = messageFrom(body, 'Unable to find that store.')
       return
     }
     if (bindAndEnter(body, 'Unable to find that store.')) {
@@ -133,26 +149,152 @@ async function submitPairing() {
 
 <template>
   <div class="onboarding-shell">
-    <!-- The Omaykan product story, moved here off the landing page: the
-         landing page is now the customer-facing delivery storefront, so the
-         merchant pitch belongs on the page merchants actually register on.
-         Hidden once signup succeeds — at that point they're a customer, not
-         a prospect, and only need their store code. -->
-    <PosMarketing v-if="!createdPairingCode" signup-href="#register" />
+    <MerchantHeader :compact="Boolean(createdPairingCode)" />
 
-    <div id="register" class="auth-page">
-    <section class="auth-card">
-      <div class="auth-brand">
-        <div class="auth-brand-mark">B</div>
-        <strong>Omaykan</strong>
-      </div>
+    <!-- Before signup: the merchant pitch, with the form handed to its closing
+         section so the two sit side by side rather than the form floating on a
+         blank field below the story. After signup they're a customer, not a
+         prospect — the pitch comes down and the store code is the whole page. -->
+    <MerchantPitch v-if="!createdPairingCode">
+      <template #form>
+        <!-- .auth-page carries the green form palette every control inside
+             reads; --inline drops its full-screen framing so it can sit in the
+             pitch's grid column. -->
+        <div class="auth-page auth-page--inline">
+          <section class="auth-card">
+            <div class="auth-brand">
+              <BrandLogo variant="light" :size="21" />
+            </div>
 
-      <template v-if="createdPairingCode">
+            <div class="segmented-control auth-mode-switch" role="group" aria-label="Get started mode">
+              <button
+                class="segment-button"
+                :class="{ active: mode === 'signup' }"
+                type="button"
+                @click="mode = 'signup'; clearError()"
+              >
+                <span>Create a store</span>
+              </button>
+              <button
+                class="segment-button"
+                :class="{ active: mode === 'pair' }"
+                type="button"
+                @click="mode = 'pair'; clearError()"
+              >
+                <span>Add a device</span>
+              </button>
+            </div>
+
+            <div v-if="mode === 'signup'" class="auth-card__hero">
+              <h1 class="auth-card__title">Create your store</h1>
+              <p class="auth-card__copy">Live on the app and ready to ring up sales in about a minute.</p>
+            </div>
+            <div v-else class="auth-card__hero">
+              <h1 class="auth-card__title">Add a device</h1>
+              <p class="auth-card__copy">Already have a store? Enter its code to set this device up as another register.</p>
+            </div>
+
+            <Transition name="auth-form-fade" mode="out-in">
+              <form v-if="mode === 'signup'" key="signup" class="auth-form" @submit.prevent="submitSignup">
+                <label class="settings-field">
+                  <span class="settings-row__label">Business name</span>
+                  <input v-model="signupForm.businessName" class="sheet-input" type="text" autocomplete="organization" required>
+                </label>
+                <label class="settings-field">
+                  <span class="settings-row__label">Your full name</span>
+                  <input v-model="signupForm.ownerFullName" class="sheet-input" type="text" autocomplete="name" required>
+                </label>
+                <label class="settings-field">
+                  <span class="settings-row__label">Email address</span>
+                  <input v-model="signupForm.email" class="sheet-input" type="email" autocomplete="email" required>
+                  <span class="onboarding-hint">Where we send your store details. Not shown to customers.</span>
+                </label>
+                <label class="settings-field">
+                  <span class="settings-row__label">Username</span>
+                  <input v-model="signupForm.username" class="sheet-input" type="text" autocomplete="username" required>
+                  <span class="onboarding-hint">What you type to sign in.</span>
+                </label>
+                <label class="settings-field">
+                  <span class="settings-row__label">Password</span>
+                  <div class="auth-password-field">
+                    <input
+                      v-model="signupForm.password"
+                      class="sheet-input"
+                      :type="passwordVisible ? 'text' : 'password'"
+                      autocomplete="new-password"
+                      minlength="6"
+                      required
+                    >
+                    <button
+                      class="auth-password-toggle"
+                      type="button"
+                      :aria-label="passwordVisible ? 'Hide password' : 'Show password'"
+                      @click="passwordVisible = !passwordVisible"
+                    >
+                      <EyeOff v-if="passwordVisible" :size="16" />
+                      <Eye v-else :size="16" />
+                    </button>
+                  </div>
+                  <span class="onboarding-hint">At least 6 characters.</span>
+                </label>
+                <label class="settings-field">
+                  <span class="settings-row__label">Business type</span>
+                  <AutocompleteSelect v-model="signupForm.businessMode" label="Business type" :options="businessModeOptions" />
+                  <span class="onboarding-hint">Sets your starting catalog, layout, and checkout flow. Changeable later.</span>
+                </label>
+
+                <!-- Was a GCash transfer collected mid-form, against a
+                     placeholder number, while every other surface promised
+                     early access was free. Nothing is charged now, so the form
+                     says so plainly instead of asking for a reference. -->
+                <p class="onboarding-note">
+                  <strong>No payment now.</strong> Omaykan is free while we're in early access, and
+                  we'll tell you well before that changes.
+                </p>
+
+                <button class="primary-button auth-submit" type="submit" :disabled="saving">
+                  {{ saving ? 'Creating your store…' : 'Create your store' }}
+                </button>
+              </form>
+
+              <form v-else key="pair" class="auth-form" @submit.prevent="submitPairing">
+                <label class="settings-field">
+                  <span class="settings-row__label">Store code</span>
+                  <input v-model="pairForm.pairingCode" class="sheet-input" type="text" autocomplete="off" placeholder="e.g. DEMO01" required>
+                  <span class="onboarding-hint">Find it in Settings on a device that's already set up.</span>
+                </label>
+                <button class="primary-button auth-submit" type="submit" :disabled="saving">
+                  {{ saving ? 'Connecting…' : 'Continue' }}
+                </button>
+              </form>
+            </Transition>
+
+            <p v-if="errorMessage" class="auth-error">{{ errorMessage }}</p>
+
+            <p class="onboarding-support">
+              Stuck signing up? Email <a :href="supportMailto('Omaykan signup')">{{ SUPPORT_EMAIL }}</a>.
+            </p>
+          </section>
+        </div>
+      </template>
+    </MerchantPitch>
+
+    <!-- Success: the store code is the only thing on screen worth reading. -->
+    <div v-else class="auth-page onboarding-done">
+      <section class="auth-card">
+        <div class="auth-brand">
+          <BrandLogo variant="light" :size="21" />
+        </div>
+
         <div class="auth-card__hero">
-          <h1 class="auth-card__title">Your store is ready</h1>
+          <span class="onboarding-done__badge">
+            <Check :size="15" />
+            Store created
+          </span>
+          <h1 class="auth-card__title">You're live on Omaykan.</h1>
           <p class="auth-card__copy">
-            Share this store code with customers — they enter it in the Omaykan app to find and order from your
-            store. You can find it again anytime in Settings.
+            Share this store code with your customers — they enter it in the Omaykan app to find your
+            shop and order from it. It's in Settings whenever you need it again.
           </p>
         </div>
 
@@ -165,158 +307,103 @@ async function submitPairing() {
           </button>
         </div>
 
+        <ol class="onboarding-next">
+          <li>Add your products, or edit the starter catalog we set up for you.</li>
+          <li>Ring up your first sale at the counter.</li>
+          <li>Hand the code to customers so they can order for delivery.</li>
+        </ol>
+
         <button class="primary-button auth-submit" type="button" @click="continueToStore">
           Continue to your store
         </button>
-      </template>
 
-      <template v-else>
-        <div class="segmented-control auth-mode-switch" role="group" aria-label="Get started mode">
-          <button
-            class="segment-button"
-            :class="{ active: mode === 'signup' }"
-            type="button"
-            @click="mode = 'signup'; clearError()"
-          >
-            <span>Sign up</span>
-          </button>
-          <button
-            class="segment-button"
-            :class="{ active: mode === 'pair' }"
-            type="button"
-            @click="mode = 'pair'; clearError()"
-          >
-            <span>I already have a store</span>
-          </button>
-        </div>
-
-        <div v-if="mode === 'signup'" class="auth-card__hero">
-          <h1 class="auth-card__title">Create your store</h1>
-          <p class="auth-card__copy">Set up your business and start selling right away.</p>
-        </div>
-        <div v-else class="auth-card__hero">
-          <h1 class="auth-card__title">Welcome back</h1>
-          <p class="auth-card__copy">Enter your store's code to set up this device.</p>
-        </div>
-
-        <Transition name="auth-form-fade" mode="out-in">
-          <form v-if="mode === 'signup'" key="signup" class="auth-form" @submit.prevent="submitSignup">
-          <label class="settings-field">
-            <span class="settings-row__label">Business name</span>
-            <input v-model="signupForm.businessName" class="sheet-input" type="text" autocomplete="organization">
-          </label>
-          <label class="settings-field">
-            <span class="settings-row__label">Your full name</span>
-            <input v-model="signupForm.ownerFullName" class="sheet-input" type="text" autocomplete="name">
-          </label>
-          <label class="settings-field">
-            <span class="settings-row__label">Username</span>
-            <input v-model="signupForm.username" class="sheet-input" type="text" autocomplete="username">
-          </label>
-          <label class="settings-field">
-            <span class="settings-row__label">Password</span>
-            <div class="auth-password-field">
-              <input
-                v-model="signupForm.password"
-                class="sheet-input"
-                :type="passwordVisible ? 'text' : 'password'"
-                autocomplete="new-password"
-              >
-              <button
-                class="auth-password-toggle"
-                type="button"
-                :aria-label="passwordVisible ? 'Hide password' : 'Show password'"
-                @click="passwordVisible = !passwordVisible"
-              >
-                <EyeOff v-if="passwordVisible" :size="16" />
-                <Eye v-else :size="16" />
-              </button>
-            </div>
-          </label>
-          <label class="settings-field">
-            <span class="settings-row__label">Business type</span>
-            <AutocompleteSelect v-model="signupForm.businessMode" label="Business type" :options="businessModeOptions" />
-          </label>
-
-          <div class="onboarding-payment">
-            <p class="onboarding-payment__title">Pay via GCash — {{ priceLabel }}</p>
-            <p class="onboarding-payment__detail">Send to <strong>{{ GCASH_NUMBER }}</strong> ({{ GCASH_ACCOUNT_NAME }})</p>
-            <p class="onboarding-payment__helper">Your store activates immediately — we'll verify the payment shortly after.</p>
-          </div>
-
-          <label class="settings-field">
-            <span class="settings-row__label">GCash reference number</span>
-            <input v-model="signupForm.gcashReference" class="sheet-input" type="text" autocomplete="off">
-          </label>
-
-          <button class="primary-button auth-submit" type="submit" :disabled="saving">
-            {{ saving ? 'Creating your store…' : 'Create your store' }}
-          </button>
-        </form>
-
-        <form v-else key="pair" class="auth-form" @submit.prevent="submitPairing">
-          <label class="settings-field">
-            <span class="settings-row__label">Store code</span>
-            <input v-model="pairForm.pairingCode" class="sheet-input" type="text" autocomplete="off" placeholder="e.g. DEMO01">
-          </label>
-          <button class="primary-button auth-submit" type="submit" :disabled="saving">
-            {{ saving ? 'Connecting…' : 'Continue' }}
-          </button>
-        </form>
-        </Transition>
-
-        <p v-if="errorMessage" class="auth-error">{{ errorMessage }}</p>
-      </template>
-    </section>
+        <p class="onboarding-support">
+          Something not right? Email <a :href="supportMailto('Omaykan signup')">{{ SUPPORT_EMAIL }}</a>.
+        </p>
+      </section>
     </div>
+
+    <MerchantFooter />
   </div>
 </template>
 
 <style scoped>
-/* The page is now marketing-first: the PosMarketing block fills the viewport,
-   and the registration card sits below it as the conversion step. */
+/* Marketing-first page: header, the pitch (which now holds the form in its
+   closing section), then the footer. The form's own palette lives on
+   .auth-page in packages/core/src/styles/app.css — nothing is re-pointed here,
+   so the POS app keeps its own accent. */
 .onboarding-shell {
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
-  background: var(--bg-base);
-  /* The form is built from app components (.primary-button, .segment-button,
-     focus rings) which read --accent — still the app's blue. Re-point it here
-     only, so the card matches the green marketing above it without changing
-     the POS app's own accent. Dark ink rather than white on the bright green:
-     white would be ~2.2:1, this is ~7.5:1. */
-  --accent: #22c55e;
-  --accent-pressed: #16a34a;
-  --accent-text-on: #06240f;
+  background: #ffffff;
 }
 
-.onboarding-shell .auth-page {
-  scroll-margin-top: 24px;
+/* The success step is the whole viewport, minus the header that stays above it. */
+.onboarding-done {
+  flex: 1;
+  min-height: calc(100vh - 68px);
+  background: linear-gradient(180deg, #f5f9f6 0%, #ffffff 55%);
 }
 
-.onboarding-payment {
+.onboarding-done__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: start;
+  margin-bottom: 4px;
+  padding: 5px 12px 5px 9px;
+  border-radius: 980px;
+  background: color-mix(in srgb, #1a6b3c 10%, transparent);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #1a6b3c;
+}
+
+/* Field-level help. Small and secondary — it explains, it never warns. */
+.onboarding-hint {
+  font: var(--type-caption);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.onboarding-note {
+  margin: 0;
   padding: var(--space-4);
   border-radius: var(--radius-lg);
-  background: var(--fill);
+  background: color-mix(in srgb, #1a6b3c 7%, transparent);
+  font: var(--type-caption);
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.onboarding-note strong { color: var(--text-primary); font-weight: 700; }
+
+.onboarding-next {
   display: grid;
-  gap: var(--space-1);
-}
-
-.onboarding-payment__title {
+  gap: 10px;
   margin: 0;
-  font: var(--type-subhead);
-  font-weight: 600;
-  color: var(--text-primary);
+  padding-left: 20px;
+  font: var(--type-caption);
+  line-height: 1.55;
+  color: var(--text-secondary);
 }
 
-.onboarding-payment__detail {
-  margin: 0;
-  font: var(--type-subhead);
-  color: var(--text-primary);
-}
-
-.onboarding-payment__helper {
+.onboarding-support {
   margin: 0;
   font: var(--type-caption);
+  line-height: 1.55;
   color: var(--text-secondary);
+  text-align: center;
+}
+/* --text-primary, not --accent: the accent on this card is the deep green,
+   which is fine as a button fill behind white ink but thin as 13px link text.
+   The underline carries the affordance instead. */
+.onboarding-support a {
+  color: var(--text-primary);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-word;
 }
 
 .onboarding-code {
@@ -344,5 +431,11 @@ async function submitPairing() {
   gap: var(--space-2);
   width: auto;
   padding: 0 var(--space-3);
+  /* "Copy code" wraps to two lines and squeezes the icon out otherwise. */
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .onboarding-done { min-height: 0; padding-top: var(--space-6); }
 }
 </style>

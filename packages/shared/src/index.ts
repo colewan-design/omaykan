@@ -1,10 +1,44 @@
 import { groceryCatalogCategories, groceryCatalogProducts } from './groceryCatalog.generated'
 
+/**
+ * The one address customers, merchants and riders are told to write to.
+ *
+ * Kept here rather than typed into each surface so the site footer, the signup
+ * card, the POS sign-in and the mobile storefront can't drift apart, and so
+ * changing it is one edit. Outgoing mail is sent *from* it too — see
+ * MAIL_FROM_ADDRESS in backend/.env.example.
+ */
+export const SUPPORT_EMAIL = 'support@omaykan.com'
+
+/**
+ * A `mailto:` for that address. The subject is worth passing wherever the page
+ * already knows why someone is writing — "Signing up" from the registration
+ * card, an order's ticket number from order status — because it arrives in the
+ * inbox pre-sorted instead of as another blank "Help".
+ */
+export function supportMailto(subject?: string): string {
+  const address = `mailto:${SUPPORT_EMAIL}`
+  return subject ? `${address}?subject=${encodeURIComponent(subject)}` : address
+}
+
 export type BusinessMode = 'coffee-shop' | 'grocery' | 'restaurant' | 'nail-salon'
 export type ProductKind = 'standard' | 'weighted'
 export type OrderType = 'dine_in' | 'takeaway'
 export type FulfillmentMethod = 'pickup' | 'delivery'
 export type OrderStatus = 'preparing' | 'ready' | 'served'
+/**
+ * Where a delivery order is on the road, as against `OrderStatus`, which is
+ * how far the shop has got with making it. Only delivery orders have one;
+ * pickup and register sales leave it null.
+ *
+ * An order is created 'pending' by the storefront, and the seller moves it
+ * along from the dashboard: naming a rider takes it to 'assigned', and the two
+ * stages after that are the rider's progress.
+ */
+export type DeliveryStage = 'pending' | 'assigned' | 'picked_up' | 'delivered'
+
+/** In order, so the dashboard can render progress and pick "what's next". */
+export const deliveryStages: DeliveryStage[] = ['pending', 'assigned', 'picked_up', 'delivered']
 export type PaymentMethod = 'cash' | 'card' | 'ewallet'
 export type OrderChannel = 'in_person' | 'online'
 export type PaymentStatus = 'paid' | 'unpaid'
@@ -145,6 +179,7 @@ export interface OrderSummary {
   id: string
   ticketNumber: string
   businessMode: BusinessMode
+  createdByUserId?: string | null
   customerId: string | null
   customerName: string
   orderType: OrderType
@@ -166,6 +201,14 @@ export interface OrderSummary {
   // Only meaningful for channel: 'online' — in-person orders have neither.
   fulfillmentMethod?: FulfillmentMethod
   deliveryAddress?: string | null
+  // Delivery only, and only once the seller has acted: the dashboard names a
+  // rider and walks the stage forward from there. Null on pickup orders and on
+  // anything rung up at the register.
+  deliveryStage?: DeliveryStage | null
+  riderName?: string | null
+  riderPhone?: string | null
+  /** Quoted by the API from the drop-off distance; 0 for pickup. */
+  deliveryFeeCents?: number
   // Absent/null on every non-voided order. A void reverses the whole order —
   // inventory restored, excluded from revenue — there is no partial/line-item
   // refund yet.
@@ -324,7 +367,7 @@ export const defaultRoles: RoleDefinition[] = [
   {
     id: 'cashier',
     name: 'Cashier',
-    permissions: createPermissions(['dashboard', 'sales', 'orders', 'register', 'tables']),
+    permissions: createPermissions(['dashboard', 'sales', 'orders', 'register', 'settings', 'tables']),
     canManageStaff: false,
   },
   {
@@ -357,6 +400,25 @@ export function orderStatusLabel(status: OrderStatus): string {
     case 'served':
       return 'All Done'
   }
+}
+
+export function deliveryStageLabel(stage: DeliveryStage): string {
+  switch (stage) {
+    case 'pending':
+      return 'Needs a rider'
+    case 'assigned':
+      return 'Rider assigned'
+    case 'picked_up':
+      return 'On the way'
+    case 'delivered':
+      return 'Delivered'
+  }
+}
+
+/** Null at the end of the road — 'delivered' has nowhere further to go. */
+export function nextDeliveryStage(stage: DeliveryStage): DeliveryStage | null {
+  const index = deliveryStages.indexOf(stage)
+  return index === -1 || index === deliveryStages.length - 1 ? null : deliveryStages[index + 1]
 }
 
 export function nextOrderStatus(status: OrderStatus): OrderStatus {
@@ -481,6 +543,11 @@ const skuOffsets: Record<string, number> = {
   RET: 1600,
 }
 
+// Coffee-shop items use local photos from apps/web/public/products. A handful
+// of the grocery fixtures had no photo at all and rendered as a grey placeholder
+// tile on the storefront shelves, so they now hotlink smmarkets.ph from the same
+// scrape that feeds groceryCatalog.generated.ts — demo data, on someone else's
+// CDN, to be swapped for the tenant's own photos before production.
 export const demoProducts: Product[] = [
   // Coffee
   standardProduct(1, 'coffee', 'COF', 'espresso', 'Espresso', 12000, ['coffee-shop'], {
@@ -629,9 +696,11 @@ export const demoProducts: Product[] = [
     stockQty: 40, lowStockThreshold: 12,
   }),
   standardProduct(5, 'groceries', 'GRO', 'iodized-salt', 'Iodized Salt 500g', 2500, ['grocery'], {
+    imageUrl: 'https://smmarkets.ph/media/catalog/product/s/m/sm_bonus_iodized_salt_500g.jpg?optimize=low&bg-color=255%2C255%2C255&fit=bounds&height=300&width=300',
     stockQty: 55, lowStockThreshold: 15,
   }),
   standardProduct(6, 'groceries', 'GRO', 'soy-sauce', 'Soy Sauce 1L', 6800, ['grocery'], {
+    imageUrl: 'https://smmarkets.ph/media/catalog/product/2/7/27._10006753_datu_puti_soy_sauce_1lt.png?optimize=low&bg-color=255%2C255%2C255&fit=bounds&height=300&width=300',
     stockQty: 28, lowStockThreshold: 10,
   }),
   standardProduct(7, 'groceries', 'GRO', 'instant-noodles', 'Instant Noodles', 1800, ['grocery'], {
@@ -639,6 +708,7 @@ export const demoProducts: Product[] = [
     stockQty: 80, lowStockThreshold: 20,
   }),
   standardProduct(8, 'groceries', 'GRO', 'canned-sardines', 'Canned Sardines', 3200, ['grocery'], {
+    imageUrl: 'https://smmarkets.ph/media/catalog/product/1/0/10007027_sm_bonus_sardines_chili_155g.png?optimize=low&bg-color=255%2C255%2C255&fit=bounds&height=300&width=300',
     stockQty: 65, lowStockThreshold: 20,
   }),
   standardProduct(9, 'groceries', 'GRO', 'bread-loaf', 'White Bread Loaf', 6500, ['grocery'], {
@@ -690,6 +760,7 @@ export const demoProducts: Product[] = [
     stockQty: 15, lowStockThreshold: 5,
   }),
   standardProduct(8, 'produce', 'PRO', 'calamansi', 'Calamansi', 18000, ['grocery'], {
+    imageUrl: 'https://smmarkets.ph/media/catalog/product/1/0/10-20481794-calamansi_1.png?optimize=low&bg-color=255%2C255%2C255&fit=bounds&height=300&width=300',
     kind: 'weighted',
     unitLabel: '/ kg',
     stockQty: 8, lowStockThreshold: 3,
@@ -701,6 +772,7 @@ export const demoProducts: Product[] = [
     stockQty: 18, lowStockThreshold: 6,
   }),
   standardProduct(2, 'dairy', 'DAI', 'butter', 'Butter 200g', 13500, ['grocery'], {
+    imageUrl: 'https://smmarkets.ph/media/catalog/product/1/0/10051230020_copy_.png?optimize=low&bg-color=255%2C255%2C255&fit=bounds&height=300&width=300',
     stockQty: 22, lowStockThreshold: 8,
   }),
   standardProduct(3, 'dairy', 'DAI', 'yogurt-cup', 'Yogurt Cup', 4500, ['grocery'], {
@@ -734,6 +806,7 @@ export const demoProducts: Product[] = [
     stockQty: 42, lowStockThreshold: 12,
   }),
   standardProduct(5, 'snacks', 'SNK', 'assorted-biscuits', 'Assorted Biscuits', 5200, ['grocery'], {
+    imageUrl: 'https://smmarkets.ph/media/catalog/product/h/t/httpsshop.smmarkets.phpubmediawysiwygro_photos11052020440415-1.png?optimize=low&bg-color=255%2C255%2C255&fit=bounds&height=300&width=300',
     stockQty: 30, lowStockThreshold: 10,
   }),
 
@@ -979,4 +1052,3 @@ export function categoryTagVar(categoryId: string): string {
   }
   return `var(${categoryTagVars[hash % categoryTagVars.length]})`
 }
-

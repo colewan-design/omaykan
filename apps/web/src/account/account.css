@@ -1,0 +1,368 @@
+/*
+ * Chrome for the customer portal (/account).
+ *
+ * Global rather than seven copies of the same `<style scoped>` block: the menu
+ * panel and every section it opens have to agree on one card, one field, one
+ * button and one empty state, and scoped styles would let them drift the way
+ * the header and footer were drifting before FdHeader was shared.
+ *
+ * Everything is namespaced under `.acct`, so none of it reaches the storefront
+ * chrome above and below it, or the app if app.css is ever loaded alongside.
+ *
+ * The palette is the reference's: near-white ground, black type, hairline
+ * rules, and the storefront green used only where something is actionable.
+ * The green header and footer are what tie the page to the rest of the site;
+ * the portal itself stays quiet.
+ */
+
+.acct {
+  --acct-ink: #1a1a1a;
+  --acct-muted: #6b7280;
+  --acct-faint: #9ca3af;
+  --acct-rule: #e8eae9;
+  --acct-ground: #f7f7f7;
+  --acct-surface: #ffffff;
+  --acct-green: #1a6b3c;
+  --acct-radius: 14px;
+}
+
+/* ── Section headers ─────────────────────────────────────────────────── */
+
+.acct-head {
+  margin: 0 0 26px;
+}
+
+.acct-head__title {
+  margin: 0;
+  font-size: 27px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--acct-ink);
+}
+
+.acct-head__sub {
+  margin: 8px 0 0;
+  max-width: 58ch;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--acct-muted);
+}
+
+/* ── Cards ───────────────────────────────────────────────────────────── */
+
+.acct-card {
+  padding: 22px 24px;
+  border: 1px solid var(--acct-rule);
+  border-radius: var(--acct-radius);
+  background: var(--acct-surface);
+}
+
+.acct-card + .acct-card {
+  margin-top: 14px;
+}
+
+.acct-card__title {
+  margin: 0 0 4px;
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--acct-ink);
+}
+
+.acct-card__note {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--acct-muted);
+}
+
+/* Marks the address or card that checkout will open on. */
+.acct-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 21px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: rgba(26, 107, 60, 0.1);
+  color: var(--acct-green);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* ── Empty states ────────────────────────────────────────────────────── */
+
+.acct-empty {
+  padding: 34px 26px;
+  border: 1px dashed #dcdfdd;
+  border-radius: var(--acct-radius);
+  background: var(--acct-surface);
+  text-align: center;
+}
+
+.acct-empty__title {
+  margin: 0 0 6px;
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--acct-ink);
+}
+
+.acct-empty__note {
+  margin: 0 auto;
+  max-width: 46ch;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--acct-muted);
+}
+
+/* ── Fields ──────────────────────────────────────────────────────────── */
+
+.acct-field {
+  display: block;
+  margin-bottom: 16px;
+}
+
+.acct-field__label {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--acct-ink);
+}
+
+.acct-field__hint {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--acct-faint);
+}
+
+.acct-input,
+.acct-select,
+.acct-textarea {
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid #dcdfdd;
+  border-radius: 10px;
+  background: #fff;
+  font: 500 15px/1.4 inherit;
+  color: var(--acct-ink);
+}
+
+.acct-textarea {
+  min-height: 78px;
+  resize: vertical;
+}
+
+.acct-input:focus,
+.acct-select:focus,
+.acct-textarea:focus {
+  outline: none;
+  border-color: var(--acct-green);
+  box-shadow: 0 0 0 3px rgba(26, 107, 60, 0.12);
+}
+
+.acct-input::placeholder,
+.acct-textarea::placeholder {
+  color: var(--acct-faint);
+}
+
+/* A field that is shown but not editable — the address a reset link was issued
+   for. It has to look answered rather than broken, so it reads as settled type
+   on the ground colour instead of an input someone's clicks are bouncing off. */
+.acct-input[readonly] {
+  background: var(--acct-ground);
+  color: var(--acct-muted);
+  cursor: default;
+}
+
+.acct-input[readonly]:focus {
+  border-color: var(--acct-rule);
+  box-shadow: none;
+}
+
+/* Two fields on one line above 560px, stacked below it. */
+.acct-row {
+  display: grid;
+  gap: 0 14px;
+  grid-template-columns: 1fr 1fr;
+}
+
+@media (max-width: 560px) {
+  .acct-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────── */
+
+.acct-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 20px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--acct-green);
+  color: #fff;
+  font: 700 14px/1 inherit;
+  cursor: pointer;
+}
+
+.acct-btn:hover {
+  background: #14572f;
+}
+
+.acct-btn:disabled {
+  background: #d6dbd8;
+  color: #8a938e;
+  cursor: not-allowed;
+}
+
+.acct-btn--ghost {
+  background: transparent;
+  border-color: #dcdfdd;
+  color: var(--acct-ink);
+}
+
+.acct-btn--ghost:hover {
+  background: #f2f4f3;
+}
+
+/* Text-only actions inside a card row — "Make default", "Remove". */
+.acct-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--acct-muted);
+  font: 600 13px/1 inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.acct-link:hover {
+  color: var(--acct-ink);
+}
+
+.acct-link--danger:hover {
+  color: #b42318;
+}
+
+.acct-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+/* ── Toggles ─────────────────────────────────────────────────────────── */
+
+.acct-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 15px 0;
+  border-top: 1px solid var(--acct-rule);
+  cursor: pointer;
+}
+
+.acct-toggle:first-of-type {
+  border-top: none;
+}
+
+.acct-toggle input {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: var(--acct-green);
+  cursor: pointer;
+}
+
+.acct-toggle__body {
+  min-width: 0;
+}
+
+.acct-toggle__label {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--acct-ink);
+}
+
+.acct-toggle__hint {
+  display: block;
+  margin-top: 3px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--acct-muted);
+}
+
+/* ── Saved / error flashes ───────────────────────────────────────────── */
+
+.acct-flash {
+  margin: 14px 0 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--acct-green);
+}
+
+.acct-flash--error {
+  color: #b42318;
+}
+
+/* ── Signed-out gate ─────────────────────────────────────────────────── */
+
+/* Lives here rather than in AccountPage.vue because CustomerAuth.vue is what
+   renders it, and a scoped rule in the parent would only reach that
+   component's root element — not the title, form or note inside it. */
+
+.acct-gate {
+  max-width: 460px;
+  margin: 0 auto;
+  padding: 64px var(--fd-gutter) 88px;
+}
+
+/* The line-height is set rather than inherited: the marketing headings this
+   page loads run near 0.9, which is fine for the one-line "Your account" but
+   laps the two lines of "Choose a new password" over each other. */
+.acct-gate__title {
+  margin: 0 0 10px;
+  font-size: 38px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  color: var(--acct-ink);
+}
+
+.acct-gate__sub {
+  margin: 0 0 28px;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--acct-muted);
+}
+
+.acct-gate__go {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.acct-gate__note {
+  margin: 20px 0 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--acct-faint);
+}
+
+/* The stored-token check. Deliberately plain text and not a spinner: it
+   resolves in one request, and a spinner would make a fast check look slow. */
+.acct-gate__waiting {
+  margin: 0;
+  padding: 24px 0;
+  font-size: 15px;
+  color: var(--acct-muted);
+}

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Minus, Pencil, Plus, ReceiptText, TicketPercent, Trash2, X } from '@lucide/vue'
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { formatCurrency, paymentMethodOptions } from '@pos/shared/index'
 import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import PaymentSheet from '@pos/core/components/PaymentSheet.vue'
@@ -11,10 +11,15 @@ const store = usePosStore()
 const showPayment = ref(false)
 const editingCustomer = ref(false)
 const promoCode = ref('')
+const failedThumbs = reactive<Record<string, boolean>>({})
 const emit = defineEmits<{ 'payment-open': [] }>()
 
 function clearPromo() {
   promoCode.value = ''
+}
+
+function thumbInitial(name: string) {
+  return name.trim().charAt(0).toUpperCase() || '?'
 }
 
 function adjustQty(productId: string, delta: 1 | -1) {
@@ -100,7 +105,20 @@ async function openPayment() {
       </div>
 
       <article v-for="line in store.cartLines" :key="line.product.id" class="order-line">
-        <p class="order-line__name">{{ line.product.name }}</p>
+        <div class="order-line__thumb" aria-hidden="true">
+          <img
+            v-if="line.product.imageUrl && !failedThumbs[line.product.id]"
+            :src="line.product.imageUrl"
+            :alt="line.product.name"
+            loading="lazy"
+            @error="failedThumbs[line.product.id] = true"
+          >
+          <span v-else class="order-line__thumb-fallback">{{ thumbInitial(line.product.name) }}</span>
+        </div>
+
+        <div class="order-line__body">
+          <p class="order-line__name">{{ line.product.name }}</p>
+        </div>
 
         <div class="stepper">
           <button type="button" @click="adjustQty(line.product.id, -1)">
@@ -174,3 +192,53 @@ async function openPayment() {
     <PaymentSheet v-if="showPayment" @close="showPayment = false" @confirm="confirmPayment" />
   </aside>
 </template>
+
+<style scoped>
+.order-line {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 0.5px solid var(--separator);
+}
+
+.order-line:last-child {
+  border-bottom: none;
+}
+
+.order-line__thumb {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, white), color-mix(in srgb, var(--fill) 70%, white)),
+    var(--bg-elevated);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 8%, var(--separator));
+}
+
+.order-line__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.order-line__thumb-fallback {
+  color: var(--accent);
+  font: var(--type-headline);
+  font-weight: 700;
+}
+
+.order-line__body {
+  min-width: 0;
+}
+
+.order-line__name {
+  margin: 0;
+  font: var(--type-subhead);
+  font-weight: 600;
+}
+</style>

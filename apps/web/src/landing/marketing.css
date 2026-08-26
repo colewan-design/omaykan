@@ -1,7 +1,7 @@
 /*
  * Shared marketing chrome for the two marketing surfaces:
  *   - the consumer landing page  (.landing  — LandingPage.vue)
- *   - the merchant registration page (.pm-root — PosMarketing.vue on /signup)
+ *   - the merchant registration page (.pm-root — onboarding/MerchantPitch.vue)
  *
  * Deliberately global rather than scoped: both surfaces need the same brand
  * tokens, reveal animation and layout container, and duplicating them in two

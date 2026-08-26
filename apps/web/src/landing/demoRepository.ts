@@ -304,6 +304,21 @@ export function createDemoPosRepository(): PosRepository {
       return updated
     },
 
+    // The demo repository has no storefront behind it, so there are never any
+    // online orders to act on — these exist to satisfy PosRepository and fail
+    // loudly if something ever does call them.
+    async updateOnlineOrderStatus(orderId: string) {
+      throw new Error(`No online order ${orderId} in the demo catalog.`)
+    },
+
+    async assignOrderRider(orderId: string) {
+      throw new Error(`No online order ${orderId} in the demo catalog.`)
+    },
+
+    async updateOrderDeliveryStage(orderId: string) {
+      throw new Error(`No online order ${orderId} in the demo catalog.`)
+    },
+
     async saveCustomer(input: CreateCustomerInput) {
       const timestamp = new Date().toISOString()
       const customer: Customer = {

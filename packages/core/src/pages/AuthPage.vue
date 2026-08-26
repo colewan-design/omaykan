@@ -2,6 +2,8 @@
 import { Eye, EyeOff, UserRound } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { SUPPORT_EMAIL, supportMailto } from '@pos/shared/index'
+import BrandLogo from '@pos/core/components/BrandLogo.vue'
 import { useAuthStore } from '@pos/core/stores/auth'
 
 const auth = useAuthStore()
@@ -79,11 +81,37 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="auth-page">
-    <section class="auth-card">
+  <!-- --split marks the two-panel layout, which the signup and platform-admin
+       screens don't use: it lets the narrow breakpoint drop this page's gutters
+       for a full-bleed card without touching theirs. -->
+  <div class="auth-page auth-page--split">
+    <div class="auth-shell">
+      <!-- The green half carries the brand the storefront and landing page
+           already wear, so signing in doesn't look like a different product.
+           It folds away under 900px: on a till in portrait, or in the admin
+           app, the form is the whole point and the brand shrinks to the
+           lockup at the top of the card. -->
+      <aside class="auth-pitch">
+        <BrandLogo variant="dark" :size="24" />
+
+        <div>
+          <h2 class="auth-pitch__title">Run your counter on Omaykan.</h2>
+          <p class="auth-pitch__copy">
+            A point of sale for the shop floor and a storefront your customers order from — one
+            catalog behind both, free while we're in early access.
+          </p>
+        </div>
+
+        <ul class="auth-pitch__list">
+          <li>You keep 100% of every sale</li>
+          <li>The same prices at the counter and online</li>
+          <li>Cash or GCash, pickup or delivered</li>
+        </ul>
+      </aside>
+
+      <section class="auth-card">
       <div class="auth-brand">
-        <div class="auth-brand-mark">B</div>
-        <strong>Omaykan</strong>
+        <BrandLogo variant="light" :size="21" />
       </div>
 
       <div class="segmented-control auth-mode-switch" role="group" aria-label="Authentication mode">
@@ -182,6 +210,12 @@ onMounted(async () => {
           <span>Continue as guest</span>
         </button>
       </div>
-    </section>
+
+      <p class="auth-support">
+        Locked out or need an account set up?
+        Email <a :href="supportMailto('Omaykan account help')">{{ SUPPORT_EMAIL }}</a>.
+      </p>
+      </section>
+    </div>
   </div>
 </template>

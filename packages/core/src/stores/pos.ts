@@ -15,6 +15,7 @@ import {
   type CreateSupplierInput,
   type CreateTableInput,
   type Customer,
+  type DeliveryStage,
   type OrderStatus,
   type OrderSummary,
   type OrderType,
@@ -205,6 +206,10 @@ export const usePosStore = defineStore('pos', () => {
 
   async function refreshOnlineOrders() {
     onlineOrders.value = await repository.loadOnlineOrders()
+  }
+
+  async function refreshOrders() {
+    orders.value = await repository.loadOrders()
   }
 
   function clearShiftError() {
@@ -669,12 +674,34 @@ export const usePosStore = defineStore('pos', () => {
     orderId: string,
     payment: { paymentMethod: PaymentMethod; tenderedCents: number; changeCents: number; userId?: string | null },
   ) {
-    const updated = await repository.settleOrderPayment(orderId, payment)
-    const index = onlineOrders.value.findIndex((order) => order.id === orderId)
+    return replaceOnlineOrder(await repository.settleOrderPayment(orderId, payment))
+  }
+
+  function replaceOnlineOrder(updated: OrderSummary) {
+    const index = onlineOrders.value.findIndex((order) => order.id === updated.id)
     if (index !== -1) {
       onlineOrders.value[index] = updated
     }
     return updated
+  }
+
+  /**
+   * Storefront orders live server-side, so these three go over the network and
+   * have no offline path — unlike updateOrderStatus above, which walks a
+   * register sale through the local outbox. The dashboard surfaces the failure
+   * rather than pretending the rider was told.
+   */
+  async function updateOnlineOrderStatus(orderId: string, status: OrderStatus) {
+    return replaceOnlineOrder(await repository.updateOnlineOrderStatus(orderId, status))
+  }
+
+  /** Records who is carrying the order; the API moves it to 'assigned'. */
+  async function notifyRider(orderId: string, rider: { riderName: string; riderPhone?: string | null }) {
+    return replaceOnlineOrder(await repository.assignOrderRider(orderId, rider))
+  }
+
+  async function advanceDelivery(orderId: string, stage: DeliveryStage) {
+    return replaceOnlineOrder(await repository.updateOrderDeliveryStage(orderId, stage))
   }
 
   function clearLowStockAlert() {
@@ -792,10 +819,14 @@ export const usePosStore = defineStore('pos', () => {
     notePaymentSheetOpened,
     updateSettings,
     completeOrder,
+    refreshOrders,
     updateOrderStatus,
     voidOrder,
     refreshOnlineOrders,
     settleOnlineOrderPayment,
+    updateOnlineOrderStatus,
+    notifyRider,
+    advanceDelivery,
     clearLowStockAlert,
     restockProduct,
     refreshActiveShift,

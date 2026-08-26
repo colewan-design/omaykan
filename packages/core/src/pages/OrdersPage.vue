@@ -108,6 +108,10 @@ function userNameFor(userId: string | null | undefined): string | null {
   return auth.users.find((user) => user.id === userId)?.fullName ?? null
 }
 
+function createdByLabel(order: OrderSummary) {
+  return userNameFor(order.createdByUserId) ?? null
+}
+
 function formatFullDate(value: string) {
   return new Intl.DateTimeFormat('en-PH', {
     month: 'short',
@@ -414,6 +418,7 @@ const rangeCaption = computed(() => {
             <span>{{ businessModeLabel(selectedOrder.businessMode) }}</span>
             <span>{{ orderTypeLabel(selectedOrder.orderType) }}</span>
             <span>{{ paymentLabel(selectedOrder.paymentMethod) }}</span>
+            <span v-if="createdByLabel(selectedOrder)">By {{ createdByLabel(selectedOrder) }}</span>
           </div>
           <p v-if="selectedOrder.voidedAt" class="orders-detail__void-note">
             Voided {{ formatFullDate(selectedOrder.voidedAt) }}<template v-if="userNameFor(selectedOrder.voidedByUserId)"> by {{ userNameFor(selectedOrder.voidedByUserId) }}</template><template v-if="selectedOrder.voidReason">: {{ selectedOrder.voidReason }}</template>

@@ -1,4 +1,15 @@
 :root {
+  /*
+   * Light is the default scheme; the dark rules below opt into `dark` the same
+   * way they swap the palette. It is declared here, next to the palettes it has
+   * to track, rather than as `color-scheme: light dark` on <html> — that form
+   * hands the choice to the OS preference and ignores the Appearance setting,
+   * so forcing Light on a dark-preferring OS painted a light page but left the
+   * browser's own furniture dark: native scrollbars (the register product grid
+   * has one), form controls, the caret, autofill.
+   */
+  color-scheme: light;
+
   --font-sans:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, "Segoe UI",
     Roboto, Helvetica, Arial, sans-serif;
@@ -14,8 +25,8 @@
   --type-subhead: 400 0.9375rem/1.25rem var(--font-sans);
   --type-caption: 400 0.75rem/1rem var(--font-sans);
 
-  --accent: #007aff;
-  --accent-pressed: #0062cc;
+  --accent: #1a6b3c;
+  --accent-pressed: #16a34a;
   --accent-text-on: #ffffff;
   --success: #34c759;
   --warning: #ff9500;
@@ -82,7 +93,9 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     color-scheme: dark;
-    --accent: #0a84ff;
+    --accent: #92dd73;
+    --accent-pressed: #7dcb60;
+    --accent-text-on: #08200f;
     --success: #30d158;
     --warning: #ff9f0a;
     --danger: #ff453a;
@@ -109,7 +122,9 @@
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --accent: #0a84ff;
+  --accent: #92dd73;
+  --accent-pressed: #7dcb60;
+  --accent-text-on: #08200f;
   --success: #30d158;
   --warning: #ff9f0a;
   --danger: #ff453a;

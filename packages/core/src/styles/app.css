@@ -16,7 +16,7 @@
 
 html {
   font-size: 16px;
-  color-scheme: light dark;
+  /* color-scheme is set in tokens.css, alongside the palette it has to match. */
 }
 
 body {
@@ -1897,33 +1897,97 @@ button {
   width: 180px;
 }
 
+/* ── Sign in / register ─────────────────────────────────────────────────── */
+/*
+ * The front door of the product, so it wears the Omaykan marketing brand — the
+ * same deep green, pill controls and heavy tight-tracked headings as the
+ * landing page and the storefront — rather than the app's blue chrome.
+ *
+ * The palette is declared as local custom properties on .auth-page and every
+ * rule below is scoped inside it, including the overrides of shared classes
+ * (.segment-button, .sheet-input, .primary-button). Nothing outside this
+ * screen changes, and the POS app keeps its own themeable --accent.
+ *
+ * It is a light surface in both colour schemes — see color-scheme below.
+ */
 .auth-page {
+  --auth-green-deep: #1a6b3c;
+  --auth-green: #22c55e;
+  --auth-green-hot: #16a34a;
+  --auth-lime: #bbf451;
+
+  --auth-ground: #ffffff;
+  --auth-card-bg: #ffffff;
+  --auth-field: #ffffff;
+  --auth-ink: #1a1a1a;
+  --auth-muted: #5b6b62;
+  --auth-line: #e3e9e5;
+  --auth-link: #1a6b3c;
+  --auth-tab-bg: #ffffff;
+  --auth-tab-fg: #1a6b3c;
+
+  /*
+   * Light in both schemes, on purpose — no dark override.
+   *
+   * This screen is a brand surface, like the landing page and the storefront,
+   * which are light-only too; the POS app behind it still follows the OS and
+   * the Appearance setting. `color-scheme: light` is what keeps the browser's
+   * own furniture — autofill, caret, the password reveal, scrollbars — from
+   * rendering dark inside a white card on a dark-scheme document.
+   */
+  color-scheme: light;
+
+  /*
+   * Re-point the app tokens the shared components inside this screen read
+   * (AutocompleteSelect on the signup card, .sheet-input, .settings-field), so
+   * they follow the card rather than a dark document around it. Scoped here,
+   * so the rest of the app keeps its own values.
+   */
+  --bg-base: var(--auth-ground);
+  --bg-surface: var(--auth-card-bg);
+  --bg-elevated: var(--auth-card-bg);
+  --fill: color-mix(in srgb, var(--auth-green-deep) 8%, transparent);
+  --text-primary: var(--auth-ink);
+  --text-secondary: var(--auth-muted);
+  --text-tertiary: var(--auth-muted);
+  --separator: var(--auth-line);
+  --accent: var(--auth-green-deep);
+  --accent-pressed: var(--auth-green-hot);
+  --accent-text-on: #ffffff;
+
   position: relative;
   display: grid;
   place-items: center;
-  min-height: calc(100vh - var(--space-8));
-  padding: var(--space-6) 0;
-  overflow: hidden;
+  min-height: 100vh;
+  padding: var(--space-5);
+  background: var(--auth-ground);
 }
 
-.auth-page::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 60%);
-  pointer-events: none;
+/*
+ * The merchant signup card sits inside a column of the marketing page's closing
+ * section rather than alone on a screen, so it needs the palette above without
+ * the full-viewport framing that comes with it. Nothing else about the card
+ * changes — this only stops it centring itself in a 100vh box on a coloured band.
+ */
+.auth-page--inline {
+  display: block;
+  min-height: 0;
+  padding: 0;
+  background: transparent;
 }
 
-.auth-card {
-  position: relative;
+/* The sign-in screen only: one rounded slab holding both halves, rather than a
+   card floating next to a panel — the seam between pitch and form is the
+   point. The other .auth-card screens have no shell and keep their own edges. */
+.auth-shell {
   display: grid;
-  gap: var(--space-6);
-  width: min(100%, 520px);
-  padding: var(--space-10);
-  border: 0.5px solid var(--separator);
+  grid-template-columns: 0.85fr 1fr;
+  width: min(100%, 1020px);
+  border: 1px solid var(--auth-line);
   border-radius: 28px;
-  background: var(--bg-elevated);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1), 0 4px 12px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  background: var(--auth-card-bg);
+  box-shadow: 0 26px 70px rgba(9, 38, 22, 0.16), 0 3px 10px rgba(9, 38, 22, 0.06);
   animation: auth-card-in var(--dur-slow) var(--ease-out) both;
 }
 
@@ -1934,6 +1998,93 @@ button {
   }
 }
 
+.auth-pitch {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 30px;
+  padding: 48px 40px;
+  background:
+    radial-gradient(120% 90% at 100% 0%, rgba(187, 244, 81, 0.18), transparent 62%),
+    linear-gradient(165deg, #23884f 0%, #12522f 100%);
+  color: #fff;
+}
+
+.auth-pitch__title {
+  margin: 0 0 10px;
+  font-family: var(--font-sans);
+  font-size: clamp(1.5rem, 2.2vw, 1.95rem);
+  font-weight: 800;
+  line-height: 1.14;
+  letter-spacing: -0.03em;
+  color: #fff;
+}
+
+.auth-pitch__copy {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.62;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.auth-pitch__list {
+  display: grid;
+  gap: 11px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.auth-pitch__list li {
+  position: relative;
+  padding-left: 26px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.94);
+}
+
+/* A drawn tick rather than a ✓ glyph, which renders as an emoji on some
+   Android builds and as a box on others. */
+.auth-pitch__list li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 4px;
+  width: 11px;
+  height: 6px;
+  border-left: 2px solid var(--auth-lime);
+  border-bottom: 2px solid var(--auth-lime);
+  transform: rotate(-45deg);
+}
+
+/* Self-sufficient, because two other screens use it on its own: the merchant
+   signup card (apps/web/src/onboarding) and the platform-admin unlock gate.
+   Inside .auth-shell it gives up its own edges and becomes the right half. */
+.auth-card {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: var(--space-5);
+  width: min(100%, 520px);
+  padding: 46px 40px;
+  /* Hairline as well as shadow: the ground is white and so is the card, so on
+     a flat till screen the shadow alone can leave the edge invisible. */
+  border: 1px solid var(--auth-line);
+  border-radius: 28px;
+  background: var(--auth-card-bg);
+  box-shadow: 0 26px 70px rgba(9, 38, 22, 0.14), 0 3px 10px rgba(9, 38, 22, 0.05);
+  animation: auth-card-in var(--dur-slow) var(--ease-out) both;
+}
+
+.auth-shell .auth-card {
+  width: auto;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  animation: none;
+}
+
 .auth-brand {
   display: flex;
   align-items: center;
@@ -1941,20 +2092,19 @@ button {
   gap: var(--space-2);
 }
 
-.auth-brand-mark {
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(135deg, var(--accent), var(--accent-pressed));
-  color: var(--accent-text-on);
-  font: 700 0.95rem/1 var(--font-brand, var(--font-sans));
+/* The platform-admin gate names the surface under the lockup rather than
+   beside it — "Platform admin" is not part of the brand. */
+.auth-brand--stacked {
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
 .auth-brand strong {
-  font: var(--type-headline);
-  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--auth-muted);
 }
 
 .auth-form-fade-enter-active,
@@ -1974,25 +2124,177 @@ button {
 
 .auth-card__hero {
   display: grid;
-  gap: var(--space-1);
+  gap: 6px;
 }
 
 .auth-card__title {
   margin: 0;
-  font: var(--type-title1);
-  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: clamp(1.4rem, 2.4vw, 1.7rem);
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  color: var(--auth-ink);
 }
 
 .auth-card__copy {
   margin: 0;
-  color: var(--text-secondary);
-  font: var(--type-subhead);
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--auth-muted);
 }
 
 .auth-helper {
   margin: 0;
-  color: var(--text-tertiary);
-  font: var(--type-caption);
+  color: var(--auth-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* ── Shared controls, restyled for this screen only ─────────────────────── */
+
+.auth-page .segmented-control {
+  padding: 5px;
+  background: color-mix(in srgb, var(--auth-green-deep) 8%, transparent);
+}
+
+.auth-page .segment-button {
+  min-height: 40px;
+  background: transparent;
+  color: var(--auth-muted);
+  font-weight: 700;
+}
+
+.auth-page .segment-button.active {
+  background: var(--auth-tab-bg);
+  color: var(--auth-tab-fg);
+  box-shadow: 0 1px 3px rgba(9, 38, 22, 0.16);
+}
+
+.auth-page .settings-row__label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--auth-muted);
+}
+
+.auth-page .sheet-input {
+  min-height: 50px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--auth-line);
+  border-radius: 13px;
+  background: var(--auth-field);
+  color: var(--auth-ink);
+  font-size: 15px;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.auth-page .sheet-input:focus,
+.auth-page .auth-form .sheet-input:focus {
+  border-color: var(--auth-green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--auth-green) 22%, transparent);
+}
+
+.auth-page .auth-password-toggle {
+  width: 50px;
+  height: 50px;
+  color: var(--auth-muted);
+}
+
+.auth-page .primary-button {
+  min-height: 52px;
+  border-radius: var(--radius-pill);
+  background: var(--auth-green-deep);
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.auth-page .primary-button:hover {
+  background: var(--auth-green-hot);
+}
+
+.auth-page .auth-guest-button {
+  min-height: 46px;
+  border: 1px solid var(--auth-line);
+  border-radius: var(--radius-pill);
+  color: var(--auth-ink);
+  font-weight: 700;
+}
+
+.auth-page .auth-guest-button:hover {
+  background: color-mix(in srgb, var(--auth-green-deep) 7%, transparent);
+  color: var(--auth-green-deep);
+}
+
+.auth-page .auth-divider {
+  color: var(--auth-muted);
+}
+
+.auth-page .auth-divider::before,
+.auth-page .auth-divider::after {
+  background: var(--auth-line);
+}
+
+/* The pitch panel carries the lockup on wide screens, so the card's own is
+   held back there — the two are never on screen together. */
+@media (min-width: 901px) {
+  .auth-shell .auth-brand {
+    display: none;
+  }
+}
+
+/* ── Narrow: the pitch folds away ───────────────────────────────────────── */
+/* A till in portrait and the admin app are here, where the form is the whole
+   job — the brand shrinks to the lockup above the card. */
+@media (max-width: 900px) {
+  .auth-page--split {
+    padding: 0;
+    place-items: stretch;
+  }
+
+  .auth-shell {
+    width: 100%;
+    min-height: 100vh;
+    grid-template-columns: 1fr;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .auth-pitch {
+    display: none;
+  }
+
+  .auth-shell .auth-card {
+    align-content: center;
+    padding: 32px var(--space-5) 40px;
+  }
+}
+
+/* Sits under the whole card, on both the sign-in and create-account sides:
+   whoever is locked out can't be reached through the app, so the address has
+   to be on the screen they're stuck on. */
+.auth-support {
+  margin: var(--space-2) 0 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--auth-line);
+  color: var(--auth-muted);
+  font-size: 12.5px;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.auth-support a {
+  color: var(--auth-link);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-word;
+}
+
+.auth-support a:hover {
+  color: var(--auth-green-hot);
 }
 
 .auth-mode-switch {

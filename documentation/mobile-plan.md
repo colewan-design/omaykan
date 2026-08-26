@@ -8,7 +8,7 @@
 
 ## 1. Why native, and why now
 
-The Capacitor app is not just tired — it is **broken and knowingly parked**. `apps/mobile/src` imports from `@pos/web/storefront`, a directory that no longer exists (the web storefront was folded into `apps/web/src/commerce` + `landing`), and `pairing.ts` and `updateCheck.ts` still reach for the Firebase SDK, which the Laravel migration is retiring. Nothing in it compiles today. So the choice is not "rewrite a working app" — it is "what do we rebuild it as".
+The Capacitor app was not just tired — it was **broken**, and it has now been deleted. `apps/mobile/src` imported from `@pos/web/storefront`, a directory that no longer exists (the web storefront was folded into `apps/web/src/commerce` + `landing`), and `pairing.ts` and `updateCheck.ts` still reached for the Firebase SDK, which the Laravel migration retires. None of it compiled. So the choice was never "rewrite a working app" — it is "what do we rebuild it as".
 
 The case for Kotlin rather than fixing the shell:
 
@@ -29,7 +29,8 @@ The case for Kotlin rather than fixing the shell:
 | Shipped identity | `applicationId com.omaykan.storefront`, `versionCode 1`, `minSdk 24`, `targetSdk 36` |
 | Laravel customer API | Built and live: catalog, orders, tracking, customer accounts, addresses, order history |
 | Reverb broadcasting | Server side wired (`OrderPlaced`, `OrderStatusChanged`, `routes/channels.php`). **No client anywhere subscribes yet** — this app would be the first |
-| Update check (`appReleases` doc) | Firestore-backed, so it dies with Firestore. Needs a Laravel endpoint — see §9 |
+| Update check (`appReleases` doc) | Firestore-backed, so it dies with Firestore. Moves to a Laravel endpoint — see §8a.1 |
+| Queue worker | `database` driver, `jobs` table migrated, `ShouldBroadcast` events dispatched after commit. Needs supervisor on the VPS — §8a |
 
 ---
 
@@ -45,13 +46,15 @@ The case for Kotlin rather than fixing the shell:
 | Local store | Room (catalog cache, cart, order history) + DataStore Preferences (pairing, settings) | |
 | Secrets | `EncryptedSharedPreferences` for the Sanctum token | DataStore Preferences is plaintext on disk; a bearer token is not a setting |
 | Images | Coil 3 | |
-| Realtime | `pusher-websocket-java` against Reverb | Reverb speaks the Pusher protocol; Echo is a JS convenience, not the wire format |
-| Background | WorkManager (order-status refresh); FCM if push is adopted (§8) | |
+| Realtime | `pusher-websocket-java` against Reverb | Reverb speaks the Pusher protocol; Echo is a JS convenience, not the wire format. **The only push channel — see §8** |
+| Background | WorkManager (order-status refresh) + a bounded foreground service while an order is live (§8) | No FCM, no Google Play Services messaging |
 | Location | Play Services Location (`FusedLocationProviderClient`) | Delivery pin for catalog filtering and fee quoting |
 | QR | ML Kit barcode scanning + CameraX (Phase 4) | Scan a store code instead of typing it |
 | Testing | JUnit + Turbine + MockWebServer; Compose UI tests over checkout | |
 
-**Deliberately absent:** Firestore (retired), any payment SDK ([plan.md §4a](./plan.md) — payment is COD on purpose), and any offline write queue for orders (§7).
+**Deliberately absent — and this is the rule the rest of the plan is written against: no Firebase, in any form.** Not Firestore, not Cloud Messaging, not Analytics, not Crashlytics. Everything the server does for this app is Laravel: HTTP for reads and writes, **Reverb** for live updates, **queues and jobs** for anything that must not block a request, the **scheduler** for anything periodic. Also absent: any payment SDK ([plan.md §4a](./plan.md) — payment is COD on purpose), and any offline write queue for orders (§7).
+
+The one thing this costs is the easy path to notifications on a closed app, which normally means FCM. §8 says what we do instead.
 
 ---
 
@@ -140,23 +143,77 @@ Visual design comes from the existing mobile storefront and the food-delivery mo
 
 ---
 
-## 8. Live order status
+## 8. Live order status — Reverb, and nothing but Reverb
 
-Two paths, in this order:
+### The channel
 
-1. **Reverb.** The customer's channel is `orders.{orderId}`, public and keyed on the UUID (`routes/channels.php`, [plan.md §3a](./plan.md)). `pusher-websocket-java` connects to the Reverb host with the app key. Payloads are thin by design, so on any event the app refetches `GET /api/online-orders/{uuid}`.
-2. **Polling fallback**, 20s while the order screen is foregrounded — exactly what the web storefront does today. Not a temporary crutch: sockets die on mobile networks, and the fallback is what makes the screen trustworthy.
+The customer's channel is **`order.{uuid}`** — singular, public, keyed on the order's UUID. Do not confuse it with `orders.{orderId}` in `routes/channels.php`, which is the *staff* private channel authorized by store membership. Three events ride the customer channel today, all already implemented server-side:
 
-**Push is a real decision, not a detail.** "Your order is being prepared" arriving while the app is closed is one of the few things that justifies the install at all — and it needs FCM, which means a Firebase project, right as we are deleting Firestore. FCM is free on the Spark plan, so the cost is conceptual (one more dependency we just declared dead) rather than financial. It also needs backend work that does not exist: a device-token table and a listener on `OrderStatusChanged` that sends. **Recommendation: keep it, scope it to Phase 5, and be explicit that "we use Firebase" now means Cloud Messaging and nothing else.** Until then the app is silent when closed, which is at least the honest state.
+| Event | `broadcastAs` | Carries |
+|---|---|---|
+| `OrderStatusChanged` | `order.status-changed` | id, ticket number, new status, previous status, timestamp |
+| `OrderDeliveryUpdated` | `order.delivery-updated` | rider name and number, delivery stage — "food is ready" and "a rider has it" are different questions, which is why it is a separate event |
+| `OrderPlaced` | `order.placed` | store channel only — staff, not this app |
+
+`pusher-websocket-java` connects straight to Reverb with `REVERB_APP_KEY`, host, port 443, TLS on. Reverb speaks the Pusher protocol on the wire, so no Laravel-specific client is needed and Echo never enters the picture. Payloads are thin on purpose, so **every event triggers a refetch of `GET /api/online-orders/{uuid}`** rather than being trusted as state.
+
+Note for later: `OrderStatusChanged`'s docblock says "if customer accounts ever land, make this private." They have landed. **Recommendation: leave it public anyway** — the UUID link is meant to be forwarded to whoever is actually standing at the door, and making it private would break tracking for exactly the person who needs it. Nothing sensitive rides the channel by design. If it is ever made private, the app must then hit `/broadcasting/auth` with its Sanctum token on the `customer` guard, and that endpoint does not exist yet.
+
+### The three tiers of "the customer finds out"
+
+Without FCM there is no free ride from Google's socket, so delivery is layered by how alive the app is:
+
+1. **Foreground — Reverb, plus a 20s poll.** The socket is primary; the poll is not a crutch but the thing that makes the screen trustworthy, because mobile sockets die silently. Same 20s the web storefront already uses.
+2. **Order live, app backgrounded — a bounded foreground service.** When an order is placed, start a service that holds the Reverb connection and posts a low-priority ongoing notification ("Tracking order #1234"), upgrading it in place as statuses arrive. It stops itself the moment the order reaches a terminal status, and hard-stops on a timeout. This is what replaces FCM, and it is honest about its cost: a persistent notification and some battery for the twenty minutes an order is actually in flight — not a daemon that lives forever. Direct-APK distribution helps here: no Play listing means no Play foreground-service policy review.
+3. **Process killed — WorkManager.** A chain of one-shot workers with widening backoff over the order's expected life, each hitting `GET /api/online-orders/{uuid}` and raising a local notification on a change. Periodic work has a 15-minute floor, which is too coarse to be the primary path but fine as the catch-all.
+
+The pleasing part of the constraint: **tiers 1–3 need zero new backend infrastructure.** The socket is Reverb, which exists; the poll is a public endpoint, which exists. No device-token table, no push credentials, no third-party service to keep an account with.
+
+If notification quality later proves insufficient, the Laravel-only escalation is **self-hosted UnifiedPush** (an `ntfy` instance on the same VPS, driven by a custom Laravel notification channel from a queued job). That buys true wake-from-dead delivery without Google — at the price of another daemon to keep alive, and a push server whose downtime is invisible until someone misses an order. Not recommended for v1; recorded so the option is not rediscovered from scratch.
+
+---
+
+## 8a. What the Laravel side must provide
+
+Everything below is ordinary Laravel — no new services, no new vendors.
+
+### Already built, and the app just uses it
+
+| Piece | Where |
+|---|---|
+| Broadcast events on the customer channel | `app/Events/OrderStatusChanged.php`, `OrderDeliveryUpdated.php` |
+| Queued broadcasting (`ShouldBroadcast`, dispatched inside `DB::afterCommit()`) | `SyncController::applyOrderEvent()`, `OnlineOrderController` |
+| Queue on the `database` driver, `jobs` table migrated | `config/queue.php`, `0001_01_01_000002_create_jobs_table.php` |
+| Order confirmation mail | `app/Mail/OnlineOrderConfirmationMail.php` |
+| Customer verification and password-reset notifications | `app/Notifications/Customer*.php` |
+
+### To build — the app's actual backend prerequisites
+
+1. **`GET /api/app-releases/{slug}`** — the update check, replacing the Firestore `appReleases` doc. An `app_releases` table (`slug`, `version_code`, `version_name`, `apk_url`, `notes`, `published_at`), a thin public controller, and an artisan command (`php artisan app:release storefront-android --code=2 --name=2.0.0 --apk=…`) so publishing a build is one command rather than a hand-edited row. The APK itself is a file on the VPS served by nginx; it does not belong in the database.
+2. **A queued job for the order-confirmation mail**, if it is not already dispatched rather than sent inline. Placing an order is the one request in this app a customer waits on with money decided — an SMTP round-trip to Hostinger does not belong inside it. `ShouldQueue` on the mailable, dispatched after commit.
+3. **A scheduled sweep for stale orders** (`routes/console.php` + `schedule:work`): an order left `pending` overnight because nobody at the shop touched it should be closed out and broadcast, so the customer's tracking screen stops saying "preparing" forever. This is a real hole today, and the app makes it visible — a phone that shows a live status is much less forgiving of a status that never moves than a web page nobody left open.
+
+### Operations, because the app's realtime is only as alive as these
+
+```bash
+php artisan reverb:start     # WebSocket server
+php artisan queue:work       # REQUIRED — broadcasts are queued
+php artisan schedule:work    # for §8a.3
+```
+
+All three are long-running daemons and all three need supervisor (or systemd) on the VPS, per [plan.md §3a](./plan.md). The failure mode worth writing on the wall: **if `queue:work` is dead, no event ever reaches any client** — the HTTP requests all still succeed, orders still record, and the only symptom is that every phone silently degrades to its 20s poll. The app cannot detect the difference. Monitor the worker, not just the web server.
+
+Set `REVERB_HOST` to the public hostname with `REVERB_PORT=443` and `REVERB_SCHEME=https`, keep `REVERB_SERVER_HOST=0.0.0.0`, and make sure nginx proxies the WebSocket upgrade. The Android client needs `REVERB_APP_KEY` and that host — it is a public key by design, so it can live in `BuildConfig`.
 
 ---
 
 ## 9. Build, signing, and getting it onto phones
 
-- **`applicationId` must stay `com.omaykan.storefront`** and `versionCode` must start above the installed `1`, or the new APK will not install over the old one — Android treats a changed package as a different app, and there is no Play listing to migrate people through. The `namespace` is free to change; only `applicationId` is identity.
-- **Sign with the existing keystore.** It now lives at `C:\Users\ASUS\omaykan-mobile-keystore-backup\` (alias `colepos`, credentials in `keystore.properties` beside it), having been pulled out of `apps/mobile` before that folder was deleted — it was gitignored, so the deletion would otherwise have destroyed it. It is still the **only copy** and still not in git: a regenerated key means every installed user has to uninstall first. Copy it into the new project, keep the same `keystore.properties` pattern, and get it into a password manager — a folder on one laptop is not a backup.
+- **`applicationId` and the signing key are both free choices.** The Capacitor app was never published to Google Play, so there is no listing to preserve and no installed base to keep updatable — the two things that would otherwise pin them. `com.omaykan.storefront` is still the sensible name, but nothing breaks if it changes. The one case that still bites: a phone with the old sideloaded APK on it has to uninstall before a differently-signed build will install, which is a one-line instruction to a handful of test devices rather than a constraint on the rewrite.
+- **Generate a fresh keystore for the Kotlin project.** The old one (alias `colepos`) was rescued out of `apps/mobile` before that folder was deleted and sits at `C:\Users\ASUS\omaykan-mobile-keystore-backup\`, but with nothing published there is no reason to inherit it. Keep the new one out of git the same way — an untracked `keystore.properties` read by `signingConfigs.release` — and back it up somewhere that is not one laptop, because the day it *does* reach Play is the day it becomes irreplaceable.
 - **`minSdk 26`** (up from 24) — what `EncryptedSharedPreferences` and modern notification channels want, and API 24–25 is a rounding error on any device someone is shopping from in 2026. `targetSdk 36`, `compileSdk 36`, as now.
-- **Distribution is a direct APK**; there is no Play listing. So the in-app update check has to keep working, and it currently reads a Firestore `appReleases` doc. Port it: `GET /api/app-releases/storefront-android` returning `{versionCode, versionName, apkUrl, notes}`, compared against `PackageInfo.longVersionCode`. This is the one piece of backend work the Kotlin app strictly requires.
+- **Distribution is a direct APK**; there is no Play listing. So the in-app update check has to keep working, and it currently reads a Firestore `appReleases` doc. It moves to Laravel — `GET /api/app-releases/storefront-android`, compared against `PackageInfo.longVersionCode`; spec in §8a.1. This is the one piece of backend work the Kotlin app strictly requires.
+- **No `google-services.json`, and no Google Services Gradle plugin.** The old `build.gradle` applied it conditionally if the file appeared; the new project should not have the hook at all, so nobody re-adds Firebase by dropping a file in.
 - **JDK 21.** The existing `gradlew` here needs an explicit JDK 21 override; assume the same trap and pin the toolchain in the new project rather than rediscovering it.
 - **CI is out of scope** for now — releases are `./gradlew assembleRelease` by hand, same as today.
 
@@ -166,8 +223,8 @@ Two paths, in this order:
 
 Each phase ends with something installable.
 
-**Phase 0 — Backend prerequisites (small, but blocking).**
-`GET /api/app-releases/{slug}`. Confirm Reverb is reachable from outside over TLS and note the app key and host for the client. Nothing else on the backend changes for Phases 1–4 — that is the dividend from migrating to Laravel first.
+**Phase 0 — Laravel prerequisites (small, but blocking).**
+The `app_releases` table, endpoint and artisan command (§8a.1). Queue the order-confirmation mail (§8a.2). Confirm Reverb is reachable from outside over TLS, that `queue:work` is under supervisor, and note `REVERB_APP_KEY` + host for the client. Nothing else on the backend changes for Phases 1–4 — that is the dividend from having migrated to Laravel first.
 
 **Phase 1 — Skeleton and catalog.**
 Project, modules, theme, DI, Retrofit and error mapping, pairing screen, catalog + search + product detail, Room cache. Signed release build that installs over the Capacitor app. *Deliverable: a customer can pair to a store and browse it offline.*
@@ -176,13 +233,13 @@ Project, modules, theme, DI, Retrofit and error mapping, pairing screen, catalog
 Cart with persistence, register/login/verification gate, checkout with pickup and delivery, address entry with a device-location fix, cash/GCash preference, order placement, confirmation. *Deliverable: an order placed from the phone lands on the merchant's Track Order strip.*
 
 **Phase 3 — Order status and history.**
-Tracking screen, Reverb subscription with the 20s fallback, "I've paid" confirmation, order history, settings and update check. *Deliverable: parity with the old Capacitor app, plus accounts. Delete `apps/mobile` here.*
+Tracking screen, Reverb subscription (`order.{uuid}`, all three events) with the 20s foreground poll, "I've paid" confirmation, order history, settings and update check against the new endpoint. *Deliverable: parity with the deleted Capacitor app, plus accounts, plus live tracking nothing in this codebase has ever had — the app is the first Reverb client on the platform.*
 
-**Phase 4 — The native dividend.**
+**Phase 4 — Notifications without Google** (§8 tiers 2 and 3).
+Notification channels, the bounded foreground service that holds the socket while an order is live, the WorkManager fallback chain, deep links from a notification into the order screen, and the stale-order sweep on the Laravel side (§8a.3) so a status can never sit still forever.
+
+**Phase 5 — The native dividend.**
 QR scan for store codes, saved-address management, address-filtered catalog with the "nothing reaches you" state, list and image polish, Compose UI tests over checkout.
-
-**Phase 5 — Push** (needs the §8 decision).
-Device-token registration, an `OrderStatusChanged` listener that sends, notification channels, deep links from a notification into the order screen.
 
 ---
 
@@ -190,14 +247,14 @@ Device-token registration, an `OrderStatusChanged` listener that sends, notifica
 
 Named here so this plan is not mistaken for covering them.
 
-- **Merchant app (`apps/mobile-admin`)** — an empty Capacitor shell. The till is a PWA and [plan.md](./plan.md) keeps it that way; the merchant's offline-first, SQLite-backed register is a far larger native lift than the customer app and gains much less from being native. **Recommendation: delete the empty shell.** If a merchant phone app is ever wanted, the useful version is small and specific — new-order alerts and order acceptance, not the whole register — and that is its own plan.
+- **Merchant app** — the `apps/mobile-admin` shell was empty and is now deleted with the rest. The till is a PWA and [plan.md](./plan.md) keeps it that way: the merchant's offline-first, SQLite-backed register is a far larger native lift than the customer app and gains much less from being native. If a merchant phone app is ever wanted, the useful version is small and specific — new-order alerts off the `store.{id}` private channel and order acceptance, not the whole register — and that is its own plan. Note it would need `/broadcasting/auth` for the staff guard, which the customer app deliberately avoids needing (§8).
 - **Rider app** — not built in any form, though the API for it already exists and is fuller than the customer's (`/api/rider/*`: register with licence uploads, board, accept, stage, release). It is the strongest native candidate on the platform: background location, persistent notifications, a screen used one-handed on a motorbike. It deserves its own plan and its own module tree, sharing `core:network` conventions but not code.
 
 ---
 
 ## 12. Open decisions
 
-1. **FCM or silence?** (§8) — recommendation: adopt in Phase 5, scoped to Cloud Messaging only.
+1. **How hard do we push tier 2?** (§8) — the foreground service is the whole no-Firebase bet. If a persistent "tracking your order" notification turns out to annoy customers more than a missed status update does, the fallback is tier 3 alone (coarser, quieter) or the UnifiedPush escalation (better, more ops). Decide with a real order in hand during Phase 4, not on paper now.
 2. **Does the app keep the GCash preference?** The web storefront stopped asking; mobile still does. Parity says drop it; the merchants who liked it say keep it. Either is defensible — but the two clients should stop disagreeing with each other.
 3. **Wishlist** — mobile-only today, with nothing server-side behind it. Port as a local-only feature, or drop it with the rewrite?
 4. **Multi-store pairing.** Today: one code, one store, remembered forever. Now that customers have accounts, "my stores" is cheap to add and changes the pairing screen's shape. Worth deciding before Phase 1 rather than retrofitting after.

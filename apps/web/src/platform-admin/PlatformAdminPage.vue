@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { Check, Copy } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
+import BrandLogo from '@pos/core/components/BrandLogo.vue'
+import RiderReview from './RiderReview.vue'
 
 interface OrgAdmin {
   uid: string
@@ -26,6 +28,14 @@ interface OrgRow {
 }
 
 const SECRET_STORAGE_KEY = 'platform_admin_secret'
+
+/*
+ * Two queues behind one secret: the stores waiting on a subscription check,
+ * and the riders waiting on a licence check. The rider side is mounted only
+ * once it is switched to, so unlocking the page does not pull a queue of
+ * identity documents nobody asked to see.
+ */
+const view = ref<'stores' | 'riders'>('stores')
 
 const secretInput = ref('')
 const secret = ref('')
@@ -246,8 +256,8 @@ onMounted(() => {
   <div class="pa-page">
     <section v-if="!unlocked" class="auth-page">
       <section class="auth-card">
-        <div class="auth-brand">
-          <div class="auth-brand-mark">B</div>
+        <div class="auth-brand auth-brand--stacked">
+          <BrandLogo variant="light" :size="21" />
           <strong>Platform admin</strong>
         </div>
         <form class="auth-form" @submit.prevent="submitSecret">
@@ -264,6 +274,26 @@ onMounted(() => {
     </section>
 
     <section v-else class="pa-content">
+      <nav class="pa-views">
+        <button
+          class="pa-view"
+          :class="{ 'pa-view--on': view === 'stores' }"
+          type="button"
+          @click="view = 'stores'"
+        >
+          Stores
+        </button>
+        <button
+          class="pa-view"
+          :class="{ 'pa-view--on': view === 'riders' }"
+          type="button"
+          @click="view = 'riders'"
+        >
+          Riders
+        </button>
+      </nav>
+
+      <template v-if="view === 'stores'">
       <div class="pa-header">
         <div>
           <h1 class="pa-title">Stores</h1>
@@ -401,6 +431,9 @@ onMounted(() => {
           </tbody>
         </table>
       </div>
+      </template>
+
+      <RiderReview v-else :secret="secret" />
     </section>
 
     <div v-if="deleteTarget" class="pa-modal-backdrop" @click.self="cancelDelete">
@@ -442,6 +475,28 @@ onMounted(() => {
   padding: var(--space-6) var(--space-4);
   display: grid;
   gap: var(--space-5);
+}
+
+.pa-views {
+  display: flex;
+  gap: 8px;
+}
+
+.pa-view {
+  height: 36px;
+  padding: 0 18px;
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.12));
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: 600 14px/1 inherit;
+  cursor: pointer;
+}
+
+.pa-view--on {
+  border-color: transparent;
+  background: var(--accent, #1a6b3c);
+  color: #fff;
 }
 
 .pa-header {

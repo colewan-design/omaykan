@@ -18,6 +18,10 @@ function clearPromo() {
   promoCode.value = ''
 }
 
+function thumbInitial(name: string) {
+  return name.trim().charAt(0).toUpperCase() || '?'
+}
+
 const taxRateLabel = computed(() => {
   if (store.subtotalCents === 0) return '0%'
   return `${((store.taxCents / store.subtotalCents) * 100).toFixed(2)}%`
@@ -104,6 +108,7 @@ async function openPayment() {
             loading="lazy"
             @error="failedThumbs[line.product.id] = true"
           />
+          <span v-else class="order-line__thumb-fallback">{{ thumbInitial(line.product.name) }}</span>
         </div>
 
         <div class="order-line__body">
@@ -191,18 +196,29 @@ async function openPayment() {
 }
 
 .order-line__thumb {
+  display: grid;
+  place-items: center;
   flex: none;
   width: 44px;
   height: 44px;
   border-radius: var(--radius-md);
   overflow: hidden;
-  background: var(--fill);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, white), color-mix(in srgb, var(--fill) 70%, white)),
+    var(--bg-elevated);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 8%, var(--separator));
 }
 
 .order-line__thumb img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.order-line__thumb-fallback {
+  color: var(--accent);
+  font: var(--type-headline);
+  font-weight: 700;
 }
 
 .order-line__body {

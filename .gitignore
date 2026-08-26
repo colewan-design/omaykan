@@ -19,3 +19,6 @@ artifacts/
 
 .vercel
 .env*
+
+# Deploy build output (the tarball source for the VPS), not source.
+apps/web/dist-deploy/

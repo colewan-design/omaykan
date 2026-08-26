@@ -111,8 +111,49 @@ return [
     */
 
     'from' => [
-        'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
-        'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
+        // The sending identity: the mailbox that actually holds the SMTP
+        // credentials above. Not the same thing as the address customers are
+        // told to write to — that one is SUPPORT_EMAIL in
+        // packages/shared/src/index.ts, and it is where replies go instead;
+        // see 'reply_to' below. Splitting the two means the mailbox we send
+        // through can change without moving the address printed all over the
+        // app and the marketing site.
+        'address' => env('MAIL_FROM_ADDRESS', 'info@omaykan.com'),
+        'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Omaykan')),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Global "Reply-To" Address
+    |--------------------------------------------------------------------------
+    |
+    | Laravel has no global reply-to, so App\Mail\OmaykanMailable applies this
+    | one to every message the app sends. Keeping it out of a noreply void is
+    | the point: a reply should land somewhere a person reads.
+    |
+    | Set MAIL_REPLY_TO_ADDRESS empty to send no Reply-To header at all, which
+    | makes replies go to the 'from' mailbox.
+    |
+    */
+
+    'reply_to' => [
+        'address' => env('MAIL_REPLY_TO_ADDRESS', 'support@omaykan.com'),
+        'name' => env('MAIL_REPLY_TO_NAME', env('APP_NAME', 'Omaykan')),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Operations Inbox
+    |--------------------------------------------------------------------------
+    |
+    | Where "a merchant just signed up" alerts land. Its own key rather than a
+    | reuse of 'from' so the alerts can be pointed at a shared ops mailbox
+    | later without changing what a customer sees in the From line.
+    |
+    | Empty disables the alerts; the merchant's own welcome mail still sends.
+    |
+    */
+
+    'alerts_to' => env('MAIL_ALERTS_ADDRESS', 'info@omaykan.com'),
 
 ];

@@ -43,12 +43,14 @@ function persist() {
 }
 
 export function useStorefrontCart() {
-  function add(product: Product) {
+  /** `quantity` is what the product detail page's stepper adds in one go. */
+  function add(product: Product, quantity = 1) {
+    const step = Math.max(1, Math.floor(quantity))
     const existing = lines.get(product.id)
     // Re-store the product on every add: a persisted line can be carrying a
     // stale snapshot from a previous visit, and this refreshes it from the
     // catalog the customer is actually looking at.
-    lines.set(product.id, { product, quantity: (existing?.quantity ?? 0) + 1 })
+    lines.set(product.id, { product, quantity: (existing?.quantity ?? 0) + step })
     persist()
   }
 

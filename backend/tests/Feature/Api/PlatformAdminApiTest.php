@@ -27,14 +27,20 @@ class PlatformAdminApiTest extends TestCase
     /** Creates a real tenant the way a merchant would. */
     private function signUpTenant(array $overrides = []): array
     {
-        return $this->postJson('/api/signup', array_merge([
+        $payload = array_merge([
             'businessName' => 'Hill Station Cafe',
             'ownerFullName' => 'Ana Reyes',
             'username' => 'anareyes',
             'password' => 'secret123',
             'businessMode' => 'coffee-shop',
             'gcashReference' => 'GC-99881',
-        ], $overrides))->assertCreated()->json();
+        ], $overrides);
+
+        // Derived from the username so that signing up a second tenant does
+        // not collide on the unique email index.
+        $payload += ['email' => strtolower($payload['username']).'@example.test'];
+
+        return $this->postJson('/api/signup', $payload)->assertCreated()->json();
     }
 
     private function call_admin(array $body)

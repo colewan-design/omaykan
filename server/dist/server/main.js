@@ -39,7 +39,7 @@ function readBody(req) {
         req.on('error', reject);
     });
 }
-/** Adds the `status()`/`json()` sugar the Vercel handlers call. */
+/** Adds the `status()`/`json()` sugar ApiResponse promises. */
 function decorate(res) {
     const r = res;
     r.status = (code) => {
@@ -81,12 +81,12 @@ const server = (0, node_http_1.createServer)(async (req, res) => {
                 }
             }
         }
-        const vercelReq = Object.assign(req, {
+        const apiReq = Object.assign(req, {
             body,
             query: Object.fromEntries(url.searchParams),
             cookies: {},
         });
-        await handler(vercelReq, decorated);
+        await handler(apiReq, decorated);
         if (!res.writableEnded)
             decorated.status(204).end();
     }

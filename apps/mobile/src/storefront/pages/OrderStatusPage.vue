@@ -2,7 +2,14 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { collection, doc, getDocs, onSnapshot } from 'firebase/firestore'
 import { Bike, CheckCircle2, Clock3, MapPin, ReceiptText } from '@lucide/vue'
-import { formatCurrency, orderStatusLabel, type OrderItemSummary, type OrderStatus } from '@pos/shared/index'
+import {
+  formatCurrency,
+  orderStatusLabel,
+  SUPPORT_EMAIL,
+  supportMailto,
+  type OrderItemSummary,
+  type OrderStatus,
+} from '@pos/shared/index'
 import { ORG_SLUG, STORE_CODE, STORE_ADDRESS, db } from '@pos/web/storefront/firebase'
 import {
   DELIVERY_STAGES,
@@ -212,6 +219,13 @@ const stages = computed(() =>
           <strong>{{ formatCurrency(order.deliveryFeeCents) }}</strong>
         </article>
       </section>
+
+      <!-- The ticket number rides along in the subject: someone writing about
+           a late order should not have to be asked which one it was. -->
+      <p class="order-status__help">
+        Something wrong with this order?
+        Email <a :href="supportMailto(`Omaykan order ${order.ticketNumber}`)">{{ SUPPORT_EMAIL }}</a>.
+      </p>
 
       <RouterLink to="/" class="order-status__back">Continue shopping</RouterLink>
     </template>
@@ -446,6 +460,19 @@ const stages = computed(() =>
   margin-top: 5px;
   color: #6b7280;
   font-size: 0.88rem;
+}
+
+.order-status__help {
+  margin: 0;
+  padding: 0 4px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #6b7280;
+}
+.order-status__help a {
+  color: var(--sf-primary);
+  font-weight: 700;
+  word-break: break-word;
 }
 
 .order-status__back {

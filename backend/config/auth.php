@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\CustomerAccount;
+use App\Models\Rider;
 use App\Models\User;
 
 return [
@@ -42,6 +44,28 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        /*
+         * Shoppers. Its own guard rather than an ability on the default
+         * sanctum guard, so `auth:sanctum` — which every seller and sync route
+         * uses — can never resolve a customer, whatever abilities their token
+         * was minted with. Reached as `auth:customer`.
+         */
+        'customer' => [
+            'driver' => 'sanctum',
+            'provider' => 'customers',
+        ],
+
+        /*
+         * Riders. A third identity, separate from both of the above: a rider
+         * works across every shop on the platform, so they must never resolve
+         * on `auth:sanctum` (store staff and paired devices), and they are not
+         * shoppers either. Reached as `auth:rider`.
+         */
+        'rider' => [
+            'driver' => 'sanctum',
+            'provider' => 'riders',
+        ],
     ],
 
     /*
@@ -65,6 +89,16 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', User::class),
+        ],
+
+        'customers' => [
+            'driver' => 'eloquent',
+            'model' => CustomerAccount::class,
+        ],
+
+        'riders' => [
+            'driver' => 'eloquent',
+            'model' => Rider::class,
         ],
 
         // 'users' => [
@@ -96,6 +130,16 @@ return [
         'users' => [
             'provider' => 'users',
             'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
+            'expire' => 60,
+            'throttle' => 60,
+        ],
+
+        // Its own token table: the shared one is keyed by email alone, and a
+        // shop owner and a shopper using the same address would overwrite each
+        // other's reset token.
+        'customers' => [
+            'provider' => 'customers',
+            'table' => 'customer_password_reset_tokens',
             'expire' => 60,
             'throttle' => 60,
         ],

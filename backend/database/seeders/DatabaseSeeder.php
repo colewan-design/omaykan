@@ -75,8 +75,13 @@ class DatabaseSeeder extends Seeder
             'name' => 'Admin User',
             'username' => 'admin',
             'password' => Hash::make('password'),
+            'email_verified_at' => now(),
             'status' => 'active',
         ]);
+
+        if ($admin->email_verified_at === null) {
+            $admin->forceFill(['email_verified_at' => now()])->save();
+        }
 
         OrganizationMembership::query()->firstOrCreate([
             'organization_id' => $organization->id,

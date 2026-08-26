@@ -1,18 +1,207 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { Funnel, ChevronRight } from '@lucide/vue'
-import { formatCurrency, guestCustomerName, type OrderSummary } from '@pos/shared/index'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { ChevronRight, MessageSquare, Phone, RefreshCw } from '@lucide/vue'
+import {
+  deliveryStageLabel,
+  formatCurrency,
+  guestCustomerName,
+  nextDeliveryStage,
+  nextOrderStatus,
+  orderStatusLabel,
+  type OrderSummary,
+} from '@pos/shared/index'
 import { usePosStore } from '@pos/core/stores/pos'
+import { useAuthStore } from '@pos/core/stores/auth'
 import MetricCard from '@pos/core/components/MetricCard.vue'
 import ChartCard from '@pos/core/components/ChartCard.vue'
 import RangeSelector, { type Range } from '@pos/core/components/RangeSelector.vue'
+import SettleOnlinePaymentSheet from '@pos/core/components/SettleOnlinePaymentSheet.vue'
 
 const store = usePosStore()
-onMounted(() => {
+const auth = useAuthStore()
+const darkModeEnabled = ref(false)
+let themeMediaQuery: MediaQueryList | null = null
+let themeObserver: MutationObserver | null = null
+
+function syncDarkMode() {
+  if (typeof window === 'undefined') return
+  const explicitTheme = document.documentElement.dataset.theme
+  darkModeEnabled.value = explicitTheme === 'dark'
+    || (!explicitTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)
+}
+
+onMounted(async () => {
   if (!store.isReady) {
-    void store.initialize()
+    await store.initialize()
+  }
+  // Storefront orders arrive server-side while this screen is open, so pull a
+  // fresh set on entry rather than trusting whatever initialize() cached.
+  void refreshOrders()
+
+  syncDarkMode()
+  if (typeof window !== 'undefined') {
+    themeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    themeMediaQuery.addEventListener('change', syncDarkMode)
+    themeObserver = new MutationObserver(syncDarkMode)
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    })
   }
 })
+
+onBeforeUnmount(() => {
+  themeMediaQuery?.removeEventListener('change', syncDarkMode)
+  themeObserver?.disconnect()
+})
+
+// ── Operations ─────────────────────────────────────────────────────────────
+// The top half of this page is the day's work: orders still moving, deliveries
+// with nobody carrying them, stock about to run out, and the state of the
+// store itself. The analytics below answer "how did we do"; this answers
+// "what needs me now".
+
+const opsError = ref('')
+const busyOrderId = ref('')
+const refreshing = ref(false)
+const settlingOrder = ref<OrderSummary | null>(null)
+
+/** Per-order rider drafts, keyed by order id so two cards can't share a name. */
+const riderDrafts = reactive<Record<string, { name: string; phone: string }>>({})
+
+function riderDraft(orderId: string) {
+  if (!riderDrafts[orderId]) {
+    riderDrafts[orderId] = { name: '', phone: '' }
+  }
+  return riderDrafts[orderId]
+}
+
+function isOnlineOrder(order: OrderSummary) {
+  return (order.channel ?? 'in_person') === 'online'
+}
+
+function isUnpaid(order: OrderSummary) {
+  return (order.paymentStatus ?? 'paid') === 'unpaid'
+}
+
+/**
+ * Anything not finished with: still being made, or made but not paid for.
+ * Online and register orders together, because the counter works one queue.
+ */
+const ordersInFlight = computed(() => {
+  const online = store.onlineOrders.filter(
+    (order) => !order.voidedAt && (order.status !== 'served' || isUnpaid(order)),
+  )
+  const inPerson = store.orders.filter((order) => !order.voidedAt && order.status !== 'served')
+  return [...online, ...inPerson]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 8)
+})
+
+/** Deliveries still on the shop's hands — anything not yet dropped off. */
+const activeDeliveries = computed(() =>
+  store.onlineOrders
+    .filter(
+      (order) =>
+        !order.voidedAt &&
+        order.fulfillmentMethod === 'delivery' &&
+        (order.deliveryStage ?? 'pending') !== 'delivered',
+    )
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+)
+
+const awaitingRider = computed(() => activeDeliveries.value.filter((order) => !order.riderName))
+
+const unpaidOnlineOrders = computed(() =>
+  store.onlineOrders.filter((order) => !order.voidedAt && isUnpaid(order)),
+)
+
+/** Out of stock first — a shelf at zero is losing sales right now. */
+const stockAlerts = computed(() =>
+  [...store.outOfStockProducts, ...store.lowStockProducts].slice(0, 6),
+)
+
+const storeFacts = computed(() => [
+  { label: 'Business', value: store.settings.businessName || 'Unnamed store' },
+  { label: 'Store code', value: store.settings.pairingCode || 'Not issued' },
+  { label: 'Sync', value: store.settings.syncMode === 'online-sync' ? 'Online' : 'Local only' },
+  {
+    label: 'Shift',
+    value: store.activeShift ? `Open · ${formatCurrency(store.activeShift.expectedCashCents)} expected` : 'Closed',
+  },
+])
+
+async function runOrderAction(orderId: string, action: () => Promise<unknown>) {
+  if (busyOrderId.value) return
+  busyOrderId.value = orderId
+  opsError.value = ''
+  try {
+    await action()
+  } catch (error) {
+    // These all cross the network — a storefront order isn't in the offline
+    // outbox — so say so plainly instead of leaving a button that did nothing.
+    opsError.value = error instanceof Error ? error.message : 'That did not go through. Try again.'
+  } finally {
+    busyOrderId.value = ''
+  }
+}
+
+async function refreshOrders() {
+  if (refreshing.value) return
+  refreshing.value = true
+  try {
+    await store.refreshOrders()
+    await store.refreshOnlineOrders()
+  } catch {
+    // Both loaders already degrade safely to local state or an empty list.
+  } finally {
+    refreshing.value = false
+  }
+}
+
+function advanceStatus(order: OrderSummary) {
+  const next = nextOrderStatus(order.status)
+  return runOrderAction(order.id, () =>
+    isOnlineOrder(order)
+      ? store.updateOnlineOrderStatus(order.id, next)
+      : store.updateOrderStatus(order.id, next),
+  )
+}
+
+function notifyRider(order: OrderSummary) {
+  const draft = riderDraft(order.id)
+  const name = draft.name.trim()
+  if (!name) {
+    opsError.value = 'Give the rider a name first — the customer sees it on their tracking page.'
+    return Promise.resolve()
+  }
+
+  return runOrderAction(order.id, async () => {
+    await store.notifyRider(order.id, { riderName: name, riderPhone: draft.phone.trim() || null })
+    delete riderDrafts[order.id]
+  })
+}
+
+function advanceDelivery(order: OrderSummary) {
+  const next = nextDeliveryStage(order.deliveryStage ?? 'pending')
+  if (!next) return Promise.resolve()
+  return runOrderAction(order.id, () => store.advanceDelivery(order.id, next))
+}
+
+function restock(productId: string) {
+  return runOrderAction(productId, () => store.restockProduct(productId, 10))
+}
+
+/** Digits only — a saved number like "0917 000 0000" won't dial as typed. */
+function telHref(phone: string) {
+  return `tel:${phone.replace(/[^\d+]/g, '')}`
+}
+
+function smsHref(order: OrderSummary) {
+  const phone = (order.riderPhone ?? '').replace(/[^\d+]/g, '')
+  const body = `Omaykan order ${order.ticketNumber} for ${order.deliveryAddress ?? 'pickup at the shop'}`
+  return `sms:${phone}?body=${encodeURIComponent(body)}`
+}
 
 const range = ref<Range>('month')
 const now = new Date()
@@ -165,6 +354,13 @@ const previousRangeCaption = computed(() => {
   return `vs ${formatter.format(bounds.value.prevStart)} - ${formatter.format(endForCaption)}`
 })
 
+const storeName = computed(() => store.settings.businessName || 'Unnamed store')
+const storeCode = computed(() => store.settings.pairingCode || 'Not issued')
+const syncSummary = computed(() => store.settings.syncMode === 'online-sync' ? 'Online' : 'Local only')
+const shiftSummary = computed(() =>
+  store.activeShift ? `Open - ${formatCurrency(store.activeShift.expectedCashCents)} expected` : 'Closed',
+)
+
 const salesSeries = computed(() => {
   const days: { key: string; label: string; totalCents: number }[] = []
   const cursor = new Date(bounds.value.start)
@@ -312,11 +508,29 @@ const recentOrders = computed(() =>
 </script>
 
 <template>
-  <div class="dashboard-page">
-    <section class="dashboard-header">
-      <div>
-        <h1 class="dashboard-title">Dashboard</h1>
-        <p class="dashboard-copy">Track store performance across revenue, customer behavior, and product movement from one control center.</p>
+  <div class="dashboard-page" :class="{ 'dashboard-page--dark': darkModeEnabled }">
+    <section class="dashboard-hero">
+      <div class="dashboard-header">
+        <p class="dashboard-store">{{ storeName }}</p>
+        <h1 class="dashboard-title">Seller dashboard</h1>
+        <p class="dashboard-copy">
+          Orders, deliveries, stock, and revenue for {{ rangeCaption }} in one clear control center.
+        </p>
+
+        <div class="dashboard-facts" aria-label="Store status">
+          <span class="dashboard-fact">
+            <strong>Store code</strong>
+            {{ storeCode }}
+          </span>
+          <span class="dashboard-fact">
+            <strong>Sync</strong>
+            {{ syncSummary }}
+          </span>
+          <span class="dashboard-fact">
+            <strong>Shift</strong>
+            {{ shiftSummary }}
+          </span>
+        </div>
       </div>
 
       <div class="dashboard-toolbar">
@@ -324,12 +538,217 @@ const recentOrders = computed(() =>
           <span class="dashboard-range__text">{{ rangeCaption }}</span>
           <RangeSelector v-model="range" />
         </div>
-        <button class="dashboard-filter" type="button">
-          <Funnel :size="16" />
-          <span>Filters</span>
-        </button>
+
+        <div class="dashboard-hero__actions">
+          <RouterLink v-if="auth.canAccess('orders')" class="dashboard-cta dashboard-cta--ghost" to="/orders">
+            View orders
+          </RouterLink>
+          <RouterLink v-if="auth.canAccess('register')" class="dashboard-cta" to="/register">
+            Open register
+          </RouterLink>
+        </div>
       </div>
     </section>
+
+    <!-- ── Today's work ──────────────────────────────────────────────── -->
+    <p v-if="opsError" class="ops-error" role="alert">{{ opsError }}</p>
+
+    <section class="ops-counts">
+      <div class="ops-count">
+        <span class="ops-count__value">{{ ordersInFlight.length }}</span>
+        <span class="ops-count__label">Orders in flight</span>
+      </div>
+      <div class="ops-count" :class="{ 'ops-count--alert': awaitingRider.length > 0 }">
+        <span class="ops-count__value">{{ awaitingRider.length }}</span>
+        <span class="ops-count__label">Waiting on a rider</span>
+      </div>
+      <div class="ops-count" :class="{ 'ops-count--alert': unpaidOnlineOrders.length > 0 }">
+        <span class="ops-count__value">{{ unpaidOnlineOrders.length }}</span>
+        <span class="ops-count__label">Unpaid online</span>
+      </div>
+      <div class="ops-count" :class="{ 'ops-count--alert': store.outOfStockProducts.length > 0 }">
+        <span class="ops-count__value">{{ store.outOfStockProducts.length + store.lowStockProducts.length }}</span>
+        <span class="ops-count__label">Stock to watch</span>
+      </div>
+    </section>
+
+    <section class="dashboard-grid dashboard-grid--ops">
+      <ChartCard title="Orders in flight" summary="Everything still being made, or made but not paid for.">
+        <div class="dashboard-table__head">
+          <button class="ops-ghost" type="button" :disabled="refreshing" @click="refreshOrders">
+            <RefreshCw :size="14" />
+            <span>{{ refreshing ? 'Refreshing…' : 'Refresh' }}</span>
+          </button>
+          <RouterLink v-if="auth.canAccess('orders')" class="dashboard-link" to="/orders">
+            <span>View all</span>
+            <ChevronRight :size="14" />
+          </RouterLink>
+        </div>
+
+        <p v-if="ordersInFlight.length === 0" class="dashboard-empty">Nothing waiting. Every order is served and settled.</p>
+
+        <ul v-else class="ops-list">
+          <li v-for="order in ordersInFlight" :key="order.id" class="ops-row">
+            <div class="ops-row__main">
+              <div class="ops-row__head">
+                <strong>{{ order.ticketNumber }}</strong>
+                <span class="ops-chip">{{ channelFor(order) }}</span>
+                <span class="ops-chip ops-chip--quiet">{{ orderStatusLabel(order.status) }}</span>
+                <span v-if="isUnpaid(order)" class="ops-chip ops-chip--warn">Unpaid</span>
+              </div>
+              <p class="ops-row__meta">
+                {{ customerNameFor(order) }} · {{ formatCurrency(order.totalCents) }} ·
+                {{ order.items.length }} item{{ order.items.length === 1 ? '' : 's' }}
+              </p>
+            </div>
+
+            <div class="ops-row__actions">
+              <button
+                v-if="order.status !== 'served'"
+                class="ops-action"
+                type="button"
+                :disabled="busyOrderId === order.id"
+                @click="advanceStatus(order)"
+              >
+                Mark {{ nextOrderStatus(order.status) === 'ready' ? 'ready' : 'served' }}
+              </button>
+              <button
+                v-if="isOnlineOrder(order) && isUnpaid(order)"
+                class="ops-action ops-action--primary"
+                type="button"
+                @click="settlingOrder = order"
+              >
+                Settle payment
+              </button>
+            </div>
+          </li>
+        </ul>
+      </ChartCard>
+
+      <ChartCard title="Deliveries" summary="Who is carrying what, and how far along they are.">
+        <p v-if="activeDeliveries.length === 0" class="dashboard-empty">No deliveries out. Pickup orders don't need a rider.</p>
+
+        <ul v-else class="ops-list">
+          <li v-for="order in activeDeliveries" :key="order.id" class="ops-row ops-row--stack">
+            <div class="ops-row__head">
+              <strong>{{ order.ticketNumber }}</strong>
+              <span
+                class="ops-chip"
+                :class="order.riderName ? 'ops-chip--good' : 'ops-chip--warn'"
+              >{{ deliveryStageLabel(order.deliveryStage ?? 'pending') }}</span>
+            </div>
+            <p class="ops-row__meta">{{ order.deliveryAddress || 'No address on the order' }}</p>
+
+            <!-- No rider yet: name whoever is taking it. There are no rider
+                 accounts, so this is the seller writing down who left with the
+                 bag — which is what the customer's tracking page then shows. -->
+            <form v-if="!order.riderName" class="ops-rider" @submit.prevent="notifyRider(order)">
+              <input
+                v-model="riderDraft(order.id).name"
+                class="ops-input"
+                type="text"
+                placeholder="Rider name"
+                autocomplete="off"
+              >
+              <input
+                v-model="riderDraft(order.id).phone"
+                class="ops-input"
+                type="tel"
+                placeholder="Mobile number"
+                autocomplete="off"
+              >
+              <button class="ops-action ops-action--primary" type="submit" :disabled="busyOrderId === order.id">
+                {{ busyOrderId === order.id ? 'Sending…' : 'Notify rider' }}
+              </button>
+            </form>
+
+            <div v-else class="ops-rider ops-rider--assigned">
+              <span class="ops-rider__name">{{ order.riderName }}</span>
+              <template v-if="order.riderPhone">
+                <a class="ops-action" :href="telHref(order.riderPhone)">
+                  <Phone :size="14" />
+                  <span>Call</span>
+                </a>
+                <a class="ops-action" :href="smsHref(order)">
+                  <MessageSquare :size="14" />
+                  <span>Text</span>
+                </a>
+              </template>
+              <button
+                v-if="nextDeliveryStage(order.deliveryStage ?? 'pending')"
+                class="ops-action ops-action--primary"
+                type="button"
+                :disabled="busyOrderId === order.id"
+                @click="advanceDelivery(order)"
+              >
+                {{ deliveryStageLabel(nextDeliveryStage(order.deliveryStage ?? 'pending')!) }}
+              </button>
+            </div>
+          </li>
+        </ul>
+      </ChartCard>
+    </section>
+
+    <section class="dashboard-grid dashboard-grid--ops">
+      <ChartCard title="Stock to watch" summary="Out of stock first, then anything under its reorder point.">
+        <div class="dashboard-table__head">
+          <span>Restock adds 10 to the shelf count</span>
+          <RouterLink v-if="auth.canAccess('inventory')" class="dashboard-link" to="/inventory">
+            <span>Inventory</span>
+            <ChevronRight :size="14" />
+          </RouterLink>
+        </div>
+
+        <p v-if="stockAlerts.length === 0" class="dashboard-empty">Every tracked product is above its reorder point.</p>
+
+        <ul v-else class="ops-list">
+          <li v-for="product in stockAlerts" :key="product.id" class="ops-row">
+            <div class="ops-row__main">
+              <div class="ops-row__head">
+                <strong>{{ product.name }}</strong>
+                <span class="ops-chip" :class="(product.stockQty ?? 0) <= 0 ? 'ops-chip--warn' : 'ops-chip--quiet'">
+                  {{ (product.stockQty ?? 0) <= 0 ? 'Out of stock' : `${product.stockQty} left` }}
+                </span>
+              </div>
+              <p class="ops-row__meta">{{ formatCurrency(product.priceCents) }}{{ product.unitLabel ? ` · ${product.unitLabel}` : '' }}</p>
+            </div>
+            <div class="ops-row__actions">
+              <button
+                class="ops-action"
+                type="button"
+                :disabled="busyOrderId === product.id"
+                @click="restock(product.id)"
+              >
+                Restock +10
+              </button>
+            </div>
+          </li>
+        </ul>
+      </ChartCard>
+
+      <ChartCard title="Your store" summary="What customers see, and where this register stands.">
+        <dl class="ops-facts">
+          <div v-for="fact in storeFacts" :key="fact.label">
+            <dt>{{ fact.label }}</dt>
+            <dd>{{ fact.value }}</dd>
+          </div>
+        </dl>
+
+        <div class="ops-links">
+          <RouterLink v-if="auth.canAccess('settings')" class="ops-action" to="/settings">Store settings</RouterLink>
+          <RouterLink v-if="auth.canAccess('products')" class="ops-action" to="/products">Products</RouterLink>
+          <RouterLink v-if="auth.canAccess('employees')" class="ops-action" to="/employees">Staff</RouterLink>
+          <RouterLink v-if="auth.canAccess('register')" class="ops-action ops-action--primary" to="/register">Open register</RouterLink>
+        </div>
+      </ChartCard>
+    </section>
+
+    <SettleOnlinePaymentSheet
+      v-if="settlingOrder"
+      :order="settlingOrder"
+      @close="settlingOrder = null"
+      @settled="settlingOrder = null"
+    />
 
     <section class="dashboard-kpis">
       <MetricCard label="Total Revenue" :value="formatCurrency(totalRevenue)" :delta="delta(totalRevenue, previousRevenue)" :compare-label="previousRangeCaption" />
@@ -468,32 +887,456 @@ const recentOrders = computed(() =>
 
 <style scoped>
 .dashboard-page {
+  --accent: #1a6b3c;
+  --accent-pressed: #155530;
+  --accent-text-on: #ffffff;
+  --success: #22c55e;
+  --warning: #f5a623;
+  --danger: #c85c3c;
+  --bg-elevated: #ffffff;
+  --fill: rgba(26, 107, 60, 0.08);
+  --text-primary: #1a1a1a;
+  --text-secondary: #4a5b52;
+  --text-tertiary: #74837a;
+  --separator: #e7ece8;
+  --dashboard-card-bg: #ffffff;
+  --dashboard-card-gradient: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(245, 249, 246, 0.96));
+  --dashboard-card-alert-gradient: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 248, 235, 0.98));
+  --dashboard-row-bg: rgba(245, 249, 246, 0.9);
+  --dashboard-button-bg: #ffffff;
+  --dashboard-input-bg: #ffffff;
+  --dashboard-chip-bg: rgba(26, 107, 60, 0.08);
+  --dashboard-chip-quiet-bg: #ffffff;
+  --dashboard-chip-warn-bg: rgba(245, 166, 35, 0.16);
+  --dashboard-chip-warn-text: #8a5a0a;
+  --dashboard-chip-good-bg: rgba(34, 197, 94, 0.14);
+  --dashboard-chip-good-text: #1a6b3c;
+  --dashboard-gridline: rgba(26, 107, 60, 0.1);
+  --dashboard-bar-bg: rgba(26, 107, 60, 0.18);
+  --dashboard-bar-peak: linear-gradient(180deg, #22c55e 0%, #1a6b3c 100%);
+  --dashboard-track-bg: rgba(26, 107, 60, 0.08);
+  --dashboard-chart-badge-bg: rgba(26, 107, 60, 0.08);
+  --dashboard-chart-badge-text: var(--accent);
+  --dashboard-hero-bg:
+    radial-gradient(circle at top right, rgba(187, 244, 81, 0.22), transparent 34%),
+    linear-gradient(135deg, #1a6b3c 0%, #155530 100%);
+  --dashboard-hero-shadow: 0 18px 44px rgba(6, 36, 15, 0.18);
+  --dashboard-range-bg: rgba(255, 255, 255, 0.08);
+  --dashboard-range-border: rgba(255, 255, 255, 0.14);
+  --dashboard-range-text: rgba(255, 255, 255, 0.78);
+  --dashboard-fact-bg: rgba(255, 255, 255, 0.08);
+  --dashboard-fact-border: rgba(255, 255, 255, 0.16);
+  --dashboard-fact-label: rgba(255, 255, 255, 0.72);
+  --dashboard-cta-bg: #bbf451;
+  --dashboard-cta-color: #06240f;
+  --dashboard-cta-hover: #ffffff;
+  --dashboard-cta-ghost-bg: rgba(255, 255, 255, 0.08);
+  --dashboard-cta-ghost-border: rgba(255, 255, 255, 0.18);
+  --dashboard-cta-ghost-hover: rgba(255, 255, 255, 0.16);
+  --dashboard-shadow: 0 10px 28px rgba(20, 53, 28, 0.06);
+  --dashboard-shadow-strong: 0 0 0 3px rgba(26, 107, 60, 0.12);
+  --dashboard-status-done-bg: rgba(34, 197, 94, 0.14);
+  --dashboard-status-done-text: #1a6b3c;
+  --dashboard-status-processing-bg: rgba(245, 166, 35, 0.16);
+  --dashboard-status-processing-text: #8a5a0a;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-5);
+  gap: 24px;
 }
 
+.dashboard-page--dark {
+  --accent: #92dd73;
+  --accent-pressed: #7dcb60;
+  --accent-text-on: #08200f;
+  --success: #6ee787;
+  --warning: #f6c56b;
+  --danger: #ff8f70;
+  --bg-elevated: #151c1a;
+  --fill: rgba(187, 244, 81, 0.08);
+  --text-primary: #edf5ef;
+  --text-secondary: #a7b6aa;
+  --text-tertiary: #768477;
+  --separator: rgba(235, 245, 238, 0.08);
+  --dashboard-card-bg: #151c1a;
+  --dashboard-card-gradient: linear-gradient(180deg, rgba(24, 31, 28, 0.98), rgba(18, 24, 22, 0.98));
+  --dashboard-card-alert-gradient: linear-gradient(180deg, rgba(36, 31, 22, 0.98), rgba(26, 22, 17, 0.98));
+  --dashboard-row-bg: rgba(24, 31, 28, 0.92);
+  --dashboard-button-bg: #1b2421;
+  --dashboard-input-bg: #101614;
+  --dashboard-chip-bg: rgba(187, 244, 81, 0.1);
+  --dashboard-chip-quiet-bg: rgba(255, 255, 255, 0.03);
+  --dashboard-chip-warn-bg: rgba(245, 166, 35, 0.18);
+  --dashboard-chip-warn-text: #ffd482;
+  --dashboard-chip-good-bg: rgba(34, 197, 94, 0.18);
+  --dashboard-chip-good-text: #a3efb5;
+  --dashboard-gridline: rgba(255, 255, 255, 0.08);
+  --dashboard-bar-bg: rgba(187, 244, 81, 0.18);
+  --dashboard-bar-peak: linear-gradient(180deg, #bbf451 0%, #22c55e 100%);
+  --dashboard-track-bg: rgba(255, 255, 255, 0.06);
+  --dashboard-chart-badge-bg: rgba(187, 244, 81, 0.12);
+  --dashboard-chart-badge-text: #bff56b;
+  --dashboard-hero-bg:
+    radial-gradient(circle at top right, rgba(187, 244, 81, 0.16), transparent 34%),
+    linear-gradient(135deg, #0f4828 0%, #0a2f19 100%);
+  --dashboard-hero-shadow: 0 22px 60px rgba(0, 0, 0, 0.4);
+  --dashboard-range-bg: rgba(255, 255, 255, 0.06);
+  --dashboard-range-border: rgba(255, 255, 255, 0.1);
+  --dashboard-range-text: rgba(255, 255, 255, 0.78);
+  --dashboard-fact-bg: rgba(255, 255, 255, 0.06);
+  --dashboard-fact-border: rgba(255, 255, 255, 0.1);
+  --dashboard-fact-label: rgba(255, 255, 255, 0.66);
+  --dashboard-cta-bg: #bbf451;
+  --dashboard-cta-color: #08200f;
+  --dashboard-cta-hover: #d3ff7d;
+  --dashboard-cta-ghost-bg: rgba(255, 255, 255, 0.04);
+  --dashboard-cta-ghost-border: rgba(255, 255, 255, 0.1);
+  --dashboard-cta-ghost-hover: rgba(255, 255, 255, 0.08);
+  --dashboard-shadow: 0 18px 44px rgba(0, 0, 0, 0.32);
+  --dashboard-shadow-strong: 0 0 0 3px rgba(146, 221, 115, 0.18);
+  --dashboard-status-done-bg: rgba(34, 197, 94, 0.18);
+  --dashboard-status-done-text: #a3efb5;
+  --dashboard-status-processing-bg: rgba(245, 166, 35, 0.18);
+  --dashboard-status-processing-text: #ffd482;
+}
+
+.dashboard-hero,
 .dashboard-header,
 .dashboard-kpis,
 .dashboard-grid {
   display: grid;
-  gap: var(--space-4);
+  gap: 16px;
+}
+
+.dashboard-hero {
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.85fr);
+  gap: 24px;
+  padding: 28px;
+  border-radius: 18px;
+  background: var(--dashboard-hero-bg);
+  color: #ffffff;
+  box-shadow: var(--dashboard-hero-shadow);
+}
+
+.dashboard-store {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ── Operations ─────────────────────────────────────────────────────────── */
+
+.ops-error {
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px solid rgba(200, 92, 60, 0.16);
+  border-radius: 14px;
+  background: rgba(200, 92, 60, 0.08);
+  color: var(--danger);
+  font: var(--type-subhead);
+}
+
+.ops-counts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.ops-count {
+  display: grid;
+  gap: 6px;
+  min-height: 132px;
+  padding: 20px;
+  border: 1px solid var(--separator);
+  border-radius: 18px;
+  background: var(--dashboard-card-gradient);
+  box-shadow: var(--dashboard-shadow);
+}
+
+/* Only a count that needs someone gets the warm border — four highlighted
+   tiles would highlight nothing. */
+.ops-count--alert {
+  border-color: rgba(245, 166, 35, 0.4);
+  background: var(--dashboard-card-alert-gradient);
+}
+
+.ops-count__value {
+  font-size: clamp(2rem, 3vw, 2.35rem);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.ops-count__label {
+  max-width: 14ch;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Equal halves: neither the order queue nor the delivery board is the
+   secondary one, unlike the analytics grid below. */
+.dashboard-grid--ops {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.ops-list {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ops-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border: 1px solid var(--separator);
+  border-radius: 14px;
+  background: var(--dashboard-row-bg);
+}
+
+.ops-row--stack {
+  display: grid;
+  gap: 10px;
+}
+
+.ops-row__main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ops-row__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ops-row__meta {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--type-caption);
+}
+
+.ops-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ops-chip {
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--dashboard-chip-bg);
+  color: var(--accent);
+  font: var(--type-caption);
+  font-weight: 600;
+}
+
+.ops-chip--quiet {
+  border: 1px solid var(--separator);
+  background: var(--dashboard-chip-quiet-bg);
+  color: var(--text-secondary);
+}
+
+.ops-chip--warn {
+  background: var(--dashboard-chip-warn-bg);
+  color: var(--dashboard-chip-warn-text);
+}
+
+.ops-chip--good {
+  background: var(--dashboard-chip-good-bg);
+  color: var(--dashboard-chip-good-text);
+}
+
+.ops-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 16px;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-pill);
+  background: var(--dashboard-button-bg);
+  color: var(--text-primary);
+  font: var(--type-caption);
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.ops-action:hover:not(:disabled) {
+  border-color: rgba(26, 107, 60, 0.28);
+  color: var(--accent);
+}
+
+.ops-action--primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-text-on);
+}
+
+.ops-action--primary:hover:not(:disabled) {
+  background: var(--accent-pressed);
+  color: var(--accent-text-on);
+}
+
+.ops-action:disabled {
+  opacity: 0.5;
+}
+
+.ops-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: var(--type-caption);
+  font-weight: 700;
+}
+
+.ops-ghost:hover:not(:disabled) {
+  color: var(--accent-pressed);
+}
+
+/* The rider row wraps to its own line on a narrow card rather than squeezing
+   two inputs and a button into a strip too small to type in. */
+.ops-rider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ops-rider__name {
+  font: var(--type-subhead);
+  font-weight: 700;
+}
+
+.ops-input {
+  flex: 1 1 130px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--separator);
+  border-radius: 999px;
+  background: var(--dashboard-input-bg);
+  color: var(--text-primary);
+  font: var(--type-subhead);
+}
+
+.ops-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--dashboard-shadow-strong);
+}
+
+.ops-facts {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0 0;
+}
+
+.ops-facts > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--separator);
+}
+
+.ops-facts > div:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.ops-facts dt {
+  color: var(--text-secondary);
+  font: var(--type-caption);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ops-facts dd {
+  margin: 0;
+  font: var(--type-subhead);
+  font-weight: 600;
+  text-align: right;
+}
+
+.ops-links {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 20px;
 }
 
 .dashboard-header {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
+  align-content: start;
 }
 
 .dashboard-title {
   margin: 0;
-  font: var(--type-title1);
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 800;
+  line-height: 0.98;
+  letter-spacing: -0.05em;
+  color: #ffffff;
 }
 
 .dashboard-copy {
-  max-width: 64ch;
-  margin: var(--space-2) 0 0;
-  color: var(--text-secondary);
+  max-width: 58ch;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.dashboard-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.dashboard-fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--dashboard-fact-border);
+  border-radius: 999px;
+  background: var(--dashboard-fact-bg);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dashboard-fact strong {
+  color: var(--dashboard-fact-label);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .dashboard-toolbar,
@@ -507,29 +1350,72 @@ const recentOrders = computed(() =>
 
 .dashboard-toolbar,
 .dashboard-range {
-  gap: var(--space-3);
+  gap: 12px;
+}
+
+.dashboard-toolbar {
+  display: grid;
+  align-content: space-between;
+  justify-items: end;
 }
 
 .dashboard-range {
-  flex-wrap: wrap;
-  justify-content: end;
+  display: grid;
+  width: 100%;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid var(--dashboard-range-border);
+  background: var(--dashboard-range-bg);
 }
 
 .dashboard-range__text {
-  color: var(--text-secondary);
-  font: var(--type-caption);
+  color: var(--dashboard-range-text);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.dashboard-filter {
-  min-height: 38px;
-  padding: 0 var(--space-4);
-  border: 1px solid var(--separator);
-  border-radius: 14px;
-  background: var(--bg-elevated);
-  color: var(--text-primary);
+.dashboard-hero__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: end;
+  width: 100%;
+}
+
+.dashboard-cta {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 20px;
+  border-radius: 999px;
+  background: var(--dashboard-cta-bg);
+  color: var(--dashboard-cta-color);
+  font-size: 14px;
+  font-weight: 800;
+  text-decoration: none;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.dashboard-cta:hover {
+  background: var(--dashboard-cta-hover);
+}
+
+.dashboard-cta--ghost {
+  border: 1px solid var(--dashboard-cta-ghost-border);
+  background: var(--dashboard-cta-ghost-bg);
+  color: #ffffff;
+}
+
+.dashboard-cta--ghost:hover {
+  border-color: var(--dashboard-cta-ghost-border);
+  background: var(--dashboard-cta-ghost-hover);
+  color: #ffffff;
 }
 
 .dashboard-kpis {
@@ -547,29 +1433,30 @@ const recentOrders = computed(() =>
 .dashboard-chart__header,
 .dashboard-table__head {
   justify-content: space-between;
-  margin-bottom: var(--space-2);
+  margin-bottom: 10px;
   color: var(--text-secondary);
   font: var(--type-caption);
 }
 
 .dashboard-chart__badge {
   min-height: 28px;
-  padding: 0 var(--space-3);
+  padding: 0 12px;
   border-radius: var(--radius-pill);
-  background: var(--fill);
-  color: var(--text-primary);
+  background: var(--dashboard-chart-badge-bg);
+  color: var(--dashboard-chart-badge-text);
+  font-weight: 700;
 }
 
 .dashboard-bar-chart {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-3);
+  gap: 12px;
 }
 
 .dashboard-bar-chart__plot {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: var(--space-3);
+  gap: 12px;
   height: 260px;
 }
 
@@ -600,7 +1487,7 @@ const recentOrders = computed(() =>
 .dashboard-bar-chart__gridlines span {
   display: block;
   height: 0;
-  border-top: 1px solid var(--separator);
+  border-top: 1px solid var(--dashboard-gridline);
 }
 
 .dashboard-bar-chart__bars {
@@ -608,7 +1495,7 @@ const recentOrders = computed(() =>
   inset: 0;
   display: flex;
   align-items: flex-end;
-  gap: var(--space-2);
+  gap: 8px;
   padding-top: 28px;
 }
 
@@ -626,12 +1513,12 @@ const recentOrders = computed(() =>
 .dashboard-bar-chart__bar {
   width: 100%;
   max-width: 28px;
-  border-radius: 4px 4px 0 0;
-  background: color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 999px 999px 0 0;
+  background: var(--dashboard-bar-bg);
 }
 
 .dashboard-bar-chart__bar.is-peak {
-  background: var(--accent);
+  background: var(--dashboard-bar-peak);
 }
 
 .dashboard-bar-chart__value {
@@ -643,8 +1530,8 @@ const recentOrders = computed(() =>
 
 .dashboard-bar-chart__labels {
   display: flex;
-  gap: var(--space-2);
-  padding-left: calc(2.5em + var(--space-3));
+  gap: 8px;
+  padding-left: calc(2.5em + 12px);
   color: var(--text-tertiary);
   font: var(--type-caption);
 }
@@ -659,14 +1546,14 @@ const recentOrders = computed(() =>
 
 .dashboard-channels {
   display: grid;
-  gap: var(--space-4);
+  gap: 16px;
 }
 
 .dashboard-channels__total {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  padding-bottom: var(--space-3);
+  padding-bottom: 12px;
   border-bottom: 1px solid var(--separator);
 }
 
@@ -681,12 +1568,12 @@ const recentOrders = computed(() =>
 
 .dashboard-channels__list {
   display: grid;
-  gap: var(--space-4);
+  gap: 16px;
 }
 
 .dashboard-channels__row {
   display: grid;
-  gap: var(--space-2);
+  gap: 8px;
 }
 
 .dashboard-channels__row-head {
@@ -717,9 +1604,9 @@ const recentOrders = computed(() =>
 }
 
 .dashboard-channels__track {
-  height: 8px;
+  height: 10px;
   border-radius: var(--radius-pill);
-  background: var(--fill);
+  background: var(--dashboard-track-bg);
   overflow: hidden;
 }
 
@@ -732,11 +1619,12 @@ const recentOrders = computed(() =>
   gap: 2px;
   color: var(--accent);
   text-decoration: none;
+  font-weight: 700;
 }
 
 .dashboard-empty {
   margin: 0;
-  padding: var(--space-5) 0;
+  padding: 20px 0;
   color: var(--text-tertiary);
   font: var(--type-subhead);
   text-align: center;
@@ -783,7 +1671,7 @@ const recentOrders = computed(() =>
   height: 36px;
   border-radius: var(--radius-md);
   overflow: hidden;
-  background: var(--fill);
+  background: var(--dashboard-chip-bg);
 }
 
 .dashboard-product-thumb img {
@@ -803,19 +1691,101 @@ const recentOrders = computed(() =>
 }
 
 .dashboard-status--done {
-  background: color-mix(in srgb, var(--success) 16%, transparent);
-  color: var(--success);
+  background: var(--dashboard-status-done-bg);
+  color: var(--dashboard-status-done-text);
 }
 
 .dashboard-status--processing {
-  background: color-mix(in srgb, var(--warning) 18%, transparent);
-  color: var(--warning);
+  background: var(--dashboard-status-processing-bg);
+  color: var(--dashboard-status-processing-text);
+}
+
+:deep(.chart-card),
+:deep(.metric-card) {
+  border: 1px solid var(--separator);
+  border-radius: 18px;
+  background: var(--dashboard-card-bg);
+  box-shadow: var(--dashboard-shadow);
+}
+
+:deep(.chart-card) {
+  gap: 16px;
+  padding: 22px;
+}
+
+:deep(.metric-card) {
+  gap: 8px;
+  min-height: 148px;
+  padding: 20px;
+  background: var(--dashboard-card-gradient);
+}
+
+:deep(.chart-card__title) {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+}
+
+:deep(.metric-card__label) {
+  color: var(--text-secondary);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+:deep(.metric-card__value) {
+  font-size: clamp(1.9rem, 3vw, 2.4rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+:deep(.metric-card__delta--up) {
+  color: var(--dashboard-status-done-text);
+}
+
+:deep(.metric-card__delta--down) {
+  color: var(--danger);
+}
+
+:deep(.range-selector) {
+  gap: 6px;
+  padding: 6px;
+  border-radius: 999px;
+  background: var(--dashboard-range-bg);
+}
+
+:deep(.range-btn) {
+  min-height: 34px;
+  padding: 0 14px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+:deep(.range-btn--active) {
+  background: #ffffff;
+  color: var(--accent);
+  box-shadow: none;
+}
+
+:deep(.range-btn:not(.range-btn--active):hover) {
+  color: #ffffff;
+}
+
+:deep(.range-btn:focus-visible) {
+  outline: 2px solid #bbf451;
+  outline-offset: 2px;
 }
 
 @media (max-width: 1100px) {
+  .dashboard-hero,
   .dashboard-kpis,
   .dashboard-grid,
-  .dashboard-grid--tables {
+  .dashboard-grid--tables,
+  .dashboard-grid--ops,
+  .ops-counts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -823,8 +1793,8 @@ const recentOrders = computed(() =>
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .dashboard-range {
-    justify-content: start;
+  .dashboard-toolbar {
+    justify-items: start;
   }
 }
 
@@ -834,13 +1804,18 @@ const recentOrders = computed(() =>
   }
 
   .dashboard-grid,
-  .dashboard-grid--tables {
+  .dashboard-grid--tables,
+  .dashboard-grid--ops {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .dashboard-toolbar {
-    flex-direction: column;
+  .ops-row {
     align-items: stretch;
+    flex-direction: column;
+  }
+
+  .dashboard-toolbar {
+    justify-items: stretch;
   }
 
   .dashboard-table {
@@ -848,8 +1823,35 @@ const recentOrders = computed(() =>
     overflow-x: auto;
   }
 
-  .dashboard-copy {
-    display: none;
+  .dashboard-hero {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 22px 18px;
+    gap: 18px;
+  }
+
+  .dashboard-hero__actions {
+    justify-content: flex-start;
+  }
+
+  .dashboard-cta {
+    flex: 1 1 160px;
+  }
+
+  .dashboard-facts {
+    gap: 8px;
+  }
+
+  .dashboard-fact {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .ops-count {
+    min-height: 0;
+  }
+
+  :deep(.metric-card) {
+    min-height: 0;
   }
 }
 </style>

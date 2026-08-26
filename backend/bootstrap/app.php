@@ -13,7 +13,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        $middleware->alias([
+            'rider.approved' => \App\Http\Middleware\EnsureRiderIsApproved::class,
+            'merchant.token' => \App\Http\Middleware\EnsureMerchantToken::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

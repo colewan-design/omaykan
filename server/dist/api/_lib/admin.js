@@ -7,10 +7,10 @@ exports.setCorsHeaders = setCorsHeaders;
 const app_1 = require("firebase-admin/app");
 const auth_1 = require("firebase-admin/auth");
 const firestore_1 = require("firebase-admin/firestore");
-// Vercel's Node runtime has no ambient Google Cloud credentials the way
-// Firebase Cloud Functions does, so the Admin SDK is initialized from an
-// explicit service account key set as Vercel project env vars. Generate the
-// key from Firebase Console > Project Settings > Service Accounts (a free,
+// The VPS has no ambient Google Cloud credentials the way Firebase Cloud
+// Functions does, so the Admin SDK is initialized from an explicit service
+// account key supplied through server-side env vars. Generate the key from
+// Firebase Console > Project Settings > Service Accounts (a free,
 // Spark-plan-compatible action) and never commit it.
 //
 // Lazily initialized (not a top-level `export const db = ...`) so a missing
@@ -32,7 +32,7 @@ function getAdminApp() {
     const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
     const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
     if (!projectId || !clientEmail || !privateKey) {
-        throw new Error('Missing Firebase Admin credentials — set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY in the Vercel project env vars.');
+        throw new Error('Missing Firebase Admin credentials — set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY in the server environment.');
     }
     cachedApp = (0, app_1.initializeApp)({ credential: (0, app_1.cert)({ projectId, clientEmail, privateKey }) });
     return cachedApp;

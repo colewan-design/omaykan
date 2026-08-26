@@ -9,12 +9,19 @@ import { STORE_ADDRESS } from '@pos/web/commerce/context'
 import { messageFor, useCustomerAccount } from '@pos/web/commerce/customer'
 import { useDeliveryAddress } from '@pos/web/commerce/deliveryAddress'
 import { useStorefrontOrderHistory } from '@pos/web/commerce/orderHistory'
+import FdCheckoutAuth from './FdCheckoutAuth.vue'
 
 // Checkout — the last thing the storefront was missing.
 //
 // The cart has been able to collect items since the rebuild, but there was
 // nowhere to turn one into an order: the web storefront had no checkout at
 // all, and POST /api/online-orders was reachable only from the mobile app.
+//
+// Ordering needs an account; filling a cart does not. Anyone can browse and
+// add to the cart as a guest, and the account gate stands here — at the point
+// where an order is about to exist and someone has to be reachable about it.
+// The API enforces the same rule (auth:customer on POST /api/online-orders),
+// so this card is the courteous version of a boundary that holds either way.
 //
 // Three things this deliberately does not do:
 //
@@ -78,6 +85,14 @@ watch(
 
 const lines = computed(() => cart.cartLines.value)
 const empty = computed(() => lines.value.length === 0)
+
+/**
+ * The gate. `hydrating` matters as much as `signedIn`: the stored token is
+ * traded for the account asynchronously on load, so a returning shopper is
+ * momentarily indistinguishable from a stranger. Showing the sign-in card in
+ * that window would tell someone who *is* signed in that they are not.
+ */
+const needsAccount = computed(() => !account.hydrating.value && !account.signedIn.value)
 
 /**
  * Which branch the order goes to. With a delivery address set the catalog can
@@ -214,8 +229,13 @@ async function placeOrder() {
     </div>
 
     <div v-else class="fdco__grid">
+      <!-- ── Not signed in: the gate stands in for the form ────────── -->
+      <div v-if="needsAccount" class="fdco__form">
+        <FdCheckoutAuth />
+      </div>
+
       <!-- ── The form ──────────────────────────────────────────────── -->
-      <div class="fdco__form">
+      <div v-else class="fdco__form">
         <p v-if="mixedBranches" class="fdco__block fdco__alert">
           Your cart has items from more than one branch, and an order goes to one counter. Remove
           the items from one branch and order them separately.
@@ -378,7 +398,21 @@ async function placeOrder() {
 
         <p v-if="error" class="fdco__alert">{{ error }}</p>
 
-        <button type="button" class="fdco__place" :disabled="!canSubmit" @click="placeOrder">
+        <!-- While the gate is up there is nothing to place yet, and a live
+             button that only produces "sign in first" would be a worse way of
+             saying what the card next to it already says. -->
+        <p v-if="needsAccount" class="fdco__note" style="margin-top: 0">
+          <ShieldCheck :size="15" :stroke-width="1.8" />
+          <span>Sign in to place this order. Your cart is saved either way.</span>
+        </p>
+
+        <button
+          v-else
+          type="button"
+          class="fdco__place"
+          :disabled="!canSubmit"
+          @click="placeOrder"
+        >
           {{ submitting ? 'Placing your order…' : `Place order · ${formatCurrency(totalCents)}` }}
         </button>
 

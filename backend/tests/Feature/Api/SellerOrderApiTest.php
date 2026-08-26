@@ -9,6 +9,7 @@ use App\Models\Organization;
 use App\Models\Product;
 use App\Models\Store;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
+use Tests\Concerns\ActsAsShopper;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
@@ -21,7 +22,7 @@ use Tests\TestCase;
  */
 class SellerOrderApiTest extends TestCase
 {
-    use DatabaseMigrations;
+    use ActsAsShopper, DatabaseMigrations;
 
     private function deviceToken(): string
     {
@@ -40,7 +41,7 @@ class SellerOrderApiTest extends TestCase
     {
         $product = Product::query()->where('sku', 'ESP-0001')->firstOrFail();
 
-        return $this->postJson('/api/online-orders', [
+        return $this->asShopper()->postJson('/api/online-orders', [
             'orgSlug' => 'demo-coffee',
             'storeCode' => 'main',
             'businessMode' => 'coffee-shop',
@@ -123,7 +124,7 @@ class SellerOrderApiTest extends TestCase
         $this->seed();
         $product = Product::query()->where('sku', 'ESP-0001')->firstOrFail();
 
-        $orderId = $this->postJson('/api/online-orders', [
+        $orderId = $this->asShopper()->postJson('/api/online-orders', [
             'orgSlug' => 'demo-coffee',
             'storeCode' => 'main',
             'businessMode' => 'coffee-shop',
@@ -240,6 +241,13 @@ class SellerOrderApiTest extends TestCase
     {
         $this->seed();
         $orderId = $this->placeDeliveryOrder();
+
+        // Placing the order signed the request in as the shopper, and
+        // withToken() is sticky. Left in place, the seller endpoints would
+        // answer 403 — a real token on the wrong guard — and this test would
+        // be asserting something other than "no credentials at all".
+        $this->app['auth']->forgetGuards();
+        $this->withoutHeader('Authorization');
 
         $this->getJson('/api/seller/online-orders')->assertUnauthorized();
         $this->postJson("/api/seller/online-orders/{$orderId}/rider", ['riderName' => 'Jun'])->assertUnauthorized();

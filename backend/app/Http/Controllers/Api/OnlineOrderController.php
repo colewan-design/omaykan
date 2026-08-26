@@ -25,9 +25,19 @@ use Illuminate\Validation\ValidationException;
 /**
  * Customer orders placed on the storefront.
  *
- * Ported from api/create-online-order.ts, which this replaces. Deliberately
- * unauthenticated: a storefront customer has no account. The organization slug
- * plus the store code are the addressing scheme, exactly as before.
+ * Ported from api/create-online-order.ts, which this replaces. The
+ * organization slug plus the store code are the addressing scheme, exactly as
+ * before.
+ *
+ * Placing an order requires a signed-in shopper with a verified email
+ * (`auth:customer` on the route). Browsing and filling a cart do not — the
+ * gate is at checkout, so nobody is asked who they are before they have
+ * decided to buy anything.
+ *
+ * Tracking an order and confirming payment stay public, keyed on the order's
+ * unguessable UUID: that link is forwarded to whoever is collecting the
+ * parcel, and making them sign in to see "your rider is on the way" would
+ * break it for the person actually standing at the door.
  *
  * Nothing the client sends about money is trusted — prices, tax and the
  * delivery fee are all recomputed here from the merchant's own records.
@@ -43,27 +53,34 @@ class OnlineOrderController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        // Optional, and read without any auth middleware on the route: a
-        // bearer token from the customer portal names who is ordering, and no
-        // token at all is still a perfectly good guest order. A *staff* token
-        // resolves to null here, because the `customer` guard has its own
-        // provider — see config/auth.php.
+        // Guaranteed by `auth:customer` on the route. A *staff* token resolves
+        // to null on this guard, because `customer` has its own provider — see
+        // config/auth.php — so a merchant's till cannot place a shopper order.
         $customer = $request->user('customer');
+
+        // Belt and braces. A token can only come from login or a completed
+        // password reset, and login refuses an unverified address, so this
+        // should be unreachable — but an order is the point at which someone's
+        // contact details start being used to reach them, and an address
+        // nobody has proved they hold is exactly what must not be relied on.
+        if (! $customer->hasVerifiedEmail()) {
+            throw ValidationException::withMessages([
+                'email' => 'Please verify your email before placing an order.',
+            ]);
+        }
 
         // A signed-in customer shouldn't have to send their own name back to
         // us, so anything the form left out is filled from the account before
         // the contact rules below are applied.
-        if ($customer !== null) {
-            $guest = (array) $request->input('guest', []);
+        $guest = (array) $request->input('guest', []);
 
-            $request->merge([
-                'guest' => array_filter([
-                    'name' => $guest['name'] ?? $customer->name,
-                    'phone' => $guest['phone'] ?? $customer->phone,
-                    'email' => $guest['email'] ?? $customer->email,
-                ], fn ($value) => $value !== null && $value !== ''),
-            ]);
-        }
+        $request->merge([
+            'guest' => array_filter([
+                'name' => $guest['name'] ?? $customer->name,
+                'phone' => $guest['phone'] ?? $customer->phone,
+                'email' => $guest['email'] ?? $customer->email,
+            ], fn ($value) => $value !== null && $value !== ''),
+        ]);
 
         $data = $request->validate([
             'orgSlug' => ['required', 'string'],

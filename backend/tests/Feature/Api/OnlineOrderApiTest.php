@@ -3,13 +3,16 @@
 namespace Tests\Feature\Api;
 
 use App\Events\OrderPlaced;
+use App\Models\CustomerAccount;
 use App\Models\InventoryLevel;
 use App\Models\Order;
 use App\Models\Organization;
 use App\Models\Payment;
 use App\Models\Product;
 use App\Models\Store;
+use App\Models\User;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
+use Tests\Concerns\ActsAsShopper;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
@@ -23,7 +26,7 @@ use Tests\TestCase;
  */
 class OnlineOrderApiTest extends TestCase
 {
-    use DatabaseMigrations;
+    use ActsAsShopper, DatabaseMigrations;
 
     /** Session Road, Baguio — matches the seeded store pin. */
     private const STORE_LAT = 16.4123;
@@ -51,7 +54,7 @@ class OnlineOrderApiTest extends TestCase
         $this->seed();
         Event::fake([OrderPlaced::class]);
 
-        $response = $this->postJson('/api/online-orders', $this->payload());
+        $response = $this->asShopper()->postJson('/api/online-orders', $this->payload());
 
         // Espresso is ₱120.00 at 12% tax; two of them, no delivery fee.
         $response
@@ -85,7 +88,7 @@ class OnlineOrderApiTest extends TestCase
         $this->seed();
         Event::fake([OrderPlaced::class]);
 
-        $this->postJson('/api/online-orders', $this->payload())->assertCreated();
+        $this->asShopper()->postJson('/api/online-orders', $this->payload())->assertCreated();
 
         $order = Order::query()->firstOrFail();
 
@@ -100,7 +103,7 @@ class OnlineOrderApiTest extends TestCase
         $this->seed();
         Event::fake([OrderPlaced::class]);
 
-        $this->postJson('/api/online-orders', $this->payload())->assertCreated();
+        $this->asShopper()->postJson('/api/online-orders', $this->payload())->assertCreated();
 
         $order = Order::query()->firstOrFail();
         $product = Product::query()->where('sku', 'ESP-0001')->firstOrFail();
@@ -122,7 +125,7 @@ class OnlineOrderApiTest extends TestCase
 
         // ~3.5km north of the store: past the 2km flag-down, so two started
         // extra kilometres at ₱15 each on top of the ₱49 base.
-        $response = $this->postJson('/api/online-orders', $this->payload([
+        $response = $this->asShopper()->postJson('/api/online-orders', $this->payload([
             'fulfillment' => [
                 'method' => 'delivery',
                 'address' => '12 Leonard Wood Road',
@@ -147,7 +150,7 @@ class OnlineOrderApiTest extends TestCase
         $this->seed();
         Event::fake([OrderPlaced::class]);
 
-        $this->postJson('/api/online-orders', $this->payload([
+        $this->asShopper()->postJson('/api/online-orders', $this->payload([
             'fulfillment' => ['method' => 'delivery', 'address' => '12 Leonard Wood Road'],
         ]))
             ->assertCreated()
@@ -159,7 +162,7 @@ class OnlineOrderApiTest extends TestCase
         $this->seed();
 
         // ~22km out, past the 15km ceiling.
-        $this->postJson('/api/online-orders', $this->payload([
+        $this->asShopper()->postJson('/api/online-orders', $this->payload([
             'fulfillment' => [
                 'method' => 'delivery',
                 'address' => 'Somewhere far',
@@ -177,7 +180,7 @@ class OnlineOrderApiTest extends TestCase
     {
         $this->seed();
 
-        $this->postJson('/api/online-orders', $this->payload([
+        $this->asShopper()->postJson('/api/online-orders', $this->payload([
             'fulfillment' => [
                 'method' => 'delivery',
                 'address' => '12 Leonard Wood Road',
@@ -192,7 +195,7 @@ class OnlineOrderApiTest extends TestCase
     {
         $this->seed();
 
-        $this->postJson('/api/online-orders', $this->payload([
+        $this->asShopper()->postJson('/api/online-orders', $this->payload([
             'items' => [['quantity' => 500]],
         ]))->assertStatus(422);
 
@@ -205,28 +208,110 @@ class OnlineOrderApiTest extends TestCase
 
         Product::query()->where('sku', 'ESP-0001')->update(['business_modes' => json_encode(['grocery'])]);
 
-        $this->postJson('/api/online-orders', $this->payload())->assertStatus(422);
+        $this->asShopper()->postJson('/api/online-orders', $this->payload())->assertStatus(422);
 
         $this->assertDatabaseCount('orders', 0);
     }
 
-    public function test_guest_must_leave_a_phone_or_an_email(): void
+    /**
+     * The contact rules still stand, but a signed-in shopper can no longer
+     * trip them: the account supplies whatever the form left out, and an
+     * account always has an email. So the old "guest must leave a phone or an
+     * email" case is now unreachable, and what is worth asserting instead is
+     * that the fallback happens rather than the order being rejected.
+     */
+    public function test_contact_details_left_blank_are_taken_from_the_account(): void
     {
         $this->seed();
 
         $payload = $this->payload();
-        $payload['guest'] = ['name' => 'Maria Santos'];
+        unset($payload['guest']);
 
-        $this->postJson('/api/online-orders', $payload)
+        $this->asShopper()->postJson('/api/online-orders', $payload)->assertCreated();
+
+        $order = Order::query()->firstOrFail();
+
+        $this->assertSame('Maria Santos', $order->guest_contact['name']);
+        $this->assertSame('maria@example.com', $order->guest_contact['email']);
+        $this->assertSame('09171234567', $order->guest_contact['phone']);
+    }
+
+    /** What the form sends wins — ordering for someone else is ordinary. */
+    public function test_contact_details_on_the_form_override_the_account(): void
+    {
+        $this->seed();
+
+        $this->asShopper()->postJson('/api/online-orders', $this->payload([
+            'guest' => ['name' => 'Ana Reyes', 'phone' => '09998887777'],
+        ]))->assertCreated();
+
+        $order = Order::query()->firstOrFail();
+
+        $this->assertSame('Ana Reyes', $order->guest_contact['name']);
+        $this->assertSame('09998887777', $order->guest_contact['phone']);
+    }
+
+    // -- The account gate ---------------------------------------------------
+    //
+    // Browsing and filling a cart are open; placing the order is not. These
+    // cover the boundary, since every other test above holds a valid token.
+
+    public function test_placing_an_order_without_an_account_is_refused(): void
+    {
+        $this->seed();
+
+        $this->postJson('/api/online-orders', $this->payload())->assertUnauthorized();
+
+        $this->assertDatabaseCount('orders', 0);
+    }
+
+    /**
+     * A staff token is a real credential on a different guard. It must not
+     * stand in for a shopper's, or a merchant's till could place orders
+     * against its own storefront.
+     */
+    public function test_a_staff_token_cannot_place_a_storefront_order(): void
+    {
+        $this->seed();
+
+        $staff = User::query()->firstOrFail();
+
+        $this->withToken($staff->createToken('till', ['merchant'])->plainTextToken)
+            ->postJson('/api/online-orders', $this->payload())
+            ->assertUnauthorized();
+
+        $this->assertDatabaseCount('orders', 0);
+    }
+
+    /**
+     * Unreachable through the API as it stands — login refuses an unverified
+     * address, so no token is ever minted for one — but asserted anyway,
+     * because the controller's check is what stands between an unproven email
+     * address and the mail the shop sends to it.
+     */
+    public function test_an_unverified_account_cannot_place_an_order(): void
+    {
+        $this->seed();
+
+        $unverified = CustomerAccount::query()->create([
+            'name' => 'Unverified Shopper',
+            'email' => 'unverified@example.com',
+            'password' => 'a-shopper-password',
+        ]);
+
+        $this->withToken($unverified->createToken('customer-portal', ['customer'])->plainTextToken)
+            ->postJson('/api/online-orders', $this->payload())
             ->assertStatus(422)
-            ->assertJsonValidationErrors(['guest.phone', 'guest.email']);
+            ->assertJsonValidationErrors('email');
+
+        $this->assertDatabaseCount('orders', 0);
     }
 
     public function test_unknown_store_is_a_404(): void
     {
         $this->seed();
 
-        $this->postJson('/api/online-orders', $this->payload(['storeCode' => 'nope']))
+        $this->asShopper()->postJson('/api/online-orders', $this->payload(['storeCode' => 'nope']))
             ->assertNotFound();
     }
 
@@ -234,7 +319,7 @@ class OnlineOrderApiTest extends TestCase
     {
         $this->seed();
 
-        $this->postJson('/api/online-orders', $this->payload(['businessMode' => 'nail-salon']))
+        $this->asShopper()->postJson('/api/online-orders', $this->payload(['businessMode' => 'nail-salon']))
             ->assertStatus(422)
             ->assertJsonValidationErrors('businessMode');
     }
@@ -244,7 +329,7 @@ class OnlineOrderApiTest extends TestCase
         $this->seed();
         Event::fake([OrderPlaced::class]);
 
-        $placed = $this->postJson('/api/online-orders', $this->payload())->assertCreated()->json();
+        $placed = $this->asShopper()->postJson('/api/online-orders', $this->payload())->assertCreated()->json();
 
         $this->getJson("/api/online-orders/{$placed['orderId']}")
             ->assertOk()
@@ -263,7 +348,7 @@ class OnlineOrderApiTest extends TestCase
         $this->seed();
         Event::fake([OrderPlaced::class]);
 
-        $placed = $this->postJson('/api/online-orders', $this->payload())->assertCreated()->json();
+        $placed = $this->asShopper()->postJson('/api/online-orders', $this->payload())->assertCreated()->json();
 
         $body = $this->getJson("/api/online-orders/{$placed['orderId']}")->assertOk()->getContent();
 
@@ -284,7 +369,7 @@ class OnlineOrderApiTest extends TestCase
         $this->seed();
         Event::fake([OrderPlaced::class]);
 
-        $this->postJson('/api/online-orders', $this->payload())->assertCreated();
+        $this->asShopper()->postJson('/api/online-orders', $this->payload())->assertCreated();
 
         // A till sale is not the customer's to look up by guessing a UUID.
         $order = Order::query()->firstOrFail();
@@ -298,7 +383,7 @@ class OnlineOrderApiTest extends TestCase
         $this->seed();
         Event::fake([OrderPlaced::class]);
 
-        $this->postJson('/api/online-orders', $this->payload())->assertCreated();
+        $this->asShopper()->postJson('/api/online-orders', $this->payload())->assertCreated();
 
         $organization = Organization::query()->where('slug', 'demo-coffee')->firstOrFail();
         $store = Store::query()->where('organization_id', $organization->id)->where('code', 'main')->firstOrFail();
@@ -319,7 +404,7 @@ class OnlineOrderApiTest extends TestCase
         $this->seed();
         Event::fake([OrderPlaced::class]);
 
-        $this->postJson('/api/online-orders', $this->payload())->assertCreated();
+        $this->asShopper()->postJson('/api/online-orders', $this->payload())->assertCreated();
 
         return Order::query()->firstOrFail();
     }

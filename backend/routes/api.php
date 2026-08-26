@@ -30,11 +30,20 @@ Route::post('/device-sessions', [DeviceSessionController::class, 'store']);
 Route::post('/staff-sessions', [StaffSessionController::class, 'store']);
 Route::post('/staff-register', [StaffSessionController::class, 'register']);
 
-// Storefront. Unauthenticated by nature — a customer placing an order has no
-// account. Replaces api/create-online-order.ts. Rate-limited because it is
-// public and it writes: without a throttle it is a free inventory-drain.
+// Placing an order now needs an account. Browsing and filling a cart stay
+// completely open — the gate is at checkout and nowhere earlier.
+//
+// `auth:customer` rather than a check inside the controller, so there is no
+// path to an order without one. A token is only ever minted by login or by a
+// completed password reset, and login refuses an unverified address, so
+// holding one already implies a verified email; the controller re-checks
+// anyway, because "the only way to get a token implies X" is the kind of
+// invariant that quietly stops being true.
+//
+// Still throttled: an authenticated endpoint that decrements stock is worth
+// rate-limiting per account, not just per anonymous caller.
 Route::post('/online-orders', [OnlineOrderController::class, 'store'])
-    ->middleware('throttle:20,1');
+    ->middleware(['auth:customer', 'throttle:20,1']);
 
 // Store discovery by code. Public and enumerable by nature, so throttled
 // harder than the order endpoint — a short code space is worth guessing at.

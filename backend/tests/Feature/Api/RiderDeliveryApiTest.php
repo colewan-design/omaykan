@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\Rider;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
+use Tests\Concerns\ActsAsShopper;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
@@ -19,7 +20,7 @@ use Tests\TestCase;
  */
 class RiderDeliveryApiTest extends TestCase
 {
-    use DatabaseMigrations;
+    use ActsAsShopper, DatabaseMigrations;
 
     private function approvedRider(string $email = 'jun@example.com', string $name = 'Jun Dela Cruz'): string
     {
@@ -54,7 +55,7 @@ class RiderDeliveryApiTest extends TestCase
     {
         $product = Product::query()->where('sku', 'ESP-0001')->firstOrFail();
 
-        return $this->postJson('/api/online-orders', [
+        return $this->asShopper()->postJson('/api/online-orders', [
             'orgSlug' => 'demo-coffee',
             'storeCode' => 'main',
             'businessMode' => 'coffee-shop',
@@ -104,7 +105,7 @@ class RiderDeliveryApiTest extends TestCase
         $this->seed();
         $product = Product::query()->where('sku', 'ESP-0001')->firstOrFail();
 
-        $this->postJson('/api/online-orders', [
+        $this->asShopper()->postJson('/api/online-orders', [
             'orgSlug' => 'demo-coffee',
             'storeCode' => 'main',
             'businessMode' => 'coffee-shop',

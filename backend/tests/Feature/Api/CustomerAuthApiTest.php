@@ -408,17 +408,12 @@ class CustomerAuthApiTest extends TestCase
 
     // -- Orders -------------------------------------------------------------
 
-    private function placeOrder(?string $token, array $guest = []): string
+    /** Always signed in: the endpoint has required an account since the gate. */
+    private function placeOrder(string $token, array $guest = []): string
     {
         $product = Product::query()->where('sku', 'ESP-0001')->firstOrFail();
 
-        if ($token === null) {
-            $this->app['auth']->forgetGuards();
-        }
-
-        $request = $token === null ? $this->withoutHeader('Authorization') : $this->withCustomer($token);
-
-        return $request->postJson('/api/online-orders', array_filter([
+        return $this->withCustomer($token)->postJson('/api/online-orders', array_filter([
             'orgSlug' => 'demo-coffee',
             'storeCode' => 'main',
             'businessMode' => 'coffee-shop',
@@ -447,14 +442,33 @@ class CustomerAuthApiTest extends TestCase
             ->assertJsonPath('orders.0.orderId', $orderId);
     }
 
-    public function test_a_guest_order_stays_unattached(): void
+    /**
+     * There is no such thing as a guest order any more — the cart is open to
+     * everyone, the checkout is not. This used to assert that an order placed
+     * without a token stayed unattached to any account; now there is no order
+     * at all, and an account's list stays empty rather than gaining a stray.
+     */
+    public function test_an_order_cannot_be_placed_without_an_account(): void
     {
         $this->seed();
         $token = $this->registerVerified()['token'];
 
-        $orderId = $this->placeOrder(null, ['name' => 'Christian Colewan', 'email' => 'shopper@example.com']);
+        $product = Product::query()->where('sku', 'ESP-0001')->firstOrFail();
 
-        $this->assertNull(Order::query()->findOrFail($orderId)->customer_account_id);
+        $this->app['auth']->forgetGuards();
+
+        $this->withoutHeader('Authorization')
+            ->postJson('/api/online-orders', [
+                'orgSlug' => 'demo-coffee',
+                'storeCode' => 'main',
+                'businessMode' => 'coffee-shop',
+                'items' => [['productId' => $product->id, 'quantity' => 1]],
+                'guest' => ['name' => 'Christian Colewan', 'email' => 'shopper@example.com'],
+                'fulfillment' => ['method' => 'pickup'],
+            ])
+            ->assertUnauthorized();
+
+        $this->assertDatabaseCount('orders', 0);
         $this->withCustomer($token)->getJson('/api/customer/orders')->assertOk()->assertJsonCount(0, 'orders');
     }
 

@@ -6,6 +6,7 @@ use App\Events\OrderPlaced;
 use App\Mail\OnlineOrderConfirmationMail;
 use App\Models\Product;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
+use Tests\Concerns\ActsAsShopper;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
@@ -19,7 +20,7 @@ use Tests\TestCase;
  */
 class OnlineOrderMailTest extends TestCase
 {
-    use DatabaseMigrations;
+    use ActsAsShopper, DatabaseMigrations;
 
     private function payload(array $overrides = []): array
     {
@@ -43,7 +44,7 @@ class OnlineOrderMailTest extends TestCase
         Event::fake([OrderPlaced::class]);
         Mail::fake();
 
-        $created = $this->postJson('/api/online-orders', $this->payload([
+        $created = $this->asShopper()->postJson('/api/online-orders', $this->payload([
             'guest' => ['email' => 'maria@example.test'],
         ]))->assertCreated()->json();
 
@@ -54,17 +55,28 @@ class OnlineOrderMailTest extends TestCase
         );
     }
 
-    public function test_a_phone_only_order_sends_nothing(): void
+    /**
+     * There is no longer such a thing as an order with nowhere to send a
+     * receipt: ordering needs an account, and an account has a verified email.
+     * A form that names someone else's phone still leaves the account's
+     * address on the order, so the person who placed it gets the confirmation.
+     */
+    public function test_an_order_with_only_a_phone_on_the_form_still_confirms_to_the_account(): void
     {
         $this->seed();
         Event::fake([OrderPlaced::class]);
         Mail::fake();
 
-        // Checkout takes a phone number *or* an email, so this is a normal
-        // order and not an error — there is simply nowhere to send a receipt.
-        $this->postJson('/api/online-orders', $this->payload())->assertCreated();
+        $this->asShopper()
+            ->postJson('/api/online-orders', $this->payload([
+                'guest' => ['name' => 'Ana Reyes', 'phone' => '09998887777'],
+            ]))
+            ->assertCreated();
 
-        Mail::assertNothingQueued();
+        Mail::assertQueued(
+            OnlineOrderConfirmationMail::class,
+            fn (OnlineOrderConfirmationMail $mail) => $mail->hasTo('maria@example.com'),
+        );
     }
 
     public function test_the_confirmation_carries_the_order_number_and_a_tracking_link(): void
@@ -74,7 +86,7 @@ class OnlineOrderMailTest extends TestCase
         Mail::fake();
         config(['app.storefront_url' => 'https://omaykan.test/store']);
 
-        $created = $this->postJson('/api/online-orders', $this->payload([
+        $created = $this->asShopper()->postJson('/api/online-orders', $this->payload([
             'guest' => ['email' => 'maria@example.test'],
         ]))->assertCreated()->json();
 

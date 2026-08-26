@@ -280,8 +280,8 @@ async function submit() {
     </p>
 
     <p class="acct-gate__note">
-      You don't need an account to order — checkout works without one. Signing in is what keeps
-      your addresses and your order history together across your phone and your laptop.
+      Browsing and filling a cart need no account; placing the order does. Signing in is also what
+      keeps your addresses and your order history together across your phone and your laptop.
     </p>
   </section>
 </template>

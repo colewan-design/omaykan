@@ -26,17 +26,17 @@ Delivery aggregators take 20–30% from the merchant, squeeze the rider's per-dr
 ```
 /packages
   /core            # Vue POS app - pages, components, stores
-  /data            # Repository + Firestore sync layer
+  /data            # Repository + Laravel sync layer
   /shared          # Types and shared domain logic
 /apps
   /web             # PWA: merchant till + customer storefront + platform admin
-  /mobile          # Capacitor Android app (customer storefront)
-  /mobile-admin    # Capacitor Android app (merchant)
-/backend           # Laravel 12 + PostgreSQL + Reverb (the target backend)
+/backend           # Laravel 12 + PostgreSQL + Reverb
 /api               # HTTP handlers (legacy, being retired) — served by /server
 /server            # Self-hosted Node runner for /api on the VPS
-/firebase          # Firestore rules and schema (legacy)
 ```
+
+The Android apps are being rewritten natively in Kotlin. The Capacitor wrappers
+that stood in for them (`apps/mobile`, `apps/mobile-admin`) are gone.
 
 The marketing site is not a separate app — it is `apps/web/src/landing`, built into
 `landing.html`.

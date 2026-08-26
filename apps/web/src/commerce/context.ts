@@ -5,7 +5,7 @@ import type { BusinessMode } from '@pos/shared/index'
 // Mutable (not const) on purpose: the web storefront sets these once from
 // build-time env vars and never touches them again, but the mobile storefront
 // resolves them at runtime — the customer pairs to a store with a short code
-// (see apps/mobile/src/storefront/pairing.ts). ESM live-bindings mean every
+// at runtime from a store code. ESM live-bindings mean every
 // importer just sees the current value, so nothing downstream has to handle an
 // "unresolved yet" state, as long as nothing reads them before pairing.
 //

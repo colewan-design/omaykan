@@ -11,9 +11,8 @@ For what the product is and why, see [positioning.md](./positioning.md). For the
 | Surface | Location | State |
 |---|---|---|
 | Merchant POS / back office | `packages/core` → `apps/web` (`/app/`) | Working, broad |
-| Customer storefront (mobile) | `apps/mobile/src/storefront` | Working — the fuller of the two |
-| Customer storefront (web) | `apps/web/src/landing` + `apps/web/src/commerce` | Working — see §3 |
-| Merchant Android app | `apps/mobile-admin` | Capacitor wrapper around the POS core |
+| Customer storefront | `apps/web/src/landing` + `apps/web/src/commerce` | Working — see §3 |
+| Android apps | — | To be written natively in Kotlin; the Capacitor wrappers are deleted |
 | Onboarding / signup | `apps/web/src/onboarding` | Working, with placeholder pricing |
 | Platform admin (superadmin) | `apps/web/src/platform-admin` | Working — named operator accounts, audit log |
 | Landing site | `apps/web/src/landing` | Working |
@@ -78,15 +77,18 @@ Business mode, business name and image, **pairing code** (the customer-facing st
 
 ---
 
-## 2. Customer storefront — mobile (`apps/mobile`)
+## 2. Android apps — to be written
 
-One shared app, not per-merchant builds. Customer enters a **store code** at first launch to resolve org + store (`pairing.ts` → `api/resolve-store-code.ts`).
+Both Capacitor wrappers (`apps/mobile`, `apps/mobile-admin`) were deleted on
+2026-08-26; the Android apps are being rewritten natively in Kotlin. What they
+did that the new apps will need to do again: the customer entered a **store
+code** at first launch to resolve org + store, and checkout supported pickup or
+delivery with cash or GCash.
 
-Catalog, product detail, search, cart, wishlist, checkout, order status, order history, settings, update check.
-
-Checkout supports **pickup or delivery** (with address) and **cash or GCash**.
-
-> GCash here is a stated *preference*, not a processed payment. Settlement happens at the merchant's register via the Settle Online Payment sheet. There is no payment gateway anywhere in the codebase, and per [plan.md §4a](./plan.md) there is not meant to be one — customer payment is COD. The toggle stays: GCash-at-handover counts as COD, since the customer still pays on collection and nothing passes through us.
+The release signing key for the old builds still exists and is not in this
+repo — see the deletion commit for where it went. Publishing the Kotlin apps
+under the same package names (`com.omaykan.storefront`, `com.omaykan.app`)
+requires it.
 
 ## 3. Customer storefront — web (`apps/web/src/landing` + `apps/web/src/commerce`)
 

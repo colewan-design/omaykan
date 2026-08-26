@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 /*
  * Which orders this browser has placed or tracked.
  *
- * The web twin of apps/mobile/src/storefront/orderHistory.ts, and it exists for
+ * Order history for a browser that has not signed in, and it exists for
  * the same reason: the API can return an order by id but has no way to list
  * orders "belonging to" someone, because the storefront never authenticates a
  * customer. The id is the only handle, so the browser has to keep the ids.

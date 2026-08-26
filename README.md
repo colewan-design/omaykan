@@ -31,8 +31,6 @@ Delivery aggregators take 20–30% from the merchant, squeeze the rider's per-dr
 /apps
   /web             # PWA: merchant till + customer storefront + platform admin
 /backend           # Laravel 12 + PostgreSQL + Reverb
-/api               # HTTP handlers (legacy, being retired) — served by /server
-/server            # Self-hosted Node runner for /api on the VPS
 ```
 
 The Android apps are being rewritten natively in Kotlin. The Capacitor wrappers
@@ -47,15 +45,6 @@ The marketing site is not a separate app — it is `apps/web/src/landing`, built
 npm install
 npm run dev:web      # merchant POS + storefront
 npm run build:web
-```
-
-`vite dev` does not serve `/api/*.ts`. To exercise those locally, run the same
-self-hosted runner the VPS uses, with Firebase Admin credentials in the environment:
-
-```bash
-cd server
-npm install && npm run build
-npm start            # listens on 127.0.0.1:3005, /api/health for a liveness probe
 ```
 
 ### Static hosting
@@ -74,8 +63,8 @@ needs these rewrites (nginx `try_files`, or equivalent):
 | `/rider` | `rider.html` |
 | `/platform-admin` | `platform-admin.html` |
 
-`/api/*` proxies to the runner above. The client build also needs the
-`VITE_FIREBASE_*` / `VITE_POS_*` variables set at build time — see `apps/web/.env`.
+`/api/*` proxies to Laravel. The client build needs the `VITE_POS_*` variables
+set at build time — see `apps/web/.env`.
 
 ## Status
 

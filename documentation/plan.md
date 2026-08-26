@@ -28,22 +28,20 @@ Honest current state, so the phases below start from reality.
 - **Customer storefront** — on web (`apps/web/src/landing` + `apps/web/src/commerce`). Catalog, search, cart, wishlist, pickup/delivery, GCash preference, order history. The Android apps are being rewritten natively in Kotlin.
 - **Store pairing** — customer enters a **store code** to resolve org + store. One shared app, not per-merchant builds.
 - **Platform admin** — operator portal for managing tenants, subscriptions, riders and operators, on its own guard with an audit log (`apps/web/src/platform-admin`, `backend/app/Http/Controllers/Api/Platform/`).
-- **Landing site** (`apps/web/src/landing`), **onboarding/signup** (`api/signup.ts`), **staff accounts** (`api/staff-create.ts`).
+- **Landing site** (`apps/web/src/landing`), **onboarding/signup** (`SignupController`), **staff accounts** (`StaffUserController`).
 - **Order flow into the register** — online orders land and surface on the Register's Track Order panel.
 
-- **Signup and subscription record** (`api/signup.ts`) — creates org, store, owner, pairing code, and a subscription at `status: 'pending_verification'` on a `standard-monthly` plan. Price is a **₱499 placeholder** collected by manual GCash transfer to a placeholder number; there is no gateway, no recurring billing, and no enforcement against non-payers.
+- **Signup and subscription record** (`SignupController`) — creates org, store, owner, pairing code, and a subscription at `status: 'pending_verification'` on a `standard-monthly` plan. Price is a **₱499 placeholder** collected by manual GCash transfer to a placeholder number; there is no gateway, no recurring billing, and no enforcement against non-payers.
 
 **Not built:** rider side (entirely), loyalty, discounts, customer list/broadcast, price comparison, savings counter, automated subscription billing. Online payment collection is not built and is **not planned** — see §4a.
 
 Full page-by-page status is in [feature-log.md](./feature-log.md).
 
-**Backend: decided — Laravel + PostgreSQL, self-hosted on a VPS.** Firestore is being retired. See §3a for what that costs and §6 Phase 0 for the migration.
+**Backend: Laravel + PostgreSQL, self-hosted on a VPS.** The Firestore migration is complete. See §3a for the operational implications.
 
 | Backend | State |
 |---|---|
-| **Laravel + PostgreSQL** (`backend/`) | **The target.** Laravel 12, Sanctum, models, sync/shift/staff controllers, the schema in [backend-multistore-sync.md](./backend-multistore-sync.md), plus queues and Reverb (§3a). Not yet deployed. |
-| **Firebase (Firestore) + the `api/*.ts` handlers** (self-hosted via `server/`) | Still the live path today. To be migrated off and deleted. |
-| **Firebase Functions** (`functions/src/index.ts`) | Dead. Delete with the rest. |
+| **Laravel + PostgreSQL** (`backend/`) | Live backend: Laravel 12, Sanctum, models, sync/shift/staff controllers, the schema in [backend-multistore-sync.md](./backend-multistore-sync.md), plus queues and Reverb (§3a). |
 
 Self-hosting removes the Spark-plan ceiling entirely — the blocker that shaped Phase 0 — and replaces it with VPS operations work.
 
@@ -62,7 +60,6 @@ Two customer storefronts exist and have **drifted apart**: the mobile one suppor
 | Backend | Laravel 12 + PostgreSQL on a **VPS** | Sanctum auth; replaces Firestore |
 | Realtime | **Laravel Reverb** (WebSockets) | Replaces Firestore listeners — see §3a |
 | Queue | Laravel queue, `database` driver | Broadcasts and background work; Redis if load demands |
-| Legacy backend | Firebase / Firestore + `api/*.ts` on `server/` | Live today, being retired |
 | On-device DB (merchant) | IndexedDB (mirrored to `localStorage`) today; SQLite is the target | See §4 |
 | Customer payments | **COD only** — settled at handover | No gateway, deliberately. See §4a |
 | Merchant subscription | Manual GCash transfer | Placeholder; needs a real collection method |
@@ -103,7 +100,6 @@ Both are long-running daemons. On the VPS they need **supervisor** (or systemd) 
 ### Still to do
 
 - **Front-end subscription.** Nothing on the Vue side listens yet — Laravel Echo is not installed, and the register still gets online orders through Firestore. That lands with the migration.
-- **A storefront order endpoint in Laravel.** `api/create-online-order.ts` is the only thing that creates customer orders today, and it writes to Firestore. Until it is ported, `OrderPlaced` only ever fires for orders arriving through device sync.
 - **Presence channels** for "which staff are on the till" if that is ever wanted.
 
 ---
@@ -193,10 +189,9 @@ Nothing else matters if the first paying merchant breaks the app.
 **Migrate off Firestore onto the VPS.** The Spark-plan ceiling disappears with it, and cost becomes a fixed monthly VPS bill instead of a per-read meter — far easier to price against.
 
 1. **Provision the VPS**: PostgreSQL, PHP-FPM, nginx, Redis (optional), TLS. Supervisor units for `queue:work` and `reverb:start`; nginx WebSocket proxy for Reverb.
-2. **Port the `api/*.ts` handlers to Laravel controllers** — `signup`, `resolve-store-code`, `resolve-staff-store-code`, `staff-create`, `platform-admin`, and `create-online-order`. That last one is what makes `OrderPlaced` fire for real customer orders (§3a).
-3. **Replace `firebase-sync.ts`** (~1k lines) with a repository implementation talking to the Laravel API, and add **Laravel Echo** on the client so the register subscribes to `store.{storeId}` instead of a Firestore listener.
-4. **Point the storefronts at the API** — both currently read the catalog straight from Firestore.
-5. **Migrate live data**, then delete `functions/`, the Firebase config, and `api/*.ts`.
+2. **Completed:** ported the legacy handlers to Laravel controllers, including signup, store-code resolution, staff creation, platform administration, and online ordering.
+3. **Completed:** replaced `firebase-sync.ts` with a Laravel API repository; the web client uses Laravel endpoints for its catalog and order flow.
+4. **Completed:** migrated live data and removed Firebase Functions, configuration, and legacy Node API sources.
 6. **Backups and monitoring.** Self-hosting means nightly `pg_dump` off-box, restore tested, and something watching the daemons. This is now your job, not Google's.
 
 Alongside the migration:

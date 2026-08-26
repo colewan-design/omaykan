@@ -60,7 +60,7 @@ function backToTop() {
       </div>
       <div>
         <p class="fd-footer__title">How you pay</p>
-        <p class="fd-footer__note">Cash or GCash on arrival. Nothing is charged online.</p>
+        <p class="fd-footer__note">Cash on arrival. Nothing is charged online.</p>
         <p class="fd-footer__note">Flat ₱49 delivery for the first 2&nbsp;km, then ₱15/km.</p>
       </div>
     </div>

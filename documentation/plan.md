@@ -27,7 +27,7 @@ Honest current state, so the phases below start from reality.
 - **POS core** (`packages/core`) — Register, Orders, Products, Inventory, Customers, Employees, Suppliers, Tables, Reports, Settings, plus a shift panel. Four business modes with mode-specific product grids and order panels.
 - **Customer storefront** — on web (`apps/web/src/storefront`) and mobile (`apps/mobile/src/storefront`). Catalog, search, cart, wishlist, pickup/delivery, GCash preference, order history.
 - **Store pairing** — customer enters a **store code** to resolve org + store (`api/resolve-store-code.ts`). One shared mobile app, not per-merchant builds.
-- **Platform admin** — superadmin dashboard for managing stores and owner accounts (`apps/web/src/platform-admin`, `api/platform-admin.ts`).
+- **Platform admin** — operator portal for managing tenants, subscriptions, riders and operators, on its own guard with an audit log (`apps/web/src/platform-admin`, `backend/app/Http/Controllers/Api/Platform/`).
 - **Landing site** (`apps/web/src/landing`), **onboarding/signup** (`api/signup.ts`), **staff accounts** (`api/staff-create.ts`).
 - **Order flow into the register** — online orders land and surface on the Register's Track Order panel.
 

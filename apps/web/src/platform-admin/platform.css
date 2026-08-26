@@ -1,0 +1,642 @@
+/*
+ * Chrome for the operator portal (/platform-admin).
+ *
+ * Global rather than a scoped block per component, for the reason rider.css
+ * and account.css give: the sign-in card, five views and three shared
+ * components have to agree on one table, one field and one button, and scoped
+ * styles let that drift.
+ *
+ * Namespaced under `.pa` so none of it reaches the storefront or the POS if
+ * their stylesheets are ever loaded alongside.
+ *
+ * The sizing is neither portal's. This is a desk tool, read on a laptop with a
+ * mouse: rows are dense, type is 14px, tables are wide, and numbers are
+ * tabular so a column of pesos lines up. The palette is deliberately quieter
+ * than the merchant app's — an operator looks at this screen for an hour at a
+ * time, and the only saturated colour in it marks something that needs a
+ * decision.
+ */
+
+/* This stylesheet is loaded by the platform-admin entry and nothing else, so
+   the reset lives here rather than pulling in app.css — which paints a
+   gradient this would have to undo, and drags the whole POS stylesheet along
+   for a page that shares none of it. */
+body {
+  margin: 0;
+  min-width: 320px;
+  background: #f6f7f9;
+}
+
+.pa {
+  --pa-ink: #16191d;
+  --pa-muted: #5b6672;
+  --pa-faint: #8b959f;
+  --pa-rule: #e3e7eb;
+  --pa-rule-strong: #cfd6dd;
+  --pa-ground: #f6f7f9;
+  --pa-surface: #ffffff;
+  --pa-surface-alt: #fafbfc;
+  --pa-accent: #1f5fd0;
+  --pa-accent-dark: #17499f;
+  --pa-accent-wash: #eef3fc;
+  --pa-danger: #b42318;
+  --pa-danger-wash: #fdf0ef;
+  --pa-warn: #8a5a00;
+  --pa-warn-wash: #fdf6e7;
+  --pa-good: #1a6b3c;
+  --pa-good-wash: #edf6f1;
+  --pa-radius: 10px;
+
+  min-height: 100vh;
+  background: var(--pa-ground);
+  color: var(--pa-ink);
+  font-family: var(--font-sans, system-ui, -apple-system, 'Segoe UI', sans-serif);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.pa *,
+.pa *::before,
+.pa *::after {
+  box-sizing: border-box;
+}
+
+.pa h1,
+.pa h2,
+.pa h3 {
+  margin: 0;
+  font-weight: 650;
+  letter-spacing: -0.011em;
+}
+
+.pa h1 { font-size: 22px; }
+.pa h2 { font-size: 16px; }
+.pa h3 { font-size: 14px; }
+
+.pa p { margin: 0; }
+
+/* ── Sign in ─────────────────────────────────────────────────────────── */
+
+.pa-signin {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.pa-signin__card {
+  width: 100%;
+  max-width: 360px;
+  padding: 28px;
+  background: var(--pa-surface);
+  border: 1px solid var(--pa-rule);
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgb(16 25 35 / 6%), 0 8px 24px rgb(16 25 35 / 4%);
+}
+
+.pa-signin__brand {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 22px;
+}
+
+.pa-signin__brand strong { font-size: 16px; }
+
+.pa-signin__tag {
+  padding: 2px 7px;
+  background: var(--pa-accent-wash);
+  border-radius: 999px;
+  color: var(--pa-accent-dark);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* ── Shell ───────────────────────────────────────────────────────────── */
+
+.pa-shell {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.pa-side {
+  display: flex;
+  flex-direction: column;
+  padding: 18px 14px;
+  background: var(--pa-surface);
+  border-right: 1px solid var(--pa-rule);
+}
+
+.pa-side__brand {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 0 8px 18px;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.pa-nav {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pa-nav a {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 9px;
+  border-radius: 8px;
+  color: var(--pa-muted);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.pa-nav a:hover { background: var(--pa-surface-alt); color: var(--pa-ink); }
+
+.pa-nav a.pa-nav--on {
+  background: var(--pa-accent-wash);
+  color: var(--pa-accent-dark);
+  font-weight: 600;
+}
+
+/* The number is the reason to click, so it sits on the link itself. */
+.pa-nav__count {
+  min-width: 20px;
+  margin-left: auto;
+  padding: 1px 6px;
+  background: var(--pa-warn-wash);
+  border-radius: 999px;
+  color: var(--pa-warn);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.pa-side__who {
+  padding-top: 14px;
+  border-top: 1px solid var(--pa-rule);
+}
+
+.pa-side__name { font-weight: 600; }
+
+.pa-side__role {
+  color: var(--pa-faint);
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.pa-side__out {
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--pa-accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+
+.pa-main {
+  min-width: 0;
+  padding: 26px 30px 60px;
+}
+
+.pa-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.pa-head__copy {
+  margin-top: 3px;
+  color: var(--pa-muted);
+}
+
+/* ── Panels, tiles, tables ───────────────────────────────────────────── */
+
+.pa-panel {
+  background: var(--pa-surface);
+  border: 1px solid var(--pa-rule);
+  border-radius: var(--pa-radius);
+}
+
+.pa-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--pa-rule);
+}
+
+.pa-panel__body { padding: 16px; }
+
+.pa-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.pa-tile {
+  padding: 14px 16px;
+  background: var(--pa-surface);
+  border: 1px solid var(--pa-rule);
+  border-radius: var(--pa-radius);
+}
+
+.pa-tile--attention { border-color: #f0d9a4; background: var(--pa-warn-wash); }
+
+.pa-tile__label {
+  color: var(--pa-muted);
+  font-size: 12px;
+  font-weight: 550;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+.pa-tile__value {
+  margin-top: 5px;
+  font-size: 26px;
+  font-weight: 660;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.pa-tile__note {
+  margin-top: 2px;
+  color: var(--pa-faint);
+  font-size: 12px;
+}
+
+/* A wide table scrolls inside its own panel; the page never scrolls sideways. */
+.pa-table-wrap { overflow-x: auto; }
+
+.pa-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.pa-table th {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--pa-rule);
+  background: var(--pa-surface-alt);
+  color: var(--pa-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.pa-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--pa-rule);
+  vertical-align: top;
+}
+
+.pa-table tbody tr:last-child td { border-bottom: 0; }
+.pa-table tbody tr:hover { background: var(--pa-surface-alt); }
+
+.pa-table__num { font-variant-numeric: tabular-nums; text-align: right; }
+
+.pa-slug {
+  color: var(--pa-faint);
+  font-family: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace;
+  font-size: 12px;
+}
+
+.pa-empty {
+  padding: 34px 16px;
+  color: var(--pa-faint);
+  text-align: center;
+}
+
+/* ── Badges ──────────────────────────────────────────────────────────── */
+
+.pa-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eef0f2;
+  color: var(--pa-muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pa-badge--good { background: var(--pa-good-wash); color: var(--pa-good); }
+.pa-badge--warn { background: var(--pa-warn-wash); color: var(--pa-warn); }
+.pa-badge--bad { background: var(--pa-danger-wash); color: var(--pa-danger); }
+
+/* ── Controls ────────────────────────────────────────────────────────── */
+
+.pa-field { display: block; margin-bottom: 14px; }
+
+.pa-field__label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 550;
+}
+
+.pa-input,
+.pa-select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--pa-rule-strong);
+  border-radius: 8px;
+  background: var(--pa-surface);
+  color: inherit;
+  font: inherit;
+}
+
+.pa-input:focus,
+.pa-select:focus {
+  border-color: var(--pa-accent);
+  outline: 2px solid var(--pa-accent-wash);
+  outline-offset: 0;
+}
+
+.pa-field__error {
+  display: block;
+  margin-top: 5px;
+  color: var(--pa-danger);
+  font-size: 13px;
+}
+
+.pa-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  margin-bottom: 14px;
+}
+
+.pa-filters .pa-field { margin-bottom: 0; }
+.pa-filters .pa-input,
+.pa-filters .pa-select { width: auto; min-width: 150px; }
+
+.pa-button {
+  padding: 8px 14px;
+  border: 1px solid var(--pa-accent);
+  border-radius: 8px;
+  background: var(--pa-accent);
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.pa-button:hover:not(:disabled) { background: var(--pa-accent-dark); border-color: var(--pa-accent-dark); }
+.pa-button:disabled { opacity: 0.55; cursor: default; }
+
+.pa-button--wide { width: 100%; }
+
+.pa-button--quiet {
+  border-color: var(--pa-rule-strong);
+  background: var(--pa-surface);
+  color: var(--pa-ink);
+}
+
+.pa-button--quiet:hover:not(:disabled) { background: var(--pa-surface-alt); border-color: var(--pa-rule-strong); }
+
+.pa-button--danger {
+  border-color: var(--pa-danger);
+  background: var(--pa-surface);
+  color: var(--pa-danger);
+}
+
+.pa-button--danger:hover:not(:disabled) { background: var(--pa-danger-wash); }
+
+.pa-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--pa-accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+
+.pa-link:hover:not(:disabled) { text-decoration: underline; }
+.pa-link:disabled { color: var(--pa-faint); cursor: default; }
+.pa-link--danger { color: var(--pa-danger); }
+
+.pa-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.pa-actions--stacked { flex-direction: column; align-items: flex-start; gap: 4px; }
+
+.pa-alert {
+  margin-bottom: 16px;
+  padding: 11px 14px;
+  border: 1px solid #f0c8c4;
+  border-radius: 8px;
+  background: var(--pa-danger-wash);
+  color: var(--pa-danger);
+}
+
+.pa-alert--info {
+  border-color: #cfe0f7;
+  background: var(--pa-accent-wash);
+  color: var(--pa-accent-dark);
+}
+
+.pa-pager {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 14px;
+  color: var(--pa-muted);
+}
+
+/* ── Revealed secret ─────────────────────────────────────────────────── */
+
+.pa-reveal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid #cfe0f7;
+  border-radius: var(--pa-radius);
+  background: var(--pa-accent-wash);
+}
+
+.pa-reveal__copy { flex: 1 1 220px; color: var(--pa-accent-dark); }
+.pa-reveal__title { font-weight: 650; }
+
+.pa-reveal__value {
+  padding: 7px 12px;
+  border: 1px solid #cfe0f7;
+  border-radius: 8px;
+  background: var(--pa-surface);
+  font-family: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace;
+  font-size: 16px;
+  letter-spacing: 0.04em;
+}
+
+/* ── Dialog ──────────────────────────────────────────────────────────── */
+
+.pa-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(16 25 35 / 45%);
+}
+
+.pa-dialog {
+  width: 100%;
+  max-width: 420px;
+  padding: 22px;
+  background: var(--pa-surface);
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgb(16 25 35 / 22%);
+}
+
+.pa-dialog__copy { margin: 8px 0 16px; color: var(--pa-muted); }
+
+.pa-dialog__actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+/* ── Trend bars ──────────────────────────────────────────────────────── */
+
+.pa-trend {
+  display: flex;
+  gap: 3px;
+  align-items: flex-end;
+  height: 96px;
+}
+
+.pa-trend__bar {
+  flex: 1;
+  min-width: 3px;
+  border-radius: 2px 2px 0 0;
+  background: var(--pa-accent);
+  opacity: 0.85;
+}
+
+.pa-trend__bar:hover { opacity: 1; }
+
+.pa-trend__axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 7px;
+  color: var(--pa-faint);
+  font-size: 12px;
+}
+
+/* ── Rider review ────────────────────────────────────────────────────── */
+
+.pa-docs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.pa-doc__label {
+  margin-bottom: 6px;
+  color: var(--pa-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.pa-doc img {
+  display: block;
+  width: 100%;
+  max-height: 340px;
+  border: 1px solid var(--pa-rule);
+  border-radius: 8px;
+  background: var(--pa-surface-alt);
+  object-fit: contain;
+}
+
+.pa-note {
+  width: 100%;
+  min-height: 60px;
+  padding: 8px 10px;
+  border: 1px solid var(--pa-rule-strong);
+  border-radius: 8px;
+  color: inherit;
+  font: inherit;
+  resize: vertical;
+}
+
+/* ── Detail layout ───────────────────────────────────────────────────── */
+
+.pa-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.pa-rows { display: grid; gap: 12px; }
+
+.pa-kv {
+  display: grid;
+  grid-template-columns: minmax(110px, auto) minmax(0, 1fr);
+  gap: 8px 16px;
+}
+
+.pa-kv dt { color: var(--pa-muted); }
+.pa-kv dd { margin: 0; }
+
+.pa-trail { display: grid; gap: 12px; }
+
+.pa-trail__row {
+  display: grid;
+  gap: 2px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--pa-rule);
+}
+
+.pa-trail__row:last-child { padding-bottom: 0; border-bottom: 0; }
+
+.pa-trail__action { font-weight: 600; }
+
+.pa-trail__meta { color: var(--pa-faint); font-size: 12px; }
+
+/* ── Narrow screens ──────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .pa-shell { grid-template-columns: minmax(0, 1fr); }
+
+  .pa-side {
+    border-right: 0;
+    border-bottom: 1px solid var(--pa-rule);
+  }
+
+  .pa-nav { flex-direction: row; flex-wrap: wrap; }
+  .pa-side__who { display: flex; gap: 10px; align-items: baseline; }
+  .pa-side__out { margin-top: 0; margin-left: auto; }
+  .pa-main { padding: 20px 16px 48px; }
+  .pa-columns { grid-template-columns: minmax(0, 1fr); }
+}

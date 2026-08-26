@@ -10,6 +10,7 @@ use App\Models\InventoryLevel;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Organization;
+use App\Models\Payment;
 use App\Models\Product;
 use App\Models\Store;
 use App\Services\DeliveryQuoter;
@@ -172,6 +173,62 @@ class OnlineOrderController extends Controller
         // The shape lives on the model, because the signed-in customer's order
         // list returns the same view of an order — see Order::toTrackedArray.
         return response()->json($order->toTrackedArray());
+    }
+
+    /**
+     * The customer's own word that they have paid.
+     *
+     * Online orders are cash on arrival and there is no gateway, so somebody
+     * has to say the money changed hands. Until now that could only be the
+     * seller, from the dashboard — which is the wrong place for a delivery,
+     * where the cash goes to a rider at the customer's door and the till never
+     * sees it. Either side can confirm it now, and the order records which.
+     *
+     * Public and keyed on the order's UUID, exactly like show(): a storefront
+     * customer has no account to authenticate with, and the unguessable id is
+     * the capability. The worst a stranger with the link can do is tell a shop
+     * that an order they are owed money for has been paid — which the shop
+     * sees attributed to the customer, and can correct from the dashboard by
+     * settling it themselves.
+     */
+    public function confirmPayment(Order $order): JsonResponse
+    {
+        abort_unless($order->isOnline(), 404);
+
+        // Idempotent: a double-tap, or a customer confirming something the
+        // seller already settled, is not an error and must not move the
+        // attribution or write a second payment row.
+        if ($order->payment_status === 'paid') {
+            return response()->json($order->fresh()->toTrackedArray());
+        }
+
+        DB::transaction(function () use ($order) {
+            $order->forceFill([
+                'payment_status' => 'paid',
+                'payment_confirmed_at' => now(),
+                // A shopper is not a user of the merchant's organization, so
+                // there is no user id to record — the role is the attribution.
+                'payment_confirmed_by_user_id' => null,
+                'payment_confirmed_by_role' => 'customer',
+            ])->save();
+
+            // The same row settlePayment writes, for the same reason: the
+            // merchant's cash ledger is the payments table, and an order
+            // marked paid with nothing in it would leave the day's takings
+            // disagreeing with the day's orders.
+            Payment::query()->create([
+                'id' => (string) str()->uuid(),
+                'organization_id' => $order->organization_id,
+                'store_id' => $order->store_id,
+                'order_id' => $order->id,
+                'payment_method' => $order->payment_method ?? 'cash',
+                'amount_cents' => $order->total_cents,
+                'tendered_cents' => $order->total_cents,
+                'change_cents' => 0,
+            ]);
+        });
+
+        return response()->json($order->fresh()->toTrackedArray());
     }
 
     /**

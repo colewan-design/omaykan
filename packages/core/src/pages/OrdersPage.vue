@@ -424,7 +424,7 @@ const rangeCaption = computed(() => {
             Voided {{ formatFullDate(selectedOrder.voidedAt) }}<template v-if="userNameFor(selectedOrder.voidedByUserId)"> by {{ userNameFor(selectedOrder.voidedByUserId) }}</template><template v-if="selectedOrder.voidReason">: {{ selectedOrder.voidReason }}</template>
           </p>
           <p v-if="selectedOrder.paymentConfirmedAt" class="orders-detail__paid-note">
-            Payment confirmed {{ formatFullDate(selectedOrder.paymentConfirmedAt) }}<template v-if="userNameFor(selectedOrder.paymentConfirmedByUserId)"> by {{ userNameFor(selectedOrder.paymentConfirmedByUserId) }}</template>
+            Payment confirmed {{ formatFullDate(selectedOrder.paymentConfirmedAt) }}<template v-if="userNameFor(selectedOrder.paymentConfirmedByUserId)"> by {{ userNameFor(selectedOrder.paymentConfirmedByUserId) }}</template><template v-else-if="selectedOrder.paymentConfirmedByRole === 'customer'"> by the customer, from their order page</template>
           </p>
 
           <div class="orders-lines">

@@ -159,6 +159,8 @@ class SellerOrderController extends Controller
                 'payment_method' => $validated['paymentMethod'],
                 'payment_confirmed_at' => now(),
                 'payment_confirmed_by_user_id' => $validated['userId'] ?? null,
+                // As against a customer confirming it from their order page.
+                'payment_confirmed_by_role' => 'seller',
             ])->save();
 
             Payment::query()->create([
@@ -226,6 +228,7 @@ class SellerOrderController extends Controller
             'voidReason' => null,
             'paymentConfirmedAt' => $order->payment_confirmed_at?->toIso8601String(),
             'paymentConfirmedByUserId' => $order->payment_confirmed_by_user_id,
+            'paymentConfirmedByRole' => $order->payment_confirmed_by_role,
         ];
     }
 

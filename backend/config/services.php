@@ -35,13 +35,4 @@ return [
         ],
     ],
 
-    /*
-     * Shared secret gating the cross-tenant operator dashboard. Server-side
-     * only — never expose it to a client build. Unset means the endpoint
-     * refuses every request rather than running unguarded.
-     */
-    'platform_admin' => [
-        'secret' => env('PLATFORM_ADMIN_SECRET'),
-    ],
-
 ];

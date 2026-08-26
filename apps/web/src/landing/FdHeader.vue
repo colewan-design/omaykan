@@ -5,6 +5,8 @@ import { useStorefrontCart } from '@pos/web/commerce/cart'
 import { useStockedCategories } from '@pos/web/commerce/catalog'
 import { useCustomerAccount } from '@pos/web/commerce/customer'
 import { categoryIcon } from './categories'
+import FdCartDrawer from './FdCartDrawer.vue'
+import FdDeliveryAddress from './FdDeliveryAddress.vue'
 
 // The site chrome — dark green utility bar with the search dominant, then the
 // category nav. Shared by the landing page and the about page so the two can't
@@ -24,7 +26,12 @@ const props = withDefaults(
   { shopHref: '#shop', activeCategory: '' },
 )
 
-const emit = defineEmits<{ search: [term: string]; category: [categoryId: string] }>()
+const emit = defineEmits<{
+  search: [term: string]
+  category: [categoryId: string]
+  /** Only ever fired on the landing page, which owns the checkout face. */
+  checkout: []
+}>()
 
 const categories = useStockedCategories()
 
@@ -44,6 +51,7 @@ function selectCategory(categoryId: string, event: MouseEvent) {
 }
 
 const cart = useStorefrontCart()
+const cartOpen = ref(false)
 
 // The Account slot used to point at /app/auth — the merchant register's login,
 // which is not a place a shopper has any business being. It goes to the
@@ -58,7 +66,15 @@ function submitSearch() {
   emit('search', searchTerm.value.trim())
 }
 
-defineExpose({ clear: () => (searchTerm.value = '') })
+// Forwarded so the page can open the delivery panel from where the filtering
+// is actually felt — the notice above the shelves.
+const deliveryAddress = ref<InstanceType<typeof FdDeliveryAddress> | null>(null)
+
+defineExpose({
+  clear: () => (searchTerm.value = ''),
+  openDelivery: () => deliveryAddress.value?.openPanel(),
+  openCart: () => (cartOpen.value = true),
+})
 </script>
 
 <template>
@@ -68,10 +84,7 @@ defineExpose({ clear: () => (searchTerm.value = '') })
         <BrandLogo variant="dark" :size="20" />
       </a>
 
-      <div class="fd-bar__delivery">
-        <span>Delivery</span>
-        <a :href="props.shopHref">Enter your address</a>
-      </div>
+      <FdDeliveryAddress ref="deliveryAddress" />
 
       <form class="fd-search" @submit.prevent="submitSearch">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
@@ -110,10 +123,17 @@ defineExpose({ clear: () => (searchTerm.value = '') })
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
       </a>
 
-      <a :href="props.shopHref" class="fd-cart" aria-label="Cart">
+      <button type="button" class="fd-cart" :aria-label="`Cart, ${cart.itemCount.value} items`" @click="cartOpen = true">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
         <span v-if="cart.itemCount.value > 0" class="fd-cart__count">{{ cart.itemCount.value }}</span>
-      </a>
+      </button>
+
+      <FdCartDrawer
+        :open="cartOpen"
+        :checkout-in-page="handlesCategoryInPage"
+        @close="cartOpen = false"
+        @checkout="emit('checkout')"
+      />
     </header>
 
     <nav class="fd-nav" aria-label="Shop by category">
@@ -208,23 +228,6 @@ defineExpose({ clear: () => (searchTerm.value = '') })
 
 .fd-brand { display: flex; align-items: center; flex-shrink: 0; }
 
-.fd-bar__delivery {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.3;
-  padding-left: 22px;
-  border-left: 1px solid rgba(255,255,255,0.22);
-  white-space: nowrap;
-}
-.fd-bar__delivery span { font-size: 13.5px; font-weight: 700; }
-.fd-bar__delivery a {
-  font-size: 13px;
-  color: rgba(255,255,255,0.85);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-.fd-bar__delivery a:hover { color: #fff; }
-
 .fd-search {
   flex: 1;
   min-width: 0;
@@ -277,7 +280,16 @@ defineExpose({ clear: () => (searchTerm.value = '') })
 
 .fd-account-icon { display: none; }
 
-.fd-cart { position: relative; display: grid; place-items: center; color: #fff; }
+.fd-cart {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: none;
+  padding: 0;
+  color: #fff;
+  cursor: pointer;
+}
 .fd-cart__count {
   position: absolute;
   top: -6px;
@@ -292,10 +304,6 @@ defineExpose({ clear: () => (searchTerm.value = '') })
   color: #06240f;
   font-size: 11px;
   font-weight: 800;
-}
-
-@media (max-width: 1080px) {
-  .fd-bar__delivery { display: none; }
 }
 
 @media (max-width: 760px) {

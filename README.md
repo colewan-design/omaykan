@@ -81,6 +81,13 @@ needs these rewrites (nginx `try_files`, or equivalent):
 
 Working: merchant POS (17 pages, four business modes, shifts with cash reconciliation, full-order voids, inventory), customer storefront on web and mobile, store pairing by code, signup, and the platform admin dashboard.
 
+The **platform admin portal** at `/platform-admin` runs on named operator
+accounts — their own table, their own Sanctum guard (`auth:platform`), and an
+append-only audit log that records who did what. There is no signup for it: the
+first account is made with `php artisan platform:admin-create` on the box, and
+owners add the rest from the portal. Operators work the signup and rider
+queues; only an owner can delete a tenant.
+
 The rider side is now built too: riders apply at `/rider` with their licence and
 plate — number and photo of each — and can do nothing until an operator has
 approved them from the **Riders** tab of `/platform-admin`. Once approved they

@@ -79,7 +79,8 @@ Notes:
   `stores.businessMode` is the Firestore-side counterpart of the staff app's local
   `AppSettings.businessMode` — the storefront has no authenticated way to read the latter, so the
   store doc carries its own copy for `resolveStoreCode` to hand back.
-- `organizations.suspended` is set by the platform operator (`api/platform-admin.ts`) to lock out
+- `organizations.suspended` is set by the platform operator (now
+  `backend/app/Http/Controllers/Api/Platform/OrganizationController.php`) to lock out
   an entire org's staff logins (checked in `firebase-sync.ts`'s `loginUser`). Absent/`false` means
   active. Like the rest of the org doc, it's readable by any signed-in user of any org — an
   existing, intentional `firestore.rules` pattern (`allow read: if signedIn()`, no org-scoping),

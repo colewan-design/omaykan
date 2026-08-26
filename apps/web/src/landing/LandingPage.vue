@@ -2,31 +2,47 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { discountPercent } from '@pos/shared/index'
 import { useStockedCategories, useStorefrontCatalog } from '@pos/web/commerce/catalog'
+import { useDeliveryAddress } from '@pos/web/commerce/deliveryAddress'
 import FdHeader from './FdHeader.vue'
 import FdHero from './FdHero.vue'
 import FdFooter from './FdFooter.vue'
 import ProductRow from './ProductRow.vue'
 import ProductGrid from './ProductGrid.vue'
 import ProductDetail from './ProductDetail.vue'
+import FdCheckout from './FdCheckout.vue'
+import FdOrderPlaced from './FdOrderPlaced.vue'
 
 // Grocery-marketplace landing, modelled on the FreshDirect reference: a dark
 // green utility bar with the search front and centre, then a stack of
 // horizontally-scrolling product shelves interleaved with editorial blocks.
 //
-// The page has three faces, and the URL says which one is showing:
+// The page has five faces, and the URL says which one is showing:
 //   - nothing picked: the front page — hero, curated shelves, editorial;
 //   - ?category=: that aisle's full product listing, as a grid;
-//   - ?product=: one product at full size, with a quantity stepper.
-// Everything on all three is real catalog data, filtered in place. The /store
-// entry has been removed, so nothing here navigates away: search, aisle and
-// product all stay on this document. The cart still collects items
-// (localStorage) but has no checkout until the storefront comes back.
+//   - ?product=: one product at full size, with a quantity stepper;
+//   - ?checkout=1: the cart turned into an order;
+//   - ?order=<id>: that order, and where it has got to.
+// The three browsing faces are real catalog data, filtered in place. The /store
+// entry has been removed, so nothing here navigates away — and checkout stays
+// on this document too, which is why the header's cart drawer opens it in
+// place here and navigates home to /?checkout=1 from anywhere else.
 
 /** Rows of the category grid are 6-8 cards wide, so this is 3-4 rows a click. */
 const PAGE_SIZE = 24
 
 const catalog = useStorefrontCatalog()
 const stockedCategories = useStockedCategories()
+const deliveryAddress = useDeliveryAddress()
+
+/**
+ * How the header's delivery address narrowed what is below. The shelves are
+ * fetched around that address, so when nothing reaches it the page has no
+ * products at all — and that has to read as an answer about the address, not
+ * as a shop that has run out of everything.
+ */
+const delivery = computed(() => catalog.delivery)
+const filteringByAddress = computed(() => delivery.value.requested)
+const outOfRange = computed(() => delivery.value.requested && !delivery.value.serviceable)
 
 const loading = computed(() => catalog.loading)
 const products = computed(() => catalog.products.filter((p) => !p.outOfStock))
@@ -36,16 +52,18 @@ const products = computed(() => catalog.products.filter((p) => !p.outOfStock))
 // nav), a product card is a real link anyone can copy or open in a new tab, and
 // keeping all three there afterwards is what makes Back walk the browsing back
 // out rather than leaving the site.
-function readUrl(): { q: string; category: string; product: string } {
+function readUrl(): { q: string; category: string; product: string; checkout: boolean; order: string } {
   try {
     const params = new URLSearchParams(window.location.search)
     return {
       q: params.get('q')?.trim() ?? '',
       category: params.get('category')?.trim() ?? '',
       product: params.get('product')?.trim() ?? '',
+      checkout: params.get('checkout') === '1',
+      order: params.get('order')?.trim() ?? '',
     }
   } catch {
-    return { q: '', category: '', product: '' }
+    return { q: '', category: '', product: '', checkout: false, order: '' }
   }
 }
 
@@ -53,13 +71,26 @@ const initialUrl = readUrl()
 const activeSearch = ref(initialUrl.q)
 const activeCategory = ref(initialUrl.category)
 const activeProduct = ref(initialUrl.product)
+const activeCheckout = ref(initialUrl.checkout)
+const activeOrder = ref(initialUrl.order)
 const shownCount = ref(PAGE_SIZE)
 
 function syncUrl() {
   const params = new URLSearchParams()
-  if (activeCategory.value) params.set('category', activeCategory.value)
-  if (activeSearch.value) params.set('q', activeSearch.value)
-  if (activeProduct.value) params.set('product', activeProduct.value)
+
+  // Checkout and a placed order are not places you are browsing from, so they
+  // stand alone in the URL rather than carrying an aisle and a search along
+  // with them — Back out of either lands on the shelves, not on a half-state.
+  if (activeOrder.value) {
+    params.set('order', activeOrder.value)
+  } else if (activeCheckout.value) {
+    params.set('checkout', '1')
+  } else {
+    if (activeCategory.value) params.set('category', activeCategory.value)
+    if (activeSearch.value) params.set('q', activeSearch.value)
+    if (activeProduct.value) params.set('product', activeProduct.value)
+  }
+
   const query = params.toString()
   window.history.pushState({}, '', query ? `${window.location.pathname}?${query}` : window.location.pathname)
 }
@@ -69,6 +100,8 @@ function applyUrl() {
   activeSearch.value = next.q
   activeCategory.value = next.category
   activeProduct.value = next.product
+  activeCheckout.value = next.checkout
+  activeOrder.value = next.order
   shownCount.value = PAGE_SIZE
   if (!next.q) header.value?.clear()
 }
@@ -93,8 +126,13 @@ const activeCategoryInfo = computed(
  * ?product= arrival, or the front page would flash its hero and shelves for as
  * long as the catalog takes to load.
  */
-const browsingProduct = computed(() => activeProduct.value !== '')
-const browsingCategory = computed(() => !browsingProduct.value && activeCategory.value !== '')
+const browsingOrder = computed(() => activeOrder.value !== '')
+const browsingCheckout = computed(() => !browsingOrder.value && activeCheckout.value)
+const shopping = computed(() => !browsingOrder.value && !browsingCheckout.value)
+const browsingProduct = computed(() => shopping.value && activeProduct.value !== '')
+const browsingCategory = computed(
+  () => shopping.value && !browsingProduct.value && activeCategory.value !== '',
+)
 
 /**
  * Looked up in the unfiltered catalog, unlike everything else on the page: a
@@ -207,6 +245,42 @@ function clearCategory() {
   syncUrl()
 }
 
+function changeAddress() {
+  header.value?.openDelivery()
+}
+
+function clearAddress() {
+  deliveryAddress.clear()
+}
+
+/** From the header's cart drawer, and from an empty-cart bounce back. */
+function openCheckout() {
+  activeCheckout.value = true
+  activeOrder.value = ''
+  activeProduct.value = ''
+  syncUrl()
+  void scrollToShop()
+}
+
+function leaveCheckout() {
+  activeCheckout.value = false
+  activeOrder.value = ''
+  syncUrl()
+  void scrollToShop()
+}
+
+/**
+ * Replaces checkout rather than stacking on it: the cart is empty and the
+ * order is placed, so Back must not return to a checkout that can no longer
+ * be completed.
+ */
+function orderPlaced(orderId: string) {
+  activeCheckout.value = false
+  activeOrder.value = orderId
+  syncUrl()
+  void scrollToShop()
+}
+
 function clearSearch() {
   activeSearch.value = ''
   shownCount.value = PAGE_SIZE
@@ -223,6 +297,7 @@ function clearSearch() {
       :active-category="navCategory"
       @search="onSearch"
       @category="onCategory"
+      @checkout="openCheckout"
     />
 
     <main class="fd-main">
@@ -231,7 +306,7 @@ function clearSearch() {
 
         <!-- The hero sells the service; inside an aisle or on a product the
              goods are the point, so it stands down. -->
-        <FdHero v-if="!browsingCategory && !browsingProduct" />
+        <FdHero v-if="shopping && !browsingCategory && !browsingProduct" />
 
         <!-- The anchor every "shop" link, the search submit and the category
              nav scroll to. It used to sit on a "Shop by category" block that
@@ -240,8 +315,44 @@ function clearSearch() {
              moved here onto the products people were being sent to. -->
         <div id="shop">
 
+          <!-- ── What the delivery address is doing ──────────── -->
+          <div v-if="filteringByAddress && shopping" class="fd-deliv-note" :class="{ 'fd-deliv-note--bad': outOfRange }">
+            <p class="fd-deliv-note__text">
+              <template v-if="outOfRange">
+                <strong>No shop delivers to {{ deliveryAddress.label.value }} yet.</strong>
+                <template v-if="delivery.nearest?.distanceKm">
+                  The nearest counter is {{ delivery.nearest.name }}, about
+                  {{ delivery.nearest.distanceKm.toFixed(0) }} km away — past the
+                  {{ delivery.maxKm }} km a rider covers.
+                </template>
+              </template>
+              <template v-else>
+                Showing what can be delivered to <strong>{{ deliveryAddress.label.value }}</strong
+                ><template v-if="delivery.stores[0]"> from {{ delivery.stores[0].name }}</template>.
+              </template>
+            </p>
+
+            <div class="fd-deliv-note__actions">
+              <button type="button" class="fd-linkbtn" @click="changeAddress">Change address</button>
+              <button type="button" class="fd-linkbtn" @click="clearAddress">
+                {{ outOfRange ? 'Browse everything anyway' : 'Clear' }}
+              </button>
+            </div>
+          </div>
+
+          <!-- ── A placed order ───────────────────────────────────────── -->
+          <FdOrderPlaced v-if="browsingOrder" :order-id="activeOrder" @back="leaveCheckout" />
+
+          <!-- ── Checkout ─────────────────────────────────────────────── -->
+          <FdCheckout
+            v-else-if="browsingCheckout"
+            @placed="orderPlaced"
+            @back="leaveCheckout"
+            @change-address="changeAddress"
+          />
+
           <!-- ── One product ──────────────────────────────────────────── -->
-          <template v-if="browsingProduct">
+          <template v-else-if="browsingProduct">
             <ProductDetail
               v-if="activeProductInfo"
               :product="activeProductInfo"
@@ -357,7 +468,9 @@ function clearSearch() {
         </div>
 
         <!-- ── Merchant strip ────────────────────────────────────────── -->
-        <section class="fd-merchant">
+        <!-- Not while someone is paying: a pitch to a different audience is
+             the last thing checkout needs beneath it. -->
+        <section v-if="shopping" class="fd-merchant">
           <div>
             <h2 class="fd-merchant__title">Run a shop? Sell with us.</h2>
             <p class="fd-merchant__sub">
@@ -376,6 +489,31 @@ function clearSearch() {
 </template>
 
 <style scoped>
+/* Reads as a status strip, not a banner ad: it is the page explaining why it
+   is showing what it is showing. */
+.fd-deliv-note {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 0 0 26px;
+  padding: 13px 16px;
+  border-radius: 12px;
+  background: #eefaf1;
+  color: #14532d;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.fd-deliv-note--bad { background: #fdf0ef; color: #8a2c22; }
+
+.fd-deliv-note__text { margin: 0; }
+
+.fd-deliv-note__actions { display: flex; gap: 16px; white-space: nowrap; }
+
+.fd-deliv-note--bad .fd-linkbtn { color: #8a2c22; }
+
 .fd-searchnote {
   margin: 0 0 4px;
   color: #4a5b52;

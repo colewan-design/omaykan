@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\CustomerAccount;
+use App\Models\PlatformAdmin;
 use App\Models\Rider;
 use App\Models\User;
 
@@ -66,6 +67,21 @@ return [
             'driver' => 'sanctum',
             'provider' => 'riders',
         ],
+
+        /*
+         * Platform operators. A fourth identity, and the one with the widest
+         * reach: an operator acts across every tenant on the platform. That is
+         * exactly why it is its own guard — `auth:sanctum` (store staff and
+         * paired devices) must never resolve an operator, and an operator
+         * token must never be what lets someone through a seller or sync
+         * route. Reached as `auth:platform`, always paired with the
+         * `platform.active` middleware. Replaces the shared secret that used
+         * to gate the operator dashboard.
+         */
+        'platform' => [
+            'driver' => 'sanctum',
+            'provider' => 'platform_admins',
+        ],
     ],
 
     /*
@@ -99,6 +115,11 @@ return [
         'riders' => [
             'driver' => 'eloquent',
             'model' => Rider::class,
+        ],
+
+        'platform_admins' => [
+            'driver' => 'eloquent',
+            'model' => PlatformAdmin::class,
         ],
 
         // 'users' => [

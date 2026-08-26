@@ -1,8 +1,13 @@
 import { computed, reactive } from 'vue'
-import { calculateTax, type Product } from '@pos/shared/index'
+import { calculateTax } from '@pos/shared/index'
+import type { StorefrontProduct } from '@pos/web/commerce/api'
 
 interface CartLine {
-  product: Product
+  /**
+   * The catalog's own shape, which carries the branch the item came off. That
+   * is what checkout places the order against — see createOnlineOrder.
+   */
+  product: StorefrontProduct
   quantity: number
 }
 
@@ -44,7 +49,7 @@ function persist() {
 
 export function useStorefrontCart() {
   /** `quantity` is what the product detail page's stepper adds in one go. */
-  function add(product: Product, quantity = 1) {
+  function add(product: StorefrontProduct, quantity = 1) {
     const step = Math.max(1, Math.floor(quantity))
     const existing = lines.get(product.id)
     // Re-store the product on every add: a persisted line can be carrying a

@@ -9,10 +9,9 @@ use App\Http\Controllers\Api\CustomerOrderController;
 use App\Http\Controllers\Api\CustomerPaymentMethodController;
 use App\Http\Controllers\Api\DeviceSessionController;
 use App\Http\Controllers\Api\OnlineOrderController;
-use App\Http\Controllers\Api\PlatformAdminController;
+use App\Http\Controllers\Api\Platform;
 use App\Http\Controllers\Api\RiderAuthController;
 use App\Http\Controllers\Api\RiderDeliveryController;
-use App\Http\Controllers\Api\RiderReviewController;
 use App\Http\Controllers\Api\SellerOrderController;
 use App\Http\Controllers\Api\SignupController;
 use App\Http\Controllers\Api\StaffRoleController;
@@ -43,6 +42,12 @@ Route::post('/online-orders', [OnlineOrderController::class, 'store'])
 Route::get('/online-orders/{order}', [OnlineOrderController::class, 'show'])
     ->middleware('throttle:60,1');
 
+// The customer's own confirmation that they handed the cash over. Public by
+// the same unguessable id as the tracking route above, and throttled like a
+// write rather than a read.
+Route::post('/online-orders/{order}/confirm-payment', [OnlineOrderController::class, 'confirmPayment'])
+    ->middleware('throttle:20,1');
+
 // The storefront's product list. Replaces the storefront reading Firestore
 // directly, which is what forced Firebase credentials into the client.
 Route::get('/storefront/catalog', [StorefrontCatalogController::class, 'show'])
@@ -58,10 +63,56 @@ Route::post('/store-codes/resolve-staff', [StoreCodeController::class, 'resolveF
 Route::post('/signup', [SignupController::class, 'store'])
     ->middleware('throttle:5,1');
 
-// Cross-tenant operator tool, gated by a shared secret rather than a session.
-// Throttled because that secret is the only thing standing in front of it.
-Route::post('/platform-admin', [PlatformAdminController::class, 'handle'])
-    ->middleware('throttle:30,1');
+/*
+ * The super admin portal.
+ *
+ * A fourth guard, and the widest-reaching one: an operator acts across every
+ * tenant on the platform. It replaces the shared secret that used to gate
+ * /platform-admin and /rider-review — one credential standing in for every
+ * operator, unrevokable per person, and unable to say who did anything.
+ *
+ * `auth:platform` resolves the platform_admins table and nothing else, so a
+ * staff, shopper or rider token cannot reach any of this, and an operator
+ * token cannot reach a seller route. `platform.active` is paired with it
+ * everywhere so a revoked account's live token stops working on its next
+ * request. See config/auth.php.
+ *
+ * Login is throttled hard: it is public, and the accounts behind it are the
+ * most valuable on the platform.
+ */
+Route::prefix('platform')->group(function () {
+    Route::post('/login', [Platform\AuthController::class, 'login'])
+        ->middleware('throttle:10,1');
+
+    Route::middleware(['auth:platform', 'platform.active'])->group(function () {
+        Route::post('/logout', [Platform\AuthController::class, 'logout']);
+        Route::get('/me', [Platform\AuthController::class, 'me']);
+
+        Route::get('/overview', [Platform\OverviewController::class, 'show']);
+
+        Route::get('/organizations', [Platform\OrganizationController::class, 'index']);
+        Route::get('/organizations/{slug}', [Platform\OrganizationController::class, 'show']);
+        Route::post('/organizations/{slug}/subscription', [Platform\OrganizationController::class, 'setSubscriptionStatus']);
+        Route::post('/organizations/{slug}/suspension', [Platform\OrganizationController::class, 'setSuspended']);
+        Route::post('/organizations/{slug}/owners/{user}/password-reset', [Platform\OrganizationController::class, 'resetOwnerPassword']);
+        Route::post('/organizations/{slug}/owners/{user}/status', [Platform\OrganizationController::class, 'setOwnerDisabled']);
+        // Owner-only, and the one irreversible action in the portal.
+        Route::delete('/organizations/{slug}', [Platform\OrganizationController::class, 'destroy']);
+
+        // The only way to see a rider's licence photo: the images live on the
+        // private disk and have no URL of their own.
+        Route::get('/riders', [Platform\RiderReviewController::class, 'index']);
+        Route::post('/riders/{rider}/decision', [Platform\RiderReviewController::class, 'decide']);
+        Route::get('/riders/{rider}/document/{document}', [Platform\RiderReviewController::class, 'document']);
+
+        Route::get('/audit-logs', [Platform\AuditLogController::class, 'index']);
+
+        // Owner-only.
+        Route::get('/admins', [Platform\AdminController::class, 'index']);
+        Route::post('/admins', [Platform\AdminController::class, 'store']);
+        Route::post('/admins/{admin}/status', [Platform\AdminController::class, 'setStatus']);
+    });
+});
 
 /*
  * Customer accounts.
@@ -134,18 +185,6 @@ Route::middleware('auth:rider')->prefix('rider')->group(function () {
         Route::post('/deliveries/{order}/release', [RiderDeliveryController::class, 'release']);
     });
 });
-
-/*
- * Rider review, for the platform operator. Secret-gated like /platform-admin,
- * and the only way to see a rider's licence photo — the images live on the
- * private disk and have no URL of their own.
- */
-Route::post('/rider-review', [RiderReviewController::class, 'index'])
-    ->middleware('throttle:30,1');
-Route::post('/rider-review/{rider}/decision', [RiderReviewController::class, 'decide'])
-    ->middleware('throttle:30,1');
-Route::post('/rider-review/{rider}/document/{document}', [RiderReviewController::class, 'document'])
-    ->middleware('throttle:60,1');
 
 // `merchant.token` alongside auth:sanctum: that guard has no configured
 // provider, so Sanctum accepts any tokenable — including a shopper's portal

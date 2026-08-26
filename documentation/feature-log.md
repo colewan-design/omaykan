@@ -12,10 +12,10 @@ For what the product is and why, see [positioning.md](./positioning.md). For the
 |---|---|---|
 | Merchant POS / back office | `packages/core` → `apps/web` (`/app/`) | Working, broad |
 | Customer storefront (mobile) | `apps/mobile/src/storefront` | Working — the fuller of the two |
-| Customer storefront (web) | `apps/web/src/storefront` | Working but **behind mobile** — see §3 |
+| Customer storefront (web) | `apps/web/src/landing` + `apps/web/src/commerce` | Working — see §3 |
 | Merchant Android app | `apps/mobile-admin` | Capacitor wrapper around the POS core |
 | Onboarding / signup | `apps/web/src/onboarding` | Working, with placeholder pricing |
-| Platform admin (superadmin) | `apps/web/src/platform-admin` | Working |
+| Platform admin (superadmin) | `apps/web/src/platform-admin` | Working — named operator accounts, audit log |
 | Landing site | `apps/web/src/landing` | Working |
 | **Rider** | — | **Does not exist** |
 
@@ -88,15 +88,41 @@ Checkout supports **pickup or delivery** (with address) and **cash or GCash**.
 
 > GCash here is a stated *preference*, not a processed payment. Settlement happens at the merchant's register via the Settle Online Payment sheet. There is no payment gateway anywhere in the codebase, and per [plan.md §4a](./plan.md) there is not meant to be one — customer payment is COD. The toggle stays: GCash-at-handover counts as COD, since the customer still pays on collection and nothing passes through us.
 
-## 3. Customer storefront — web (`apps/web/src/storefront`)
+## 3. Customer storefront — web (`apps/web/src/landing` + `apps/web/src/commerce`)
 
-Catalog, category grid, hero/promo sections, product cards, search, cart, wishlist, checkout, order status.
+The marketing site and the shop are one document. `apps/web/src/storefront` is
+gone; `landing.html` now has five faces, and the URL says which is showing:
+the front page, an aisle (`?category=`), a product (`?product=`), checkout
+(`?checkout=1`) and a placed order (`?order=<id>`). The shared pieces — cart,
+catalog, delivery address, customer session, API client — live in
+`apps/web/src/commerce` and are used by the account portal too.
 
-**Behind the mobile storefront**, and worth reconciling:
+Catalog, category nav, search, product detail, cart drawer, delivery-address
+filtering, checkout, order confirmation with live status, customer accounts.
 
-- **Pickup only** — no delivery option, though `api/create-online-order.ts` already accepts `delivery`
-- **No payment method choice** — no GCash toggle
-- No product detail page, no order history
+- **Delivery address** is set in the header and filters the shelves: the API
+  answers with what a branch within 15 km of that address can actually send,
+  and says plainly when nothing reaches it (`GET /api/storefront/catalog`
+  with `lat`/`lng`). Placed from the device's location, one of the customer's
+  saved addresses, or a picked service area — there is no geocoder, so a
+  free-typed street alone filters nothing and says so.
+- **Checkout** supports pickup or delivery, as a guest or signed in, and is
+  **cash only** — there is no method to choose, and no gateway anywhere. The
+  mobile storefront still offers the GCash preference (§2); the web one has
+  stopped asking.
+- **Payment confirmation** is manual and comes from either side. The seller
+  settles it from the till (`POST /api/seller/online-orders/{id}/settle-payment`,
+  the Settle Online Payment sheet); the customer marks it paid from their order
+  page or their order history (`POST /api/online-orders/{id}/confirm-payment`,
+  public by the same unguessable id as tracking). Whichever comes first wins,
+  the order records which side said so (`payment_confirmed_by_role`), and both
+  write the same row into the merchant's cash ledger. This matters most for a
+  delivery: the cash goes to a rider at the door and the till never sees it.
+- **Order status** is polled every 20s from `GET /api/online-orders/{id}`,
+  which is public by unguessable id — so the confirmation URL is a link the
+  customer can forward. Reverb already broadcasts `OrderStatusChanged`, but
+  no Echo client is wired up in `apps/web` yet.
+- No wishlist.
 
 ---
 
@@ -105,7 +131,7 @@ Catalog, category grid, hero/promo sections, product cards, search, cart, wishli
 - **Signup** (`api/signup.ts`) creates the organization, store, owner account, and pairing code, plus a subscription document at `status: 'pending_verification'`
 - **Plan**: `standard-monthly`, **₱499/month — placeholder**, paid by manual GCash transfer to a placeholder number (`pricingConstants.ts`, mirrored in `api/signup.ts`; both carry TODOs)
 - **No payment gateway, no recurring billing, no automated verification, no license enforcement.** Nothing currently stops or charges a non-paying merchant
-- **Platform admin** — superadmin dashboard for managing stores and owner accounts
+- **Platform admin** — operator portal on its own guard (`auth:platform`): dashboard, tenant list and detail, subscription verification, suspend/delete, rider review, audit log, operator management
 - **Integrations page** — connection settings and a readiness checklist per register
 - Staff store-code resolution (`api/resolve-staff-store-code.ts`) and staff creation (`api/staff-create.ts`)
 

@@ -168,9 +168,29 @@ class SellerOrderApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('order.paymentStatus', 'paid')
             ->assertJsonPath('order.paymentMethod', 'cash')
-            ->assertJsonPath('order.paymentConfirmedByUserId', $userId);
+            ->assertJsonPath('order.paymentConfirmedByUserId', $userId)
+            // As against the customer confirming it from their order page,
+            // which the dashboard has to be able to tell apart.
+            ->assertJsonPath('order.paymentConfirmedByRole', 'seller');
 
         $this->assertNotNull(Order::query()->findOrFail($orderId)->payment_confirmed_at);
+    }
+
+    public function test_the_dashboard_can_see_that_the_customer_confirmed_it(): void
+    {
+        $this->seed();
+        $orderId = $this->placeDeliveryOrder();
+
+        // The rider took the cash at the door and the customer said so from
+        // their own order page — no till was involved.
+        $this->postJson("/api/online-orders/{$orderId}/confirm-payment")->assertOk();
+
+        $this->withHeader('Authorization', "Bearer {$this->deviceToken()}")
+            ->getJson('/api/seller/online-orders')
+            ->assertOk()
+            ->assertJsonPath('orders.0.paymentStatus', 'paid')
+            ->assertJsonPath('orders.0.paymentConfirmedByRole', 'customer')
+            ->assertJsonPath('orders.0.paymentConfirmedByUserId', null);
     }
 
     public function test_a_device_cannot_touch_another_stores_order(): void

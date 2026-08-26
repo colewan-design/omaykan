@@ -44,6 +44,7 @@ class Order extends Model
         'rider_accepted_at',
         'payment_confirmed_at',
         'payment_confirmed_by_user_id',
+        'payment_confirmed_by_role',
         'guest_contact',
     ];
 
@@ -132,6 +133,11 @@ class Order extends Model
             'status' => $this->order_status,
             'paymentStatus' => $this->payment_status,
             'paymentMethod' => $this->payment_method,
+            // Cash changes hands away from the till, so the customer's own
+            // order page can confirm it — and has to be able to say whether
+            // that has already happened, and who said so.
+            'paymentConfirmedAt' => $this->payment_confirmed_at?->toIso8601String(),
+            'paymentConfirmedBy' => $this->payment_confirmed_by_role,
             'subtotalCents' => $this->subtotal_cents,
             'taxCents' => $this->tax_cents,
             'deliveryFeeCents' => $this->delivery_fee_cents,

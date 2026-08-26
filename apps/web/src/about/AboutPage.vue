@@ -27,7 +27,7 @@ function search(term: string) {
         <h1 v-reveal class="fd-promo__title">Skip the trip to the market</h1>
         <p v-reveal="60" class="fd-promo__sub">
           Order from the shops you already know in Baguio. Riders in your neighbourhood bring it
-          over the same day — cash or GCash on arrival, and vendors keep every peso.
+          over the same day — cash on arrival, and vendors keep every peso.
         </p>
         <a v-reveal="60" :href="SHOP_HREF" class="fd-promo__link">Start shopping — no commissions, ever</a>
         <div v-reveal="120" class="fd-promo__art">

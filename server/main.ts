@@ -1,7 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 
 import createOnlineOrder from '../api/create-online-order'
-import platformAdmin from '../api/platform-admin'
 import resolveStaffStoreCode from '../api/resolve-staff-store-code'
 import resolveStoreCode from '../api/resolve-store-code'
 import signup from '../api/signup'
@@ -19,7 +18,6 @@ type Handler = (req: any, res: any) => unknown | Promise<unknown>
 
 const ROUTES: Record<string, Handler> = {
   '/api/create-online-order': createOnlineOrder,
-  '/api/platform-admin': platformAdmin,
   '/api/resolve-staff-store-code': resolveStaffStoreCode,
   '/api/resolve-store-code': resolveStoreCode,
   '/api/signup': signup,

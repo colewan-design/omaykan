@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api;
 
+use App\Models\PlatformAdmin;
 use App\Models\Rider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -16,8 +17,6 @@ class RiderAuthApiTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const SECRET = 'test-operator-secret';
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -25,7 +24,26 @@ class RiderAuthApiTest extends TestCase
         // Documents are written to the private disk; faking it keeps real
         // files out of storage/ and lets the assertions look at what landed.
         Storage::fake('local');
-        config()->set('services.platform_admin.secret', self::SECRET);
+    }
+
+    /**
+     * The reviewer's side of these tests is a signed-in platform operator, not
+     * a shared secret — see the platform guard in config/auth.php.
+     *
+     * @return array<string, string>
+     */
+    private function operatorHeader(): array
+    {
+        $admin = PlatformAdmin::query()->create([
+            'name' => 'Platform Operator',
+            'email' => 'ops@omaykan.test',
+            'password' => 'operator-password-1',
+            'role' => PlatformAdmin::ROLE_OWNER,
+            'status' => PlatformAdmin::STATUS_ACTIVE,
+        ]);
+
+        return ['Authorization' => 'Bearer '.$admin
+            ->createToken(PlatformAdmin::TOKEN_NAME, ['platform'])->plainTextToken];
     }
 
     /** @return array<string, mixed> */
@@ -158,7 +176,9 @@ class RiderAuthApiTest extends TestCase
     {
         $this->register();
 
-        $queue = $this->postJson('/api/rider-review', ['secret' => self::SECRET])
+        $headers = $this->operatorHeader();
+
+        $queue = $this->getJson('/api/platform/riders', $headers)
             ->assertOk()
             ->json('riders');
 
@@ -170,10 +190,9 @@ class RiderAuthApiTest extends TestCase
 
         $riderId = $queue[0]['id'];
 
-        $this->postJson("/api/rider-review/{$riderId}/decision", [
-            'secret' => self::SECRET,
+        $this->postJson("/api/platform/riders/{$riderId}/decision", [
             'status' => Rider::STATUS_APPROVED,
-        ])->assertOk()->assertJsonPath('rider.status', Rider::STATUS_APPROVED);
+        ], $headers)->assertOk()->assertJsonPath('rider.status', Rider::STATUS_APPROVED);
 
         $token = $this->postJson('/api/rider/login', [
             'email' => 'jun@example.com',
@@ -195,11 +214,10 @@ class RiderAuthApiTest extends TestCase
             ->getJson('/api/rider/board')
             ->assertOk();
 
-        $this->postJson("/api/rider-review/{$rider->id}/decision", [
-            'secret' => self::SECRET,
+        $this->postJson("/api/platform/riders/{$rider->id}/decision", [
             'status' => Rider::STATUS_SUSPENDED,
             'note' => 'Repeated no-shows.',
-        ])->assertOk();
+        ], $this->operatorHeader())->assertOk();
 
         $this->assertSame(0, $rider->fresh()->tokens()->count());
 
@@ -223,25 +241,37 @@ class RiderAuthApiTest extends TestCase
 
     public function test_documents_are_only_served_to_the_operator(): void
     {
-        $this->register();
+        $riderToken = $this->register()['token'];
         $rider = Rider::findByEmail('jun@example.com');
+        $headers = $this->operatorHeader();
 
-        $this->post("/api/rider-review/{$rider->id}/document/license", ['secret' => 'wrong'])
+        // No token at all, and the rider's own token — a licence photo is
+        // operator-only, and the rider is not an exception to that.
+        //
+        // getJson rather than get for the refusals: Laravel's Authenticate
+        // middleware redirects a non-JSON unauthenticated request to the
+        // `login` route, which this API does not have. The portal always sends
+        // Accept: application/json for the same reason, including on the blob
+        // fetch that pulls these images.
+        $this->getJson("/api/platform/riders/{$rider->id}/document/license")
             ->assertUnauthorized();
 
-        $this->post("/api/rider-review/{$rider->id}/document/license", ['secret' => self::SECRET])
-            ->assertOk();
+        $this->withHeader('Authorization', "Bearer {$riderToken}")
+            ->getJson("/api/platform/riders/{$rider->id}/document/license")
+            ->assertUnauthorized();
+
+        $this->get("/api/platform/riders/{$rider->id}/document/license", $headers)->assertOk();
 
         // Laravel reorders and adds to the directive list, so the assertion is
         // on the directive that matters, not the whole header string.
         $this->assertStringContainsString(
             'no-store',
-            $this->post("/api/rider-review/{$rider->id}/document/license", ['secret' => self::SECRET])
+            $this->get("/api/platform/riders/{$rider->id}/document/license", $headers)
                 ->headers->get('Cache-Control'),
         );
 
         // The document name is a fixed set, not a path off the request.
-        $this->post("/api/rider-review/{$rider->id}/document/passport", ['secret' => self::SECRET])
+        $this->get("/api/platform/riders/{$rider->id}/document/passport", $headers)
             ->assertNotFound();
     }
 }

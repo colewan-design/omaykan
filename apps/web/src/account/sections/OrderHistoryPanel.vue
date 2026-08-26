@@ -9,7 +9,12 @@ import {
   type DeliveryStage,
   type OrderStatus,
 } from '@pos/shared/index'
-import { ApiRequestError, fetchOrder, type TrackedOrder } from '@pos/web/commerce/api'
+import {
+  ApiRequestError,
+  confirmOrderPayment,
+  fetchOrder,
+  type TrackedOrder,
+} from '@pos/web/commerce/api'
 import { useStorefrontOrderHistory } from '@pos/web/commerce/orderHistory'
 
 // Past orders, and where the current ones have got to.
@@ -31,6 +36,10 @@ const refreshing = ref(false)
 const lookupId = ref('')
 const lookupError = ref('')
 const lookingUp = ref(false)
+
+/** The order id currently being marked paid, so only its button spins. */
+const confirming = ref('')
+const confirmError = ref('')
 
 async function refresh() {
   if (history.entries.value.length === 0) return
@@ -89,6 +98,29 @@ function statusLine(order: TrackedOrder): string {
 
 function isDone(order: TrackedOrder): boolean {
   return order.deliveryStage === 'delivered' || order.status === 'served'
+}
+
+/**
+ * The customer's own word that they paid, from the place they are most likely
+ * to be when they remember: the order page they landed on at checkout is one
+ * tab they may well have closed, and cash is handed over long after it.
+ *
+ * The shop can settle it from their till instead — whichever comes first wins,
+ * and the order records which side it was.
+ */
+async function confirmPaid(orderId: string) {
+  if (confirming.value) return
+
+  confirming.value = orderId
+  confirmError.value = ''
+
+  try {
+    orders.value[orderId] = await confirmOrderPayment(orderId)
+  } catch {
+    confirmError.value = "Couldn't record that just now. Try again in a moment."
+  } finally {
+    confirming.value = ''
+  }
 }
 </script>
 
@@ -171,7 +203,32 @@ function isDone(order: TrackedOrder): boolean {
           To {{ orders[entry.orderId]!.deliveryAddress }}
         </p>
 
+        <!-- Cash on arrival: somebody has to say it changed hands, and for a
+             delivery the customer is the only side that was there. -->
+        <p v-if="orders[entry.orderId]" class="acct-order__pay">
+          <span v-if="orders[entry.orderId]!.paymentStatus === 'paid'" class="acct-tag">Paid</span>
+          <template v-else>Cash on arrival — not yet marked paid.</template>
+          <span
+            v-if="orders[entry.orderId]!.paymentConfirmedBy === 'seller'"
+            class="acct-order__payby"
+          >
+            Confirmed by the shop
+          </span>
+        </p>
+
+        <p v-if="confirmError" class="acct-flash acct-flash--error">{{ confirmError }}</p>
+
         <div class="acct-actions" style="margin-top: 14px">
+          <button
+            v-if="orders[entry.orderId] && orders[entry.orderId]!.paymentStatus !== 'paid'"
+            type="button"
+            class="acct-link"
+            :disabled="confirming === entry.orderId"
+            @click="confirmPaid(entry.orderId)"
+          >
+            {{ confirming === entry.orderId ? 'Saving…' : "I've paid" }}
+          </button>
+          <a class="acct-link" :href="`/?order=${encodeURIComponent(entry.orderId)}`">View order</a>
           <button type="button" class="acct-link acct-link--danger" @click="history.forget(entry.orderId)">
             Remove from this list
           </button>
@@ -245,6 +302,18 @@ function isDone(order: TrackedOrder): boolean {
 .acct-order__status--done {
   color: #6b7280;
 }
+
+.acct-order__pay {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.acct-order__payby { color: #14532d; font-weight: 600; }
 
 .acct-order__status--stale {
   color: #9ca3af;

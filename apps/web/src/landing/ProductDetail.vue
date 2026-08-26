@@ -5,9 +5,11 @@ import {
   discountPercent,
   formatCurrency,
   type Category,
-  type Product,
 } from '@pos/shared/index'
+import type { StorefrontProduct } from '@pos/web/commerce/api'
 import { useStorefrontCart } from '@pos/web/commerce/cart'
+import { useStorefrontCatalog } from '@pos/web/commerce/catalog'
+import { STORE_ADDRESS } from '@pos/web/commerce/context'
 import ProductRow from './ProductRow.vue'
 
 // The product detail face of the landing page: one product at full size, with
@@ -20,11 +22,11 @@ import ProductRow from './ProductRow.vue'
 // reload and Back walks straight out of it.
 
 const props = defineProps<{
-  product: Product
+  product: StorefrontProduct
   /** The product's aisle, for the breadcrumb — null if the catalog dropped it. */
   category: Category | null
   /** The rest of the aisle, minus this product. */
-  related: Product[]
+  related: StorefrontProduct[]
 }>()
 
 const emit = defineEmits<{
@@ -34,6 +36,7 @@ const emit = defineEmits<{
 }>()
 
 const cart = useStorefrontCart()
+const catalog = useStorefrontCatalog()
 
 const quantity = ref(1)
 const justAdded = ref(false)
@@ -70,6 +73,35 @@ const maxQuantity = computed(() => {
 const inCart = computed(
   () => cart.cartLines.value.find((line) => line.product.id === props.product.id)?.quantity ?? 0,
 )
+
+/**
+ * The branch this item would actually come off. With a delivery address set
+ * that is whichever branch is nearest and stocks it, so it is a property of
+ * the product rather than of the storefront.
+ */
+const servingStore = computed(() =>
+  catalog.delivery.stores.find((store) => store.code === props.product.storeCode) ?? null,
+)
+
+const storeName = computed(() => props.product.storeName || servingStore.value?.name || '')
+
+/**
+ * Where to go and get it. The product carries the branch's address, but an
+ * older API answers without that field and the demo shelves have no branch at
+ * all, so the delivery block and this storefront's own configured address are
+ * read in turn before giving up.
+ */
+const storeAddress = computed(
+  () => props.product.storeAddress || servingStore.value?.address || STORE_ADDRESS || '',
+)
+
+/** Never blank: a store that never filled its address in still gets a line. */
+const storeAddressLabel = computed(() => storeAddress.value || 'Address not specified')
+
+const storeDistance = computed(() => {
+  const km = props.product.distanceKm ?? servingStore.value?.distanceKm ?? null
+  return km === null ? '' : `${km.toFixed(1)} km away`
+})
 
 // Opening a second product from the related shelf reuses this component, so the
 // stepper has to fall back to 1 rather than carry the last product's count.
@@ -152,6 +184,17 @@ function addToCart() {
           <template v-else>In stock</template>
         </p>
 
+        <p class="fdpdp__store">
+          <span class="fdpdp__store-pin" aria-hidden="true">📍</span>
+          <span>
+            <span v-if="storeName" class="fdpdp__store-name">{{ storeName }}</span>
+            <span class="fdpdp__store-addr" :class="{ 'fdpdp__store-addr--none': !storeAddress }">
+              {{ storeAddressLabel }}
+            </span>
+            <span v-if="storeDistance" class="fdpdp__store-far">{{ storeDistance }}</span>
+          </span>
+        </p>
+
         <div class="fdpdp__buy">
           <div class="fdpdp__stepper" role="group" aria-label="Quantity">
             <button
@@ -187,7 +230,7 @@ function addToCart() {
             Sold at the counter price. Omaykan takes no commission, so nothing here is
             marked up to pay for the app.
           </p>
-          <p>Cash or GCash when the rider arrives — nothing is charged online.</p>
+          <p>Cash when the rider arrives — nothing is charged online.</p>
         </div>
 
         <dl class="fdpdp__facts">
@@ -198,6 +241,10 @@ function addToCart() {
           <div v-if="product.barcode">
             <dt>Barcode</dt>
             <dd>{{ product.barcode }}</dd>
+          </div>
+          <div>
+            <dt>Store location</dt>
+            <dd>{{ storeAddressLabel }}</dd>
           </div>
           <div v-if="product.kind === 'weighted'">
             <dt>Sold by</dt>
@@ -316,6 +363,28 @@ function addToCart() {
 .fdpdp__stock { margin: 16px 0 0; font-size: 14px; font-weight: 600; color: #16a34a; }
 .fdpdp__stock--low { color: #c2410c; }
 .fdpdp__stock--out { color: #9ca3af; }
+
+/* Sits between the stock line and the buy row: whoever is about to add this
+   to a cart is also deciding whether they want it coming from that counter. */
+.fdpdp__store {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border: 1px solid #edf0ee;
+  border-radius: 10px;
+  background: #fbfcfb;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #4b5563;
+}
+.fdpdp__store-pin { font-size: 14px; line-height: 1.45; }
+.fdpdp__store-name { font-weight: 700; color: #1a1a1a; }
+.fdpdp__store-name::after { content: ' · '; color: #9ca3af; font-weight: 400; }
+.fdpdp__store-addr--none { color: #9ca3af; font-style: italic; }
+.fdpdp__store-far { color: #9ca3af; }
+.fdpdp__store-far::before { content: ' · '; }
 
 .fdpdp__buy {
   display: flex;

@@ -215,12 +215,19 @@ export interface OrderSummary {
   voidedAt?: string | null
   voidedByUserId?: string | null
   voidReason?: string | null
-  // Set when staff mark an online cash/e-wallet order as paid (see
-  // SettleOnlinePaymentSheet) — there is no payment gateway, so this is an
-  // audit trail for a manual confirmation, not proof a charge succeeded.
+  // Set when an online cash order is marked paid — there is no payment
+  // gateway, so this is an audit trail for a manual confirmation, not proof a
+  // charge succeeded. Either side can give it: staff from the Settle Online
+  // Payment sheet, or the customer from their own order page, which is the
+  // only side present when a rider takes the cash at the door. The role says
+  // which; `paymentConfirmedByUserId` is set only for a staff confirmation,
+  // because a shopper is not a user of the merchant's organization.
   paymentConfirmedAt?: string | null
   paymentConfirmedByUserId?: string | null
+  paymentConfirmedByRole?: PaymentConfirmedByRole | null
 }
+
+export type PaymentConfirmedByRole = 'seller' | 'customer'
 
 export interface CashMovementSummary {
   id: string

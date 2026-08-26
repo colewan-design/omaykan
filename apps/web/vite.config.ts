@@ -40,8 +40,16 @@ function entryRouteAliases(): Plugin {
       return
     }
 
+    // Trailing branch, so it also catches the portal's client-side routes
+    // (/platform-admin/tenants/foo) the way the /app/ branch above does —
+    // without it, a refresh anywhere but the root 404s.
     if (req.url === '/platform-admin' || req.url?.startsWith('/platform-admin?')) {
       req.url = req.url.replace('/platform-admin', '/platform-admin.html')
+      return
+    }
+
+    if (req.url?.startsWith('/platform-admin/')) {
+      req.url = '/platform-admin.html'
     }
   }
   return {

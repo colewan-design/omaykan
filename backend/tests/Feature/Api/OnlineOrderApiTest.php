@@ -6,6 +6,7 @@ use App\Events\OrderPlaced;
 use App\Models\InventoryLevel;
 use App\Models\Order;
 use App\Models\Organization;
+use App\Models\Payment;
 use App\Models\Product;
 use App\Models\Store;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
@@ -305,5 +306,104 @@ class OnlineOrderApiTest extends TestCase
         $order = Order::query()->firstOrFail();
         $this->assertSame($store->id, $order->store_id);
         $this->assertSame($organization->id, $order->organization_id);
+    }
+
+    // -- Confirming the cash changed hands --------------------------------------
+    //
+    // There is no gateway, so somebody has to say so. The seller can, from the
+    // dashboard; these cover the customer doing it from their own order page,
+    // which is the only side present when a rider takes the cash at the door.
+
+    private function placeOrder(): Order
+    {
+        $this->seed();
+        Event::fake([OrderPlaced::class]);
+
+        $this->postJson('/api/online-orders', $this->payload())->assertCreated();
+
+        return Order::query()->firstOrFail();
+    }
+
+    public function test_a_customer_can_confirm_they_paid(): void
+    {
+        $order = $this->placeOrder();
+        $this->assertSame('unpaid', $order->payment_status);
+
+        $this->postJson("/api/online-orders/{$order->id}/confirm-payment")
+            ->assertOk()
+            ->assertJsonPath('paymentStatus', 'paid')
+            ->assertJsonPath('paymentConfirmedBy', 'customer');
+
+        $order->refresh();
+
+        $this->assertSame('paid', $order->payment_status);
+        $this->assertNotNull($order->payment_confirmed_at);
+        $this->assertSame('customer', $order->payment_confirmed_by_role);
+        // A shopper is not a user of the merchant's organization.
+        $this->assertNull($order->payment_confirmed_by_user_id);
+    }
+
+    public function test_confirming_payment_records_it_in_the_merchants_cash_ledger(): void
+    {
+        $order = $this->placeOrder();
+
+        $this->postJson("/api/online-orders/{$order->id}/confirm-payment")->assertOk();
+
+        $payment = Payment::query()->where('order_id', $order->id)->firstOrFail();
+
+        $this->assertSame($order->total_cents, (int) $payment->amount_cents);
+        $this->assertSame('cash', $payment->payment_method);
+    }
+
+    public function test_confirming_twice_does_not_pay_the_order_twice(): void
+    {
+        $order = $this->placeOrder();
+
+        $this->postJson("/api/online-orders/{$order->id}/confirm-payment")->assertOk();
+        $confirmedAt = $order->fresh()->payment_confirmed_at;
+
+        $this->postJson("/api/online-orders/{$order->id}/confirm-payment")
+            ->assertOk()
+            ->assertJsonPath('paymentStatus', 'paid');
+
+        $this->assertSame(1, Payment::query()->where('order_id', $order->id)->count());
+        $this->assertEquals($confirmedAt, $order->fresh()->payment_confirmed_at);
+    }
+
+    public function test_a_customer_confirmation_does_not_overwrite_the_sellers(): void
+    {
+        $order = $this->placeOrder();
+
+        // However it got there — the seller settled it at the till first.
+        $order->forceFill([
+            'payment_status' => 'paid',
+            'payment_confirmed_at' => now(),
+            'payment_confirmed_by_role' => 'seller',
+        ])->save();
+
+        $this->postJson("/api/online-orders/{$order->id}/confirm-payment")->assertOk();
+
+        $this->assertSame('seller', $order->fresh()->payment_confirmed_by_role);
+    }
+
+    public function test_a_register_sale_cannot_be_confirmed_through_the_public_endpoint(): void
+    {
+        $order = $this->placeOrder();
+        $order->forceFill(['channel' => 'pos'])->save();
+
+        $this->postJson("/api/online-orders/{$order->id}/confirm-payment")->assertNotFound();
+
+        $this->assertSame('unpaid', $order->fresh()->payment_status);
+    }
+
+    public function test_the_tracked_order_says_when_nobody_has_confirmed_yet(): void
+    {
+        $order = $this->placeOrder();
+
+        $this->getJson("/api/online-orders/{$order->id}")
+            ->assertOk()
+            ->assertJsonPath('paymentStatus', 'unpaid')
+            ->assertJsonPath('paymentConfirmedAt', null)
+            ->assertJsonPath('paymentConfirmedBy', null);
     }
 }

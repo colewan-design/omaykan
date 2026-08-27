@@ -14,13 +14,35 @@ use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use InvalidArgumentException;
+
+/**
+ * The full set of page keys, which must stay in step with `appPageKeys` in
+ * packages/shared/src/index.ts.
+ *
+ * Every key has to appear in the stored permissions, not just the granted
+ * ones: withAllPermissionKeys() in the client reads a missing key as `false`,
+ * so a short list here silently locks a role out of the pages it omits. This
+ * previously listed a non-existent 'analytics' page and left out nine real
+ * ones, which is exactly that bug.
+ */
+const APP_PAGE_KEYS = [
+    'dashboard', 'sales', 'orders', 'products', 'customers', 'suppliers',
+    'employees', 'inventory', 'tables', 'reports', 'integrations', 'register',
+    'settings', 'diagnostics',
+];
 
 function permissionsFor(array $allowedPages): array
 {
-    $pages = ['register', 'orders', 'products', 'analytics', 'settings', 'diagnostics'];
+    $unknown = array_diff($allowedPages, APP_PAGE_KEYS);
+    if ($unknown !== []) {
+        throw new InvalidArgumentException(
+            'Unknown page key(s): '.implode(', ', $unknown)
+        );
+    }
 
     $permissions = [];
-    foreach ($pages as $page) {
+    foreach (APP_PAGE_KEYS as $page) {
         $permissions[$page] = in_array($page, $allowedPages, true);
     }
 
@@ -98,10 +120,15 @@ class DatabaseSeeder extends Seeder
         ]);
 
         $roles = [
-            'admin' => ['name' => 'Admin', 'permissions' => permissionsFor(['register', 'orders', 'products', 'analytics', 'settings', 'diagnostics'])],
-            'manager' => ['name' => 'Manager', 'permissions' => permissionsFor(['register', 'orders', 'products', 'analytics', 'settings'])],
-            'cashier' => ['name' => 'Cashier', 'permissions' => permissionsFor(['register', 'orders'])],
-            'guest' => ['name' => 'Guest', 'permissions' => permissionsFor(['register', 'orders', 'products', 'analytics', 'settings'])],
+            'admin' => ['name' => 'Admin', 'permissions' => permissionsFor(APP_PAGE_KEYS)],
+            'manager' => ['name' => 'Manager', 'permissions' => permissionsFor([
+                'dashboard', 'sales', 'orders', 'products', 'customers', 'suppliers',
+                'employees', 'inventory', 'reports', 'register', 'settings', 'tables',
+            ])],
+            'cashier' => ['name' => 'Cashier', 'permissions' => permissionsFor([
+                'dashboard', 'sales', 'orders', 'register', 'settings', 'tables',
+            ])],
+            'guest' => ['name' => 'Guest', 'permissions' => permissionsFor([])],
         ];
 
         foreach ($roles as $roleKey => $roleData) {

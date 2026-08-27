@@ -66,9 +66,44 @@ function entryRouteAliases(): Plugin {
   }
 }
 
+/**
+ * Refuse to ship a production bundle with no tenant baked into it.
+ *
+ * VITE_* values are compile-time constants, so a blank slug cannot be fixed on
+ * the server — it needs a rebuild and a redeploy. And it fails silently:
+ * fetchCatalog sends `?orgSlug=&storeCode=`, the API answers 422,
+ * loadStorefrontCatalog swallows it and falls back to a demo catalog that is
+ * itself empty unless VITE_POS_DEMO_ORG_SLUG is set. The storefront then
+ * renders perfectly, with nothing on the shelves and no error anywhere.
+ *
+ * That shipped once, on 2026-08-27, against a catalog of 464 products. This is
+ * the check that would have caught it.
+ */
+function requireTenant(): Plugin {
+  return {
+    name: 'require-tenant',
+    apply: 'build',
+    configResolved(config) {
+      if (config.mode !== 'production') return
+
+      const missing = ['VITE_POS_ORGANIZATION_SLUG', 'VITE_POS_STORE_CODE']
+        .filter((key) => !String(config.env[key] ?? '').trim())
+
+      if (missing.length > 0) {
+        throw new Error(
+          `Refusing to build: ${missing.join(' and ')} ${missing.length > 1 ? 'are' : 'is'} blank.
+` +
+          'The storefront resolves its tenant at build time, so a blank value ships a shop with no ' +
+          'products and no visible error. Set it in apps/web/.env.production — see .env.production.example.',
+        )
+      }
+    },
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [vue(), entryRouteAliases()],
+  plugins: [vue(), entryRouteAliases(), requireTenant()],
   resolve: {
     alias: {
       '@pos/core': path.resolve(__dirname, '../../packages/core/src'),

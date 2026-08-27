@@ -21,7 +21,6 @@ declare module 'vue-router' {
   interface RouteMeta {
     publicOnly?: boolean
     pageKey?: AppPageKey
-    ownerOnly?: boolean
   }
 }
 
@@ -45,10 +44,10 @@ export function createPosRouter() {
       { path: '/inventory',   name: 'inventory',   component: InventoryPage, meta: { pageKey: 'inventory' }, alias: '/inventories' },
       { path: '/tables',      name: 'tables',      component: TablesPage, meta: { pageKey: 'tables' } },
       { path: '/reports',     name: 'reports',     component: ReportsPage, meta: { pageKey: 'reports' } },
-      { path: '/integrations',name: 'integrations',component: IntegrationsPage, meta: { pageKey: 'integrations', ownerOnly: true } },
+      { path: '/integrations',name: 'integrations',component: IntegrationsPage, meta: { pageKey: 'integrations' } },
       { path: '/register',    name: 'register',    component: RegisterPage, meta: { pageKey: 'register' } },
       { path: '/settings',    name: 'settings',    component: SettingsPage, meta: { pageKey: 'settings' } },
-      { path: '/diagnostics', name: 'diagnostics', component: DiagnosticsPage, meta: { pageKey: 'diagnostics', ownerOnly: true } },
+      { path: '/diagnostics', name: 'diagnostics', component: DiagnosticsPage, meta: { pageKey: 'diagnostics' } },
     ],
   })
 }

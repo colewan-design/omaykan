@@ -275,8 +275,21 @@ export interface RoleDefinition {
   canManageStaff?: boolean
 }
 
-export const ownerPageKeys = ['employees', 'integrations', 'diagnostics'] as const
+/**
+ * Pages only the true owner may open, whatever a role's permissions say.
+ *
+ * `employees` is deliberately *not* here: staff management is delegable, and a
+ * Manager holds it through `canManageStaff` (see the auth store). It was listed
+ * here until 2026-08-27, disagreeing with both the router and defaultRoles —
+ * harmlessly, because nothing read this list. The router reads it now, so keep
+ * it correct.
+ */
+export const ownerPageKeys = ['integrations', 'diagnostics'] as const
 export type OwnerPageKey = (typeof ownerPageKeys)[number]
+
+export function isOwnerPage(page: AppPageKey): boolean {
+  return (ownerPageKeys as readonly string[]).includes(page)
+}
 
 export interface UserAccount {
   id: string

@@ -23,17 +23,40 @@ the running system.
 | Realtime (Reverb) | Built, **subscribed on one page only** |
 | Offline outbox + sync | Built |
 | Order discounts | **Not built** — no column, no API |
-| Promo / voucher box in the till | **Inert** — rendered in all four order panels, wired to nothing |
+| Promo / voucher box in the till | ~~Inert in all four order panels~~ — **removed 2026-08-27** |
 | Loyalty | **Not built** — two lines of UI copy, nothing behind them |
 | Subscription billing | Recorded, **never enforced** |
 | Rider payouts | **Not built** |
 | Multi-vendor marketplace | **Not built** — the landing page sells one |
-| Frontend tests | **None** |
+| Frontend tests | ~~None~~ — **28 added 2026-08-27**; still no component or store coverage |
 | BIR compliance | Unverified — blocks charging anyone |
 
 Operational gaps — deploy process, backups, monitoring, and the fact that the
 production schema no longer matches `main`'s migrations — are in
 [deployment.md](./deployment.md), not here.
+
+### Fixed since the audit (2026-08-27)
+
+| | Was |
+|---|---|
+| §2.1b promo box | Removed from all four order panels, with its CSS |
+| §2.5 frontend tests | 28 tests across money, delivery and permissions |
+| §3.3 seeded roles | Now writes all 14 keys and mirrors `defaultRoles`; unknown keys throw |
+| §3.6 "under ₱100" shelf | Now filters on price |
+| §4 dead pages | `WorkspacePage.vue` and `AnalyticsPage.vue` deleted |
+| — | `ownerPageKeys` corrected and wired to the router (found by the new tests — see below) |
+| — | `vite build` now refuses a production bundle with a blank tenant |
+
+**`ownerPageKeys` was wrong, and dead.** It listed `employees` as owner-only,
+contradicting both the router (which marked only `integrations` and
+`diagnostics` as `ownerOnly`) and `defaultRoles` (Manager holds `employees`
+through `canManageStaff`). Nothing read it, so nothing broke — but the router
+duplicated the same intent in route meta, free to drift. The list is now
+correct, `isOwnerPage()` derives from it, the guard in `createPosApp.ts` calls
+that, and the duplicated `ownerOnly` meta flags are gone. One source of truth.
+
+Still open, and needing a product decision rather than a patch: §2.1 (the
+discount engine itself), §2.2, §2.3, §2.4, §3.1, §3.2, §3.4, §3.5.
 
 ---
 
@@ -54,7 +77,12 @@ strikethrough and a "Save 21%" badge via `discountPercent()`
 of a shelf price the merchant already set. A cashier cannot take ₱20 off a
 sale, and the schema has nowhere to record it if they could.
 
-### 2.1b The promo code box is live in the till and does nothing
+### 2.1b The promo code box is live in the till and does nothing — FIXED
+
+> **Resolved 2026-08-27.** The input and its clear button are gone from all
+> four panels, along with their CSS. The payment-method selector that shared
+> the row stayed. Wiring it instead would have needed §2.1 first. What follows
+> is the original finding.
 
 All four order panels — `OrderPanel`, `GroceryOrderPanel`,
 `RestaurantOrderPanel`, `NailSalonOrderPanel` — render an input placeholdered
@@ -112,7 +140,12 @@ Consequence in production today: org `sm` has 464 active products and is the
 one the build is pinned to; org `colewan-market` exists, is active, and is
 unreachable as a shop.
 
-### 2.5 Frontend tests
+### 2.5 Frontend tests — PARTLY ADDRESSED
+
+> **Partly resolved 2026-08-27.** `apps/web/test/` now holds 28 vitest cases
+> over money (tax rounding, discount badge, currency), delivery (fee banding,
+> the service-area limit, haversine) and permissions. `npm test` runs them.
+> Still uncovered: components, the Pinia stores, and the sync outbox.
 
 There is no `vitest.config`, no `*.spec.ts`, and no `*.test.ts` anywhere in
 `apps/` or `packages/`. The backend has 17 API feature-test files (150 tests,
@@ -153,7 +186,11 @@ refresh. The infrastructure is deployed and healthy — `omaykan-reverb` and
 broadcast was observed completing in 293ms on a local instance. It is simply
 only listened to in one place.
 
-### 3.3 Seeded roles disagree with the app's own page keys
+### 3.3 Seeded roles disagree with the app's own page keys — FIXED
+
+> **Resolved 2026-08-27.** The seeder now writes all 14 keys for every role and
+> mirrors `defaultRoles`, and `permissionsFor()` throws on a key that is not a
+> real page, so this cannot silently return.
 
 [DatabaseSeeder.php:20](../backend/database/seeders/DatabaseSeeder.php#L20)
 grants permissions over:
@@ -206,7 +243,11 @@ intended sink. The pipe is built at both ends and empty in the middle.
 
 ---
 
-### 3.6 The "under ₱100" shelf does not filter by price (latent)
+### 3.6 The "under ₱100" shelf does not filter by price (latent) — FIXED
+
+> **Resolved 2026-08-27.** The shelf filters on `priceCents < 10000` before
+> sorting. `ProductRow` already self-hides when empty, so a shop with nothing
+> under ₱100 simply shows one row fewer.
 
 [LandingPage.vue:146](../apps/web/src/landing/LandingPage.vue#L146) builds the
 `cheapest` shelf by sorting on price and taking the first 12. It applies no
@@ -223,7 +264,10 @@ Either filter on `priceCents < 10000` or retitle the shelf.
 
 ---
 
-## 4. Dead code
+## 4. Dead code — REMOVED
+
+> **Resolved 2026-08-27.** Both files deleted; `pages/` now holds 15 components
+> and the router routes all 15.
 
 Two page components are neither routed nor imported anywhere:
 

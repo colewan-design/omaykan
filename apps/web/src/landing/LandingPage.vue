@@ -143,8 +143,18 @@ const popular = computed(() => visibleProducts.value.slice(0, 12))
 
 const deals = computed(() => visibleProducts.value.filter((p) => discountPercent(p) !== null))
 
+/**
+ * The shelf is titled "under ₱100", so it has to filter on that and not just
+ * take the twelve cheapest — a shop whose cheapest line is ₱120 would
+ * otherwise have the row advertise it as under ₱100.
+ */
+const CHEAP_MAX_CENTS = 10000
+
 const cheapest = computed(() =>
-  [...visibleProducts.value].sort((a, b) => a.priceCents - b.priceCents).slice(0, 12),
+  visibleProducts.value
+    .filter((p) => p.priceCents < CHEAP_MAX_CENTS)
+    .sort((a, b) => a.priceCents - b.priceCents)
+    .slice(0, 12),
 )
 
 /** Products from the largest category, for the editorial block. */

@@ -935,59 +935,17 @@ button {
   gap: var(--space-3);
 }
 
-.order-panel__promo-row {
+.order-panel__footer-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
 }
 
-.order-panel__promo {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 160px;
-  min-height: 44px;
-  padding: 0 4px 0 var(--space-4);
-  border: 0.5px solid var(--separator);
-  border-radius: var(--radius-pill);
-  background: var(--bg-elevated);
-}
 
-.order-panel__promo input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--text-primary);
-  font: var(--type-body);
-}
 
-.order-panel__promo input::placeholder {
-  color: var(--text-tertiary);
-}
 
-.order-panel__promo-apply {
-  display: inline-grid;
-  flex: none;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border: none;
-  border-radius: var(--radius-pill);
-  background: var(--fill);
-  color: var(--text-secondary);
-  transition:
-    background var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out);
-}
 
-.order-panel__promo-apply:hover {
-  background: color-mix(in srgb, var(--accent) 14%, var(--fill));
-  color: var(--accent);
-}
 
 .order-panel__payment-method {
   flex: none;

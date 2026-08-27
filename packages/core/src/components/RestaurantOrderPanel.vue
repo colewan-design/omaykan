@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Minus, Pencil, Plus, ReceiptText, TicketPercent, Trash2 } from '@lucide/vue'
+import { Minus, Pencil, Plus, ReceiptText, Trash2 } from '@lucide/vue'
 import { computed, reactive, ref } from 'vue'
 import { formatCurrency, paymentMethodOptions } from '@pos/shared/index'
 import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
@@ -10,13 +10,9 @@ import { haptic, ImpactStyle } from '@pos/core/utils/haptics'
 const store = usePosStore()
 const showPayment = ref(false)
 const editingCustomer = ref(false)
-const promoCode = ref('')
 const failedThumbs = reactive<Record<string, boolean>>({})
 const emit = defineEmits<{ 'payment-open': [] }>()
 
-function clearPromo() {
-  promoCode.value = ''
-}
 
 const tableOptions = [
   { value: '', label: 'No table' },
@@ -174,14 +170,7 @@ async function openPayment() {
     </div>
 
     <div class="order-panel__footer">
-      <div class="order-panel__promo-row">
-        <label class="order-panel__promo">
-          <input v-model="promoCode" type="text" placeholder="Add Promo or Voucher" />
-        </label>
-        <button class="order-panel__promo-apply" type="button" aria-label="Clear promo code" @click="clearPromo">
-          <TicketPercent :size="16" />
-        </button>
-
+      <div class="order-panel__footer-row">
         <AutocompleteSelect
           flat
           class="order-panel__payment-method"

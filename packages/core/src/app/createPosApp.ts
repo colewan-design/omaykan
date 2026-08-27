@@ -4,6 +4,7 @@ import AppShell from '@pos/core/app/AppShell.vue'
 import { createPosRouter } from '@pos/core/app/router'
 import { setPosRepository } from '@pos/core/services/runtime'
 import { useAuthStore } from '@pos/core/stores/auth'
+import { isOwnerPage } from '@pos/shared/index'
 import type { PosRepository } from '@pos/data/index'
 import '@pos/core/styles/tokens.css'
 import '@pos/core/styles/app.css'
@@ -42,7 +43,7 @@ export function createPosApp(options: { repository: PosRepository }) {
       return { name: 'auth', query: { redirect: to.fullPath } }
     }
 
-    if (to.meta.ownerOnly && !auth.isOwner) {
+    if (to.meta.pageKey && isOwnerPage(to.meta.pageKey) && !auth.isOwner) {
       if (auth.firstAccessiblePage) {
         return auth.firstAccessiblePage === 'register'
           ? { name: 'register' }

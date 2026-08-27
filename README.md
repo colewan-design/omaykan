@@ -85,7 +85,18 @@ default, which is why the toolchain can look MySQL-shaped at a glance.
 
 The only other database here is the **SQLite in-memory** one `phpunit.xml` uses
 for the test suite. That is deliberate — it is what lets a fresh clone run
-`php artisan test` with no database setup at all.
+`php artisan test` with no database setup at all. It is also blind to anything
+PostgreSQL-specific, so there is a second lane that runs the same tests against
+a real database:
+
+```bash
+createdb -O omaykan omaykan_test        # once
+composer test:pgsql                     # php artisan test -c phpunit.pgsql.xml
+```
+
+Use it for anything touching queries, casts or migrations. It exists because a
+regression test once passed on SQLite while the bug it covered would have 500'd
+the live storefront — see [e2e-findings.md §7.2](documentation/e2e-findings.md).
 
 ### Day to day
 

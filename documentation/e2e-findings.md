@@ -54,7 +54,12 @@ BFE356E2  served   paid  delivery  delivered  Test Rider 2    183.40
 
 ---
 
-## 2. The defect: a product a merchant lists in their own POS cannot be sold online
+## 2. The defect: a product a merchant lists in their own POS cannot be sold online — FIXED
+
+> **Resolved 2026-08-27.** `applyProductEvent` now sets `business_modes`:
+> the client's value if sent, else what the product already had (so a price edit
+> does not un-list it), else the store's own mode. Covered by
+> `SyncProductVisibilityTest`. Both suites now run 10/10.
 
 **Severity: high.** It breaks the product's core loop for every new item.
 
@@ -251,7 +256,13 @@ point.
 `lockForUpdate` in `OnlineOrderController` does its job — case 3 is a genuine
 race and stock never went negative.
 
-### 6.1 Settling an order twice records the payment twice — and it corrupts cash reconciliation
+### 6.1 Settling an order twice records the payment twice — and it corrupts cash reconciliation — FIXED
+
+> **Resolved 2026-08-27.** `settlePayment` refuses a 422 when the order is
+> already paid. Refusing rather than silently no-opping is deliberate: a second
+> settlement means something confusing happened at the counter. Covered by
+> `SellerSettlePaymentTest`, including one test that reproduces the shift-close
+> arithmetic.
 
 **Severity: high. This one touches money.**
 
@@ -323,3 +334,69 @@ Now every assertion reads state back through the API: stock from the storefront
 catalog's `stockQty`, product rows from `/api/sync/pull`, and case 8 asserts the
 refusal itself rather than counting rows. The database was consulted exactly
 once, by hand, to confirm the money bug in §6.1 — which is the right use for it.
+
+---
+
+## 7. What fixing it uncovered (2026-08-27)
+
+### 7.1 A single uncategorised product would have 500'd the entire storefront
+
+Only reachable *because* of the §2 fix. Once a POS-created product could become
+visible, the first one without a category took the whole catalog down.
+
+`StorefrontCatalogController` falls back to the string `'uncategorized'` for a
+product with no `category_id`, and that string went straight into a `whereIn`
+against the uuid column `categories.id`:
+
+```
+SQLSTATE[22P02]: invalid input syntax for type uuid: "uncategorized"
+```
+
+Not a filtered-out row — a **500 for every product and every shopper**, from one
+mis-filed item. SQLite tolerated the comparison, which is why it had never
+shown up locally.
+
+Fixed by removing the sentinel before the query. Production was checked and is
+clean: 0 active uncategorised products, so this never fired live.
+
+### 7.2 The test suite could not have caught it, and still cannot catch its kind
+
+This is the more useful finding.
+
+The regression test written for §7.1 **passed with the bug still in place.** The
+whole suite runs on SQLite in memory (`phpunit.xml`), and SQLite compares a
+string to a uuid column without complaint. A test that passes against broken
+code is worse than no test — it certifies the bug.
+
+The suite is structurally blind to every PostgreSQL-specific behaviour:
+type strictness, uuid and jsonb casts, transaction and locking semantics. All
+160 tests were green while the storefront was one uncategorised product away
+from a total outage.
+
+**Added a second lane.** `backend/phpunit.pgsql.xml` runs the same suite against
+a real PostgreSQL database:
+
+```bash
+php artisan test -c phpunit.pgsql.xml     # or: composer test:pgsql
+```
+
+Proven to work rather than assumed: with the §7.1 fix reverted, the SQLite lane
+reports the test passing and the PostgreSQL lane fails it with the exact 22P02.
+
+Full suite on PostgreSQL: **160 passed**, no other engine-specific failures
+lurking.
+
+Keep both. SQLite stays the default for speed and zero setup; the PostgreSQL
+lane is what should gate anything touching queries, casts or migrations.
+
+### 7.3 Verification of the fixes
+
+| | |
+|---|---|
+| New regression tests | 10, across 3 files |
+| Fail without the fixes | 8 of 9 confirmed by reverting and re-running |
+| Backend suite, SQLite | 160 passed |
+| Backend suite, PostgreSQL | 160 passed |
+| e2e suite 1 (order chain) | **10/10**, up from 7/10 |
+| e2e suite 2 (edge cases) | **10/10**, up from 9/10 |
+| Production data needing cleanup | none — 0 products without modes, 0 uncategorised, 0 duplicate payments |

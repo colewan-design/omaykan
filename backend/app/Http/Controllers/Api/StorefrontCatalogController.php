@@ -24,6 +24,9 @@ use Illuminate\Http\Request;
  */
 class StorefrontCatalogController extends Controller
 {
+    /** Stands in for a product the merchant never filed under a category. */
+    private const UNCATEGORISED = 'uncategorized';
+
     public function show(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -88,7 +91,7 @@ class StorefrontCatalogController extends Controller
 
             $visible[] = [
                 'id' => $product->id,
-                'categoryId' => $product->category_id ?? 'uncategorized',
+                'categoryId' => $product->category_id ?? self::UNCATEGORISED,
                 'sku' => $product->sku ?? '',
                 'barcode' => $product->barcode ?? '',
                 'name' => $product->name,
@@ -107,7 +110,17 @@ class StorefrontCatalogController extends Controller
 
         // Only categories that still have something to show — an empty category
         // renders as a dead tab. Matches what the demo catalog does.
-        $usedCategoryIds = array_unique(array_column($visible, 'categoryId'));
+        //
+        // The sentinel has to come back out before this reaches the query.
+        // `categories.id` is a uuid column, and PostgreSQL rejects the
+        // comparison outright with 22P02 rather than simply not matching, so a
+        // single uncategorised product would 500 the whole storefront — every
+        // product, for every shopper. SQLite tolerated it, which is why this
+        // survived local testing.
+        $usedCategoryIds = array_values(array_filter(
+            array_unique(array_column($visible, 'categoryId')),
+            fn ($id) => $id !== self::UNCATEGORISED,
+        ));
 
         $categories = Category::query()
             ->where('organization_id', $store->organization_id)

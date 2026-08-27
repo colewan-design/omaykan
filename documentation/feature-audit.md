@@ -32,11 +32,12 @@ the running system.
 | BIR compliance | Unverified — blocks charging anyone |
 
 Two ten-case end-to-end passes are in [e2e-findings.md](./e2e-findings.md).
-They found two high-severity defects not listed here, neither with any test
-coverage: a product a merchant creates in their own POS can never be sold
-online (the sync path never sets `business_modes`), and settling an order twice
-records the payment twice — which inflates expected cash at shift close and
-makes an honest drawer reconcile short.
+They found three high-severity defects not listed here, none with any test
+coverage: a product a merchant creates in their own POS could never be sold
+online, settling an order twice double-recorded the payment and corrupted cash
+reconciliation, and one uncategorised product would have 500'd the whole
+storefront on PostgreSQL. **All three are fixed**, with regression tests and a
+new PostgreSQL test lane — the SQLite suite could not catch the third.
 
 Operational gaps — deploy process, backups, monitoring, and the fact that the
 production schema no longer matches `main`'s migrations — are in

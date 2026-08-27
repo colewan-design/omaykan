@@ -349,6 +349,7 @@ class SyncController extends Controller
             ['id' => $entityId],
             [
                 'organization_id' => $device->organization_id,
+                'business_modes' => $this->businessModesFor($device, $entityId, $payload),
                 'category_id' => $payload['categoryId'] ?? null,
                 'sku' => $payload['sku'] ?? null,
                 'barcode' => $payload['barcode'] ?? null,
@@ -387,6 +388,42 @@ class SyncController extends Controller
             $inventory->deleted_at = null;
             $inventory->save();
         }
+    }
+
+    /**
+     * Which storefronts a product is sold in.
+     *
+     * This decides whether a product is sellable at all: the storefront catalog
+     * filters on it, and OnlineOrderController refuses any line whose product
+     * does not carry the store's mode. Until 2026-08-27 nothing on this path
+     * wrote it, so every product a merchant created in their own till was
+     * invisible online and unorderable — silently, because it saved, synced and
+     * listed in the POS exactly as expected.
+     *
+     * Order of preference:
+     *  1. what the client sent, for an organization running several modes
+     *  2. what the product already had, so an update that omits the field does
+     *     not quietly un-list it
+     *  3. the store's own mode, which is what a single-mode merchant means
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<int, string>
+     */
+    private function businessModesFor(Device $device, string $entityId, array $payload): array
+    {
+        $sent = $payload['businessModes'] ?? null;
+        if (is_array($sent) && $sent !== []) {
+            return array_values(array_unique(array_filter($sent, 'is_string')));
+        }
+
+        $existing = Product::query()->where('id', $entityId)->value('business_modes');
+        if (is_array($existing) && $existing !== []) {
+            return $existing;
+        }
+
+        $storeMode = $device->store?->business_mode;
+
+        return $storeMode === null ? [] : [$storeMode];
     }
 
     private function applyInventoryAdjustmentEvent(Device $device, string $entityId, array $payload): void

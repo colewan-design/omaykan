@@ -143,6 +143,22 @@ class SellerOrderController extends Controller
         $device = $this->deviceFromRequest($request);
         $this->authorizeOrder($order, $device);
 
+        // Settling twice used to return 200 twice and write a second Payment row
+        // for the full total. That is not a stray row: cashSalesForShift() sums
+        // this table into the cash a drawer is expected to hold at shift close,
+        // so a duplicated cash payment makes an honest till reconcile short by
+        // that amount — a false discrepancy aimed at whoever was on the counter.
+        // A double tap on a slow connection was enough to cause it.
+        //
+        // Refusing rather than quietly no-opping is deliberate: a second
+        // settlement means something confusing happened at the counter, and the
+        // person tapping should see that rather than have it swallowed.
+        abort_if(
+            $order->payment_status === 'paid',
+            422,
+            'That order has already been settled.',
+        );
+
         $validated = $request->validate([
             'paymentMethod' => ['required', Rule::in(['cash', 'card', 'ewallet'])],
             'tenderedCents' => ['nullable', 'integer', 'min:0'],

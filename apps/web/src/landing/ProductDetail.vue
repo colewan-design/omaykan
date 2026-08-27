@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   calculateTax,
   discountPercent,
@@ -78,9 +78,74 @@ watch(
   () => {
     quantity.value = 1
     justAdded.value = false
+    endZoom()
     window.clearTimeout(resetTimer)
   },
 )
+
+/**
+ * Hover-to-zoom on the detail shot: the pack photo is the only place a shopper
+ * can read a label they'd otherwise pick up and turn over, so pointing at a
+ * corner of it magnifies that corner in place rather than opening a lightbox.
+ * The frame already clips (overflow: hidden), so scaling the <img> about the
+ * cursor is the whole trick — no second copy of the image to download.
+ */
+const ZOOM_SCALE = 2.6
+
+const zoomImage = ref<HTMLImageElement | null>(null)
+const zooming = ref(false)
+const zoomOrigin = ref('50% 50%')
+
+// Touch and pen have no hover to track, and a phone's tap would leave the photo
+// stuck at 2.6x with no way out, so the whole behaviour is mouse-only.
+const pointerFine = ref(false)
+const hoverQuery =
+  typeof window !== 'undefined' && window.matchMedia
+    ? window.matchMedia('(hover: hover) and (pointer: fine)')
+    : null
+
+function readPointer() {
+  pointerFine.value = hoverQuery?.matches ?? false
+}
+
+onMounted(() => {
+  readPointer()
+  hoverQuery?.addEventListener('change', readPointer)
+})
+onBeforeUnmount(() => hoverQuery?.removeEventListener('change', readPointer))
+
+const canZoom = computed(() => pointerFine.value && Boolean(props.product.imageUrl))
+
+const zoomStyle = computed(() =>
+  zooming.value
+    ? { transform: `scale(${ZOOM_SCALE})`, transformOrigin: zoomOrigin.value }
+    : undefined,
+)
+
+function trackZoom(event: MouseEvent) {
+  const img = zoomImage.value
+  if (!canZoom.value || !img) return
+  // Measure against the <img>, not the frame: object-fit leaves letterboxing
+  // and the frame has padding, so frame-relative coordinates would drift the
+  // magnified point away from whatever the cursor is actually over.
+  const rect = img.getBoundingClientRect()
+  if (rect.width === 0 || rect.height === 0) return
+  const x = ((event.clientX - rect.left) / rect.width) * 100
+  const y = ((event.clientY - rect.top) / rect.height) * 100
+  // Clamped so the padding around the photo pins the origin to the nearest
+  // edge instead of pushing the image out of its own frame.
+  zoomOrigin.value = `${clamp(x)}% ${clamp(y)}%`
+  zooming.value = true
+}
+
+function clamp(percent: number) {
+  return Math.min(100, Math.max(0, percent)).toFixed(2)
+}
+
+function endZoom() {
+  zooming.value = false
+  zoomOrigin.value = '50% 50%'
+}
 
 function step(direction: -1 | 1) {
   const next = quantity.value + direction
@@ -114,10 +179,23 @@ function addToCart() {
     <div class="fdpdp__body">
       <!-- Contain, not cover: a detail shot has to show the whole pack — the
            weight, the variant — where a card only needs to be recognisable. -->
-      <div class="fdpdp__art">
+      <div
+        class="fdpdp__art"
+        :class="{ 'fdpdp__art--zoomable': canZoom, 'fdpdp__art--zooming': zooming }"
+        @mousemove="trackZoom"
+        @mouseleave="endZoom"
+      >
         <span v-if="discount !== null" class="fdpdp__flag">SALE — save {{ discount }}%</span>
-        <img v-if="product.imageUrl" :src="product.imageUrl" :alt="product.name" />
+        <img
+          v-if="product.imageUrl"
+          ref="zoomImage"
+          :src="product.imageUrl"
+          :alt="product.name"
+          :style="zoomStyle"
+          draggable="false"
+        />
         <div v-else class="fdpdp__placeholder" aria-hidden="true">🛒</div>
+        <span v-if="canZoom" class="fdpdp__zoomhint" aria-hidden="true">Hover to zoom</span>
       </div>
 
       <div class="fdpdp__info">
@@ -257,8 +335,43 @@ function addToCart() {
   background: #fff;
   overflow: hidden;
 }
-.fdpdp__art img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.fdpdp__art img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  /* Short, so the photo tracks the cursor rather than lagging behind it, but
+     not zero — an instant jump on the first pixel of movement reads as a
+     glitch. Only the scale-in and scale-out are eased; while zoomed the
+     transform-origin is unanimated so tracking stays 1:1. */
+  transition: transform 180ms ease-out;
+  will-change: transform;
+}
+.fdpdp__art--zooming img { transition: transform 90ms ease-out; }
+.fdpdp__art--zoomable { cursor: zoom-in; }
 .fdpdp__placeholder { font-size: 72px; }
+
+.fdpdp__zoomhint {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(26, 26, 26, 0.62);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  opacity: 0;
+  transition: opacity 160ms;
+  pointer-events: none;
+}
+.fdpdp__art:hover .fdpdp__zoomhint { opacity: 1; }
+.fdpdp__art--zooming .fdpdp__zoomhint { opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .fdpdp__art img,
+  .fdpdp__art--zooming img { transition: none; }
+}
 
 .fdpdp__flag {
   position: absolute;
@@ -271,6 +384,8 @@ function addToCart() {
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.04em;
+  /* Above the magnified photo, which otherwise slides out from under it. */
+  z-index: 2;
 }
 
 .fdpdp__info { padding-top: 6px; }

@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { Mail, MailOpen, RefreshCw, Search } from '@lucide/vue'
-import { computed, ref } from 'vue'
+import { ArrowLeft, Mail, MailOpen, RefreshCw, Search } from '@lucide/vue'
+import { computed, onMounted, ref } from 'vue'
 
-const props = defineProps<{ token: string }>()
-const emit = defineEmits<{ (event: 'session-ended', message: string): void }>()
+const TOKEN_STORAGE_KEY = 'omk_platform_token'
 
 interface InboxSummary {
   id: string
@@ -24,17 +23,29 @@ interface InboxMessage extends InboxSummary {
   inReplyTo: string
 }
 
-function authHeaders(json = true): Record<string, string> {
+interface PlatformAdmin {
+  id?: string
+  name: string
+  email: string
+  role?: string
+}
+
+function currentToken(): string {
+  return window.localStorage.getItem(TOKEN_STORAGE_KEY) ?? ''
+}
+
+function authHeaders(json = false): Record<string, string> {
   return {
-    ...(json ? { 'Content-Type': 'application/json' } : {}),
     Accept: 'application/json',
-    Authorization: `Bearer ${props.token}`,
+    Authorization: `Bearer ${currentToken()}`,
+    ...(json ? { 'Content-Type': 'application/json' } : {}),
   }
 }
 
 const loading = ref(false)
 const loadingMessage = ref(false)
 const sending = ref(false)
+const checkingSession = ref(true)
 const errorMessage = ref('')
 const successMessage = ref('')
 const unreadCount = ref(0)
@@ -46,6 +57,8 @@ const replyBody = ref('')
 const replyError = ref('')
 const searchQuery = ref('')
 const unreadOnly = ref(false)
+const signedIn = ref(false)
+const admin = ref<PlatformAdmin | null>(null)
 
 const filteredMessages = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
@@ -55,21 +68,28 @@ const filteredMessages = computed(() => {
     if (!matchesUnread) return false
     if (!query) return true
 
-    const haystack = [
-      message.subject,
-      message.fromName,
-      message.fromEmail,
-      message.snippet,
-    ]
+    return [message.subject, message.fromName, message.fromEmail, message.snippet]
       .join(' ')
       .toLowerCase()
-
-    return haystack.includes(query)
+      .includes(query)
   })
 })
 
 const selectedSummary = computed(() => messages.value.find((message) => message.id === selectedId.value) ?? null)
 const selectedReplyEmail = computed(() => selected.value?.replyToEmail || selected.value?.fromEmail || '')
+
+function clearSession(message = 'Your operator session has ended. Sign in again.') {
+  window.localStorage.removeItem(TOKEN_STORAGE_KEY)
+  signedIn.value = false
+  admin.value = null
+  messages.value = []
+  unreadCount.value = 0
+  selectedId.value = ''
+  selected.value = null
+  replySubject.value = ''
+  replyBody.value = ''
+  errorMessage.value = message
+}
 
 function formatDate(value: string | null): string {
   if (!value) return 'Unknown time'
@@ -83,9 +103,9 @@ function formatListDate(value: string | null): string {
   const now = new Date()
   const sameDay = date.toDateString() === now.toDateString()
 
-  return new Intl.DateTimeFormat('en-PH', sameDay
-    ? { hour: '2-digit', minute: '2-digit' }
-    : { month: 'short', day: 'numeric' },
+  return new Intl.DateTimeFormat(
+    'en-PH',
+    sameDay ? { hour: '2-digit', minute: '2-digit' } : { month: 'short', day: 'numeric' },
   ).format(date)
 }
 
@@ -97,9 +117,39 @@ async function parseJson(response: Response) {
   return response.json().catch(() => ({}))
 }
 
-function handleSessionLoss(message: string) {
-  emit('session-ended', message)
-  throw new Error(message)
+async function ensureSession() {
+  checkingSession.value = true
+  errorMessage.value = ''
+
+  const token = currentToken()
+  if (!token) {
+    signedIn.value = false
+    checkingSession.value = false
+    return
+  }
+
+  try {
+    const response = await fetch('/api/platform/me', {
+      headers: authHeaders(),
+    })
+    const data = await parseJson(response)
+
+    if (response.status === 401 || response.status === 403) {
+      clearSession(data.message || 'Your operator session has ended. Sign in again.')
+      return
+    }
+    if (!response.ok) {
+      throw new Error(data.message || 'Unable to verify your operator session.')
+    }
+
+    admin.value = data.admin
+    signedIn.value = true
+    await loadList()
+  } catch (err) {
+    errorMessage.value = err instanceof Error ? err.message : 'Unable to verify your operator session.'
+  } finally {
+    checkingSession.value = false
+  }
 }
 
 async function loadList(selectMessageId?: string) {
@@ -109,12 +159,13 @@ async function loadList(selectMessageId?: string) {
 
   try {
     const response = await fetch('/api/platform/inbox?limit=30', {
-      headers: authHeaders(false),
+      headers: authHeaders(),
     })
     const data = await parseJson(response)
 
     if (response.status === 401 || response.status === 403) {
-      handleSessionLoss(data.message || 'Your session has ended. Sign in again.')
+      clearSession(data.message || 'Your operator session has ended. Sign in again.')
+      return
     }
     if (!response.ok) {
       throw new Error(data.message || data.error || 'Unable to load the support inbox.')
@@ -123,10 +174,7 @@ async function loadList(selectMessageId?: string) {
     messages.value = data.messages ?? []
     unreadCount.value = data.unreadCount ?? 0
 
-    const nextId = selectMessageId
-      ?? selectedId.value
-      ?? messages.value[0]?.id
-
+    const nextId = selectMessageId ?? selectedId.value ?? messages.value[0]?.id
     if (nextId) {
       await openMessage(nextId)
     } else {
@@ -150,12 +198,13 @@ async function openMessage(messageId: string) {
 
   try {
     const response = await fetch(`/api/platform/inbox/${messageId}`, {
-      headers: authHeaders(false),
+      headers: authHeaders(),
     })
     const data = await parseJson(response)
 
     if (response.status === 401 || response.status === 403) {
-      handleSessionLoss(data.message || 'Your session has ended. Sign in again.')
+      clearSession(data.message || 'Your operator session has ended. Sign in again.')
+      return
     }
     if (!response.ok) {
       throw new Error(data.message || data.error || 'Unable to load that message.')
@@ -163,7 +212,6 @@ async function openMessage(messageId: string) {
 
     selected.value = data.message
     replySubject.value = defaultReplySubject(data.message?.subject ?? '')
-
     messages.value = messages.value.map((message) =>
       message.id === messageId
         ? {
@@ -198,13 +246,14 @@ async function sendReply() {
   try {
     const response = await fetch(`/api/platform/inbox/${selected.value.id}/reply`, {
       method: 'POST',
-      headers: authHeaders(),
+      headers: authHeaders(true),
       body: JSON.stringify({ subject, message }),
     })
     const data = await parseJson(response)
 
     if (response.status === 401 || response.status === 403) {
-      handleSessionLoss(data.message || 'Your session has ended. Sign in again.')
+      clearSession(data.message || 'Your operator session has ended. Sign in again.')
+      return
     }
     if (!response.ok) {
       throw new Error(data.message || data.error || 'Unable to send that reply.')
@@ -220,154 +269,181 @@ async function sendReply() {
   }
 }
 
-void loadList()
+onMounted(() => {
+  void ensureSession()
+})
 </script>
 
 <template>
   <section class="si-page">
-    <div class="si-shell surface-panel">
-      <header class="si-header">
-        <div class="si-header__copy">
-          <h1 class="si-title">Support Inbox</h1>
-          <p class="si-copy">
-            Read messages sent to support@omaykan.com and reply without leaving the operator portal.
-          </p>
-        </div>
+    <div class="si-frame">
+      <header class="si-topbar">
+        <a class="si-back" href="/platform-admin">
+          <ArrowLeft :size="15" />
+          <span>Back to portal</span>
+        </a>
 
-        <div class="si-header__actions">
-          <span class="si-counter">{{ unreadCount }} unread</span>
-          <button class="si-refresh" type="button" :disabled="loading" @click="loadList()">
-            <RefreshCw :size="14" :class="{ 'si-spin': loading }" />
-            <span>{{ loading ? 'Refreshing...' : 'Refresh' }}</span>
-          </button>
+        <div v-if="admin" class="si-operator">
+          <span>{{ admin.name }}</span>
+          <span>{{ admin.email }}</span>
         </div>
       </header>
 
-      <p v-if="errorMessage" class="auth-error si-banner si-banner--error">{{ errorMessage }}</p>
-      <p v-else-if="successMessage" class="si-banner si-banner--success">{{ successMessage }}</p>
+      <section v-if="checkingSession" class="si-gate surface-panel">
+        <h1>Checking session</h1>
+        <p>Loading your support inbox access.</p>
+      </section>
 
-      <div class="si-toolbar">
-        <label class="si-search" aria-label="Search inbox">
-          <Search :size="15" />
-          <input
-            v-model="searchQuery"
-            type="search"
-            placeholder="Search sender, subject or snippet"
-            autocomplete="off"
-          >
-        </label>
+      <section v-else-if="!signedIn" class="si-gate surface-panel">
+        <h1>Operator sign-in required</h1>
+        <p>Open the platform portal first, then come back here to work the support inbox.</p>
+        <a class="primary-button si-gate__action" href="/platform-admin">Go to platform sign-in</a>
+      </section>
 
-        <button
-          class="si-chip"
-          :class="{ 'si-chip--active': unreadOnly }"
-          type="button"
-          @click="unreadOnly = !unreadOnly"
-        >
-          {{ unreadOnly ? 'Unread only on' : 'Unread only' }}
-        </button>
-
-        <div class="si-toolbar__meta">
-          <span>{{ filteredMessages.length }} shown</span>
-          <span>{{ messages.length }} total</span>
-        </div>
-      </div>
-
-      <div class="si-layout">
-        <aside class="si-list" aria-label="Support messages">
-          <div class="si-list__head">
-            <span>Messages</span>
-            <span>Received</span>
+      <section v-else class="si-shell surface-panel">
+        <header class="si-header">
+          <div class="si-header__copy">
+            <h1 class="si-title">Support Inbox</h1>
+            <p class="si-copy">
+              Read messages sent to support@omaykan.com and reply without leaving the inbox.
+            </p>
           </div>
 
-          <div v-if="!filteredMessages.length && !loading" class="si-empty si-empty--list">
-            {{ searchQuery.trim() ? 'No messages match that search.' : 'No support messages yet.' }}
+          <div class="si-header__actions">
+            <span class="si-counter">{{ unreadCount }} unread</span>
+            <button class="si-refresh" type="button" :disabled="loading" @click="loadList()">
+              <RefreshCw :size="14" :class="{ 'si-spin': loading }" />
+              <span>{{ loading ? 'Refreshing...' : 'Refresh' }}</span>
+            </button>
           </div>
+        </header>
+
+        <p v-if="errorMessage" class="auth-error si-banner si-banner--error">{{ errorMessage }}</p>
+        <p v-else-if="successMessage" class="si-banner si-banner--success">{{ successMessage }}</p>
+
+        <div class="si-toolbar">
+          <label class="si-search" aria-label="Search inbox">
+            <Search :size="15" />
+            <input
+              v-model="searchQuery"
+              type="search"
+              placeholder="Search sender, subject or snippet"
+              autocomplete="off"
+            >
+          </label>
 
           <button
-            v-for="message in filteredMessages"
-            :key="message.id"
-            class="si-row"
-            :class="{ 'si-row--active': message.id === selectedId, 'si-row--unread': !message.isRead }"
+            class="si-chip"
+            :class="{ 'si-chip--active': unreadOnly }"
             type="button"
-            @click="openMessage(message.id)"
+            @click="unreadOnly = !unreadOnly"
           >
-            <div class="si-row__status">
-              <span class="si-dot" :class="{ 'si-dot--muted': message.isRead }"></span>
-              <component :is="message.isRead ? MailOpen : Mail" :size="15" />
-            </div>
-
-            <div class="si-row__content">
-              <div class="si-row__top">
-                <strong>{{ message.fromName }}</strong>
-                <span>{{ message.subject }}</span>
-              </div>
-              <div class="si-row__meta">
-                <span>{{ message.fromEmail }}</span>
-                <span>{{ message.snippet }}</span>
-              </div>
-            </div>
-
-            <time class="si-row__time">{{ formatListDate(message.receivedAt) }}</time>
+            {{ unreadOnly ? 'Unread only on' : 'Unread only' }}
           </button>
-        </aside>
 
-        <section class="si-thread">
-          <template v-if="selected">
-            <div class="si-thread__header">
-              <div>
-                <h2 class="si-thread__subject">{{ selected.subject }}</h2>
-                <div class="si-thread__meta">
-                  <span>From {{ selected.fromName }} &lt;{{ selected.fromEmail }}&gt;</span>
-                  <span>Reply to {{ selected.replyToName }} &lt;{{ selectedReplyEmail }}&gt;</span>
-                  <span>{{ formatDate(selected.receivedAt) }}</span>
+          <div class="si-toolbar__meta">
+            <span>{{ filteredMessages.length }} shown</span>
+            <span>{{ messages.length }} total</span>
+          </div>
+        </div>
+
+        <div class="si-layout">
+          <aside class="si-list" aria-label="Support messages">
+            <div class="si-list__head">
+              <span>Messages</span>
+              <span>Received</span>
+            </div>
+
+            <div v-if="!filteredMessages.length && !loading" class="si-empty si-empty--list">
+              {{ searchQuery.trim() ? 'No messages match that search.' : 'No support messages yet.' }}
+            </div>
+
+            <button
+              v-for="message in filteredMessages"
+              :key="message.id"
+              class="si-row"
+              :class="{ 'si-row--active': message.id === selectedId, 'si-row--unread': !message.isRead }"
+              type="button"
+              @click="openMessage(message.id)"
+            >
+              <div class="si-row__status">
+                <span class="si-dot" :class="{ 'si-dot--muted': message.isRead }"></span>
+                <component :is="message.isRead ? MailOpen : Mail" :size="15" />
+              </div>
+
+              <div class="si-row__content">
+                <div class="si-row__top">
+                  <strong>{{ message.fromName }}</strong>
+                  <span>{{ message.subject }}</span>
+                </div>
+                <div class="si-row__meta">
+                  <span>{{ message.fromEmail }}</span>
+                  <span>{{ message.snippet }}</span>
                 </div>
               </div>
-              <span class="si-thread__badge">{{ selectedSummary?.isRead ? 'Opened' : 'New' }}</span>
-            </div>
 
-            <div class="si-thread__body">
-              {{ selected.body || selectedSummary?.snippet || 'No message body available.' }}
-            </div>
+              <time class="si-row__time">{{ formatListDate(message.receivedAt) }}</time>
+            </button>
+          </aside>
 
-            <form class="si-reply" @submit.prevent="sendReply">
-              <div class="si-reply__header">
-                <h3 class="si-reply__title">Reply</h3>
-                <span class="si-reply__hint">Sent from support@omaykan.com</span>
+          <section class="si-thread">
+            <template v-if="selected">
+              <div class="si-thread__header">
+                <div>
+                  <h2 class="si-thread__subject">{{ selected.subject }}</h2>
+                  <div class="si-thread__meta">
+                    <span>From {{ selected.fromName }} &lt;{{ selected.fromEmail }}&gt;</span>
+                    <span>Reply to {{ selected.replyToName }} &lt;{{ selectedReplyEmail }}&gt;</span>
+                    <span>{{ formatDate(selected.receivedAt) }}</span>
+                  </div>
+                </div>
+                <span class="si-thread__badge">{{ selectedSummary?.isRead ? 'Opened' : 'New' }}</span>
               </div>
 
-              <label class="si-field">
-                <span>Subject</span>
-                <input v-model="replySubject" class="sheet-input si-input" type="text" maxlength="190">
-              </label>
-
-              <label class="si-field">
-                <span>Message</span>
-                <textarea
-                  v-model="replyBody"
-                  class="sheet-input si-input si-input--body"
-                  rows="7"
-                  maxlength="5000"
-                ></textarea>
-              </label>
-
-              <p v-if="replyError" class="auth-error si-reply__error">{{ replyError }}</p>
-
-              <div class="si-reply__actions">
-                <span class="si-reply__caption">
-                  Replying to {{ selected.replyToName || selected.fromName }}
-                </span>
-                <button class="primary-button si-send" type="submit" :disabled="sending">
-                  {{ sending ? 'Sending...' : 'Send reply' }}
-                </button>
+              <div class="si-thread__body">
+                {{ selected.body || selectedSummary?.snippet || 'No message body available.' }}
               </div>
-            </form>
-          </template>
 
-          <div v-else class="si-empty si-empty--thread">
-            {{ loadingMessage ? 'Loading message...' : 'Select a message to read and reply.' }}
-          </div>
-        </section>
-      </div>
+              <form class="si-reply" @submit.prevent="sendReply">
+                <div class="si-reply__header">
+                  <h3 class="si-reply__title">Reply</h3>
+                  <span class="si-reply__hint">Sent from support@omaykan.com</span>
+                </div>
+
+                <label class="si-field">
+                  <span>Subject</span>
+                  <input v-model="replySubject" class="sheet-input si-input" type="text" maxlength="190">
+                </label>
+
+                <label class="si-field">
+                  <span>Message</span>
+                  <textarea
+                    v-model="replyBody"
+                    class="sheet-input si-input si-input--body"
+                    rows="7"
+                    maxlength="5000"
+                  ></textarea>
+                </label>
+
+                <p v-if="replyError" class="auth-error si-reply__error">{{ replyError }}</p>
+
+                <div class="si-reply__actions">
+                  <span class="si-reply__caption">
+                    Replying to {{ selected.replyToName || selected.fromName }}
+                  </span>
+                  <button class="primary-button si-send" type="submit" :disabled="sending">
+                    {{ sending ? 'Sending...' : 'Send reply' }}
+                  </button>
+                </div>
+              </form>
+            </template>
+
+            <div v-else class="si-empty si-empty--thread">
+              {{ loadingMessage ? 'Loading message...' : 'Select a message to read and reply.' }}
+            </div>
+          </section>
+        </div>
+      </section>
     </div>
   </section>
 </template>
@@ -375,36 +451,89 @@ void loadList()
 <style scoped>
 .si-page {
   --si-bg: #18181b;
-  --si-surface: #1f2024;
-  --si-surface-strong: #24252a;
   --si-border: rgba(255, 255, 255, 0.08);
   --si-border-strong: rgba(255, 255, 255, 0.12);
   --si-text: #f5f7fb;
   --si-muted: #a0a6b2;
   --si-subtle: #6f7685;
   --si-success: #71d49f;
-  --si-danger: #ff8d84;
+  min-height: 100vh;
+  padding: 28px 18px 40px;
+  background:
+    radial-gradient(circle at top left, rgba(94, 151, 255, 0.16), transparent 28%),
+    radial-gradient(circle at top right, rgba(74, 143, 117, 0.14), transparent 24%),
+    #eef1f5;
+}
+
+.si-frame {
+  width: min(1380px, 100%);
+  margin: 0 auto;
   display: grid;
+  gap: 14px;
+}
+
+.si-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.si-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #445161;
+  font: 700 0.82rem/1 var(--font-sans, inherit);
+  text-decoration: none;
+}
+
+.si-operator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #64707d;
+  font: 600 0.8rem/1.3 var(--font-sans, inherit);
+}
+
+.si-gate {
+  display: grid;
+  gap: 12px;
+  max-width: 540px;
+  padding: 28px;
+  margin: 32px auto 0;
+  border-radius: 24px;
+}
+
+.si-gate h1,
+.si-gate p {
+  margin: 0;
+}
+
+.si-gate h1 {
+  color: #1f2933;
+  font: 700 1.45rem/1.1 var(--font-sans, inherit);
+}
+
+.si-gate p {
+  color: #52606d;
+  font: 500 0.96rem/1.55 var(--font-sans, inherit);
+}
+
+.si-gate__action {
+  width: fit-content;
+  text-decoration: none;
 }
 
 .si-shell {
   padding: 0;
   overflow: hidden;
   border: 1px solid var(--si-border);
-  border-radius: 22px;
+  border-radius: 24px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 16%),
     var(--si-bg);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
-}
-
-.si-header,
-.si-toolbar,
-.si-thread__header,
-.si-reply,
-.si-list__head,
-.si-row {
-  min-width: 0;
 }
 
 .si-header {
@@ -597,7 +726,7 @@ void loadList()
   color: var(--si-text);
   text-align: left;
   cursor: pointer;
-  transition: background 140ms ease, border-color 140ms ease;
+  transition: background 140ms ease;
 }
 
 .si-row:hover {
@@ -673,7 +802,6 @@ void loadList()
 }
 
 .si-row__meta {
-  flex-wrap: nowrap;
   color: var(--si-muted);
   font: 500 0.76rem/1.2 var(--font-sans, inherit);
 }
@@ -855,6 +983,22 @@ void loadList()
 }
 
 @media (max-width: 720px) {
+  .si-page {
+    padding: 18px 10px 28px;
+  }
+
+  .si-topbar,
+  .si-header,
+  .si-toolbar,
+  .si-thread__header,
+  .si-thread__body,
+  .si-reply,
+  .si-reply__header,
+  .si-reply__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .si-header,
   .si-toolbar,
   .si-thread__header,
@@ -864,12 +1008,10 @@ void loadList()
     padding-right: 16px;
   }
 
-  .si-header,
-  .si-toolbar,
-  .si-reply__header,
-  .si-reply__actions {
+  .si-operator {
     flex-direction: column;
-    align-items: stretch;
+    align-items: flex-end;
+    gap: 2px;
   }
 
   .si-toolbar__meta {

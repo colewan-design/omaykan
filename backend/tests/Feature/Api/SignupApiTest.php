@@ -28,6 +28,7 @@ class SignupApiTest extends TestCase
             'ownerFullName' => 'Ana Reyes',
             'username' => 'AnaReyes',
             'password' => 'secret123',
+            'businessTypeLabel' => 'Coffee shop',
             'businessMode' => 'coffee-shop',
             'gcashReference' => 'GC-99881',
         ], $overrides);
@@ -50,6 +51,7 @@ class SignupApiTest extends TestCase
         $store = Store::query()->where('organization_id', $organization->id)->firstOrFail();
 
         $this->assertSame('coffee-shop', $store->business_mode);
+        $this->assertSame('Coffee shop', $store->business_type_label);
         $this->assertFalse($organization->suspended);
 
         $owner = User::query()->where('username', 'anareyes')->firstOrFail();
@@ -145,6 +147,20 @@ class SignupApiTest extends TestCase
         $this->assertSame('hill-station-cafe', $first['organizationSlug']);
         $this->assertSame('hill-station-cafe-2', $second['organizationSlug']);
         $this->assertNotSame($first['pairingCode'], $second['pairingCode']);
+    }
+
+    public function test_a_custom_business_type_label_can_differ_from_the_starter_setup(): void
+    {
+        $response = $this->postJson('/api/signup', $this->payload([
+            'businessTypeLabel' => 'Bakery',
+            'businessMode' => 'coffee-shop',
+        ]))->assertCreated();
+
+        $organization = Organization::query()->where('slug', $response->json('organizationSlug'))->firstOrFail();
+        $store = Store::query()->where('organization_id', $organization->id)->firstOrFail();
+
+        $this->assertSame('coffee-shop', $store->business_mode);
+        $this->assertSame('Bakery', $store->business_type_label);
     }
 
     public function test_taken_username_is_rejected(): void

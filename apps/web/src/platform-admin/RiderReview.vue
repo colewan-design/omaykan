@@ -90,7 +90,19 @@ async function load() {
   loading.value = true
   errorMessage.value = ''
   try {
-    riders.value = (await post('/api/rider-review')).riders ?? []
+    const response = await fetch('/api/platform/riders', {
+      headers: authHeaders(false),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (response.status === 401 || response.status === 403) {
+      const message = data.message || 'Your session has ended. Sign in again.'
+      emit('session-ended', message)
+      throw new Error(message)
+    }
+    if (!response.ok) {
+      throw new Error(data.message || data.error || 'Something went wrong.')
+    }
+    riders.value = data.riders ?? []
   } catch (err) {
     errorMessage.value = err instanceof Error ? err.message : 'Unable to load the rider queue.'
   } finally {
@@ -111,7 +123,7 @@ async function decide(rider: ReviewRider, status: 'approved' | 'rejected' | 'sus
   errorMessage.value = ''
 
   try {
-    const data = await post(`/api/rider-review/${rider.id}/decision`, { status, note: note || null })
+    const data = await post(`/api/platform/riders/${rider.id}/decision`, { status, note: note || null })
     riders.value = riders.value.map((row) => (row.id === rider.id ? data.rider : row))
     notes.value[rider.id] = ''
   } catch (err) {
@@ -123,8 +135,7 @@ async function decide(rider: ReviewRider, status: 'approved' | 'rejected' | 'sus
 
 /** Fetches one document as a blob, because it is a POST behind the token. */
 async function fetchDocument(riderId: string, document: 'license' | 'plate'): Promise<string> {
-  const response = await fetch(`/api/rider-review/${riderId}/document/${document}`, {
-    method: 'POST',
+  const response = await fetch(`/api/platform/riders/${riderId}/document/${document}`, {
     headers: authHeaders(false),
   })
 

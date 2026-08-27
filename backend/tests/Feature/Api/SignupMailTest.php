@@ -29,6 +29,7 @@ class SignupMailTest extends TestCase
             'email' => 'ana@hillstation.test',
             'username' => 'anareyes',
             'password' => 'secret123',
+            'businessTypeLabel' => 'Coffee shop',
             'businessMode' => 'coffee-shop',
         ], $overrides);
     }
@@ -102,6 +103,20 @@ class SignupMailTest extends TestCase
         // It is still a useful mail, though.
         $this->assertStringContainsString('Hill Station Cafe', (string) $body);
         $this->assertStringContainsString('anareyes', (string) $body);
+    }
+
+    public function test_the_welcome_mail_uses_the_typed_business_label(): void
+    {
+        Mail::fake();
+
+        $this->postJson('/api/signup', $this->payload([
+            'businessTypeLabel' => 'Bakery',
+            'businessMode' => 'coffee-shop',
+        ]))->assertCreated();
+
+        Mail::assertQueued(SellerWelcomeMail::class, function (SellerWelcomeMail $mail) {
+            return str_contains($mail->render(), 'Bakery');
+        });
     }
 
     public function test_the_operator_alert_can_be_switched_off(): void

@@ -12,6 +12,8 @@ import {
 } from '@pos/shared/index'
 import { usePosStore } from '@pos/core/stores/pos'
 import { useAuthStore } from '@pos/core/stores/auth'
+import { getPosRepository } from '@pos/core/services/runtime'
+import { subscribeToStoreOrders } from '@pos/core/realtime/orderChannel'
 import MetricCard from '@pos/core/components/MetricCard.vue'
 import ChartCard from '@pos/core/components/ChartCard.vue'
 import RangeSelector, { type Range } from '@pos/core/components/RangeSelector.vue'
@@ -22,6 +24,13 @@ const auth = useAuthStore()
 const darkModeEnabled = ref(false)
 let themeMediaQuery: MediaQueryList | null = null
 let themeObserver: MutationObserver | null = null
+// Live order feed teardown (Reverb). Null until subscribed; a no-op when
+// realtime is disabled or this device has no backend store session.
+let stopOrderFeed: (() => void) | null = null
+
+// Same resolution as apps/web/src/main.ts: same-origin in production, an env
+// override for split-host dev.
+const apiBase = (import.meta.env.VITE_API_BASE ?? import.meta.env.VITE_ONLINE_ORDER_API_BASE ?? '') as string
 
 function syncDarkMode() {
   if (typeof window === 'undefined') return
@@ -37,6 +46,7 @@ onMounted(async () => {
   // Storefront orders arrive server-side while this screen is open, so pull a
   // fresh set on entry rather than trusting whatever initialize() cached.
   void refreshOrders()
+  void startOrderFeed()
 
   syncDarkMode()
   if (typeof window !== 'undefined') {
@@ -53,7 +63,28 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   themeMediaQuery?.removeEventListener('change', syncDarkMode)
   themeObserver?.disconnect()
+  stopOrderFeed?.()
+  stopOrderFeed = null
 })
+
+// Push, not poll: while the dashboard is open, live order events over Reverb
+// refresh the in-flight/delivery lists. Falls back silently to the manual
+// refresh when realtime is off or this device isn't paired to a backend store.
+async function startOrderFeed() {
+  try {
+    const storeId = await getPosRepository().getSyncStoreId()
+    const token = auth.session?.authToken
+    if (!storeId || !token) return
+    stopOrderFeed = subscribeToStoreOrders({
+      apiBaseUrl: apiBase,
+      storeId,
+      token,
+      onOrderEvent: () => { void refreshOrders() },
+    })
+  } catch {
+    // No live feed is fine — the page still refreshes on entry and on demand.
+  }
+}
 
 // ── Operations ─────────────────────────────────────────────────────────────
 // The top half of this page is the day's work: orders still moving, deliveries

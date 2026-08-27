@@ -37,10 +37,10 @@ export const usePosStore = defineStore('pos', () => {
   const suppliers = ref<Supplier[]>([])
   const reorderMarks = ref<ReorderMark[]>([])
   const orders = ref<OrderSummary[]>([])
-  // Orders placed through the public storefront, written directly to Firestore
-  // by the createOnlineOrder Cloud Function — kept separate from `orders`
-  // (this device's own locally-owned sales) so an unpaid online order can
-  // never be double-counted in local shift/sales totals.
+  // Orders placed through the public storefront (POST /api/online-orders on the
+  // Laravel backend) — kept separate from `orders` (this device's own
+  // locally-owned sales) so an unpaid online order can never be double-counted
+  // in local shift/sales totals.
   const onlineOrders = ref<OrderSummary[]>([])
   const appEvents = ref<AppEvent[]>([])
   const settings = ref<AppSettings>(defaultSettings)

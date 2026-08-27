@@ -62,3 +62,23 @@ export function consumePendingInitialSettings(): PendingInitialSettings | null {
     return null
   }
 }
+
+// Pairing an *existing* store must not reset its business identity, so it can't
+// reuse PendingInitialSettings — it only needs to hand main.ts the store's
+// pairing code so the device can open a backend sync session. Read-and-clear.
+const PENDING_PAIRING_CODE_KEY = 'pos_staff_pending_pairing'
+
+export function writePendingPairingCode(code: string) {
+  window.localStorage.setItem(PENDING_PAIRING_CODE_KEY, code)
+}
+
+export function consumePendingPairingCode(): string | null {
+  try {
+    const code = window.localStorage.getItem(PENDING_PAIRING_CODE_KEY)
+    if (!code) return null
+    window.localStorage.removeItem(PENDING_PAIRING_CODE_KEY)
+    return code
+  } catch {
+    return null
+  }
+}

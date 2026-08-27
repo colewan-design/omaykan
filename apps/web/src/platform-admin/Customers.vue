@@ -110,7 +110,7 @@ async function load(page = 1) {
     const query = new URLSearchParams({ page: String(page) })
     if (search.value.trim()) query.set('q', search.value.trim())
 
-    const data = await get(`/api/platform-admin/customers?${query.toString()}`)
+    const data = await get(`/api/platform/customers?${query.toString()}`)
     rows.value = data.customers ?? []
     pagination.value = data.pagination ?? pagination.value
   } catch (err) {
@@ -124,7 +124,7 @@ async function openCustomer(row: CustomerRow) {
   detailLoading.value = true
   errorMessage.value = ''
   try {
-    const data = await get(`/api/platform-admin/customers/${encodeURIComponent(row.id)}`)
+    const data = await get(`/api/platform/customers/${encodeURIComponent(row.id)}`)
     selected.value = data.customer
   } catch (err) {
     errorMessage.value = err instanceof Error ? err.message : 'Unable to open that customer.'

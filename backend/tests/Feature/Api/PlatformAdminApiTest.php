@@ -41,6 +41,7 @@ class PlatformAdminApiTest extends TestCase
             'ownerFullName' => 'Ana Reyes',
             'username' => 'anareyes',
             'password' => 'secret123',
+            'businessTypeLabel' => 'Coffee shop',
             'businessMode' => 'coffee-shop',
             'gcashReference' => 'GC-99881',
         ], $overrides);
@@ -146,11 +147,24 @@ class PlatformAdminApiTest extends TestCase
             ->assertJsonPath('organizations.0.organizationName', 'Hill Station Cafe')
             ->assertJsonPath('organizations.0.suspended', false)
             ->assertJsonPath('organizations.0.store.businessMode', 'coffee-shop')
+            ->assertJsonPath('organizations.0.store.businessTypeLabel', 'Coffee shop')
             ->assertJsonPath('organizations.0.store.pairingCode', $created['pairingCode'])
             ->assertJsonPath('organizations.0.subscription.status', Subscription::STATUS_PENDING)
             ->assertJsonPath('organizations.0.subscription.gcashReference', 'GC-99881')
             ->assertJsonPath('organizations.0.admins.0.username', 'anareyes')
             ->assertJsonPath('organizations.0.admins.0.disabled', false);
+    }
+
+    public function test_list_orgs_prefers_a_custom_business_type_label_when_one_was_typed(): void
+    {
+        $this->signUpTenant([
+            'businessTypeLabel' => 'Bakery',
+            'businessMode' => 'coffee-shop',
+        ]);
+
+        $this->call_admin(['action' => 'listOrgs'])
+            ->assertOk()
+            ->assertJsonPath('organizations.0.store.businessTypeLabel', 'Bakery');
     }
 
     public function test_verifying_and_rejecting_a_subscription(): void

@@ -34,6 +34,12 @@ class PlatformAdminController extends Controller
 {
     /** No 0/O or 1/I/l: the operator reads these back to an owner by hand. */
     private const PASSWORD_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+    private const BUSINESS_MODE_LABELS = [
+        'coffee-shop' => 'Coffee shop',
+        'grocery' => 'Grocery store',
+        'restaurant' => 'Restaurant',
+        'nail-salon' => 'Nail Salon',
+    ];
 
     public function handle(Request $request): JsonResponse
     {
@@ -113,6 +119,7 @@ class PlatformAdminController extends Controller
                 'store' => $store === null ? null : [
                     'name' => $store->name,
                     'businessMode' => $store->business_mode,
+                    'businessTypeLabel' => $this->businessTypeLabelFor($store),
                     // Readable because it is a public identifier, not the
                     // pairing secret — see the store discovery migration.
                     'pairingCode' => $store->public_store_code,
@@ -138,6 +145,13 @@ class PlatformAdminController extends Controller
         });
 
         return response()->json(['organizations' => $rows]);
+    }
+
+    private function businessTypeLabelFor(Store $store): string
+    {
+        return trim((string) $store->business_type_label) !== ''
+            ? $store->business_type_label
+            : (self::BUSINESS_MODE_LABELS[$store->business_mode] ?? $store->business_mode ?? '—');
     }
 
     private function setSubscriptionStatus(Request $request, string $status): JsonResponse

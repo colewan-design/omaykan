@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\CustomerAccountController;
 use App\Http\Controllers\Api\CustomerAddressController;
@@ -205,3 +206,12 @@ Route::middleware(['auth:sanctum', 'merchant.token'])->group(function () {
     Route::get('/staff-users', [StaffUserController::class, 'index']);
     Route::patch('/staff-users/{user}/role', [StaffUserController::class, 'updateRole']);
 });
+
+// Private broadcast-channel authorization for the staff app's Reverb client.
+// The staff app authenticates with a Sanctum bearer token, not a web session,
+// so it can't use the default web-guarded /broadcasting/auth route. Sanctum
+// resolves the staff user here; the channel callbacks in routes/channels.php
+// then authorize by store membership.
+Route::post('/broadcasting/auth', function (Request $request) {
+    return Broadcast::auth($request);
+})->middleware('auth:sanctum');

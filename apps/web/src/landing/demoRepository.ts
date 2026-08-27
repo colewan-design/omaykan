@@ -614,6 +614,11 @@ export function createDemoPosRepository(): PosRepository {
       session = nextSession
     },
 
+    async getSyncStoreId() {
+      // The marketing demo has no backend store to subscribe to.
+      return null
+    },
+
     async loadAppEvents() {
       return appEvents
     },

@@ -5,6 +5,7 @@ import { useStorefrontCart } from '@pos/web/commerce/cart'
 import { useStockedCategories } from '@pos/web/commerce/catalog'
 import { useCustomerAccount } from '@pos/web/commerce/customer'
 import { categoryIcon } from './categories'
+import CartDrawer from './CartDrawer.vue'
 
 // The site chrome — dark green utility bar with the search dominant, then the
 // category nav. Shared by the landing page and the about page so the two can't
@@ -16,9 +17,16 @@ import { categoryIcon } from './categories'
 // produce that category's products — a nav item naming an aisle the store
 // doesn't stock would have nothing to show.
 //
-// `shopHref` is where the cart and the category items point: the landing page
-// handles a category in place (@category, no navigation), every other page
-// sends the browser home with ?category= for the landing page to pick up.
+// `shopHref` is where the category items point: the landing page handles a
+// category in place (@category, no navigation), every other page sends the
+// browser home with ?category= for the landing page to pick up. It is also
+// where an empty cart sends you, since there is nothing else to offer there.
+//
+// The cart itself used to point at it too — the icon was an anchor to #shop,
+// which scrolled you to the shelves and never showed you the cart it was
+// counting. It opens CartDrawer now, so the badge leads somewhere, and it does
+// so from the header rather than the landing page so that the about and
+// account pages get the same working cart.
 const props = withDefaults(
   defineProps<{ shopHref?: string; activeCategory?: string }>(),
   { shopHref: '#shop', activeCategory: '' },
@@ -44,6 +52,7 @@ function selectCategory(categoryId: string, event: MouseEvent) {
 }
 
 const cart = useStorefrontCart()
+const cartOpen = ref(false)
 
 // The Account slot used to point at /app/auth — the merchant register's login,
 // which is not a place a shopper has any business being. It goes to the
@@ -110,10 +119,16 @@ defineExpose({ clear: () => (searchTerm.value = '') })
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
       </a>
 
-      <a :href="props.shopHref" class="fd-cart" aria-label="Cart">
+      <button
+        type="button"
+        class="fd-cart"
+        :aria-label="cart.itemCount.value > 0 ? `Cart, ${cart.itemCount.value} items` : 'Cart'"
+        :aria-expanded="cartOpen"
+        @click="cartOpen = true"
+      >
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
         <span v-if="cart.itemCount.value > 0" class="fd-cart__count">{{ cart.itemCount.value }}</span>
-      </a>
+      </button>
     </header>
 
     <nav class="fd-nav" aria-label="Shop by category">
@@ -132,6 +147,8 @@ defineExpose({ clear: () => (searchTerm.value = '') })
         </a>
       </div>
     </nav>
+
+    <CartDrawer :open="cartOpen" :shop-href="props.shopHref" @close="cartOpen = false" />
   </div>
 </template>
 
@@ -277,7 +294,18 @@ defineExpose({ clear: () => (searchTerm.value = '') })
 
 .fd-account-icon { display: none; }
 
-.fd-cart { position: relative; display: grid; place-items: center; color: #fff; }
+/* A button since it opens the drawer, so it carries the reset an <a> didn't need. */
+.fd-cart {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #fff;
+  cursor: pointer;
+}
 .fd-cart__count {
   position: absolute;
   top: -6px;

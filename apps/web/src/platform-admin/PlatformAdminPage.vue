@@ -10,7 +10,6 @@ interface OrgAdmin {
   uid: string
   username: string
   fullName: string
-  email: string | null
   disabled: boolean
 }
 
@@ -18,7 +17,7 @@ interface OrgRow {
   organizationSlug: string
   organizationName: string
   suspended: boolean
-  store: { name: string; businessMode: string; pairingCode: string } | null
+  store: { name: string; businessMode: string; businessTypeLabel?: string; pairingCode: string } | null
   subscription: {
     status: string
     plan: string
@@ -30,19 +29,8 @@ interface OrgRow {
   admins: OrgAdmin[]
 }
 
-/*
- * sessionStorage, not localStorage: the operator token outlives a reload but
- * not the tab. This dashboard can delete a tenant, so leaving a live session
- * on a machine someone walks away from is not a convenience worth having.
- */
 const TOKEN_STORAGE_KEY = 'platform_admin_token'
 
-/*
- * Two queues behind one sign-in: the stores waiting on a subscription check,
- * and the riders waiting on a licence check. The rider side is mounted only
- * once it is switched to, so signing in does not pull a queue of identity
- * documents nobody asked to see.
- */
 const view = ref<'stores' | 'riders' | 'customers' | 'inbox'>('stores')
 
 const emailInput = ref('')
@@ -59,14 +47,6 @@ const busyKey = ref('')
 const revealedPassword = ref<{ username: string; password: string } | null>(null)
 const passwordCopied = ref(false)
 
-const emailComposer = ref<{
-  row: OrgRow
-  admin: OrgAdmin
-  subject: string
-  message: string
-} | null>(null)
-const emailComposerError = ref('')
-
 const deleteTarget = ref<OrgRow | null>(null)
 const deleteConfirmInput = ref('')
 const deleteConfirmMatches = computed(
@@ -74,11 +54,11 @@ const deleteConfirmMatches = computed(
 )
 
 function formatPesos(amountCents: number) {
-  return `₱${(amountCents / 100).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
+  return `PHP ${(amountCents / 100).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
 }
 
 function formatDate(value: string | null) {
-  if (!value) return '—'
+  if (!value) return '-'
   return new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 }
 
@@ -86,14 +66,9 @@ function subscriptionLabel(status: string | undefined) {
   if (status === 'active') return 'Verified'
   if (status === 'rejected') return 'Rejected'
   if (status) return 'Pending'
-  return '—'
+  return '-'
 }
 
-/**
- * Drops the session and returns to the sign-in screen. Called both on an
- * explicit sign-out and whenever the API says the token is no longer good —
- * a 401 (expired or revoked) or a 403 (the account was disabled).
- */
 function endSession(message = '') {
   token.value = ''
   operator.value = null
@@ -104,16 +79,16 @@ function endSession(message = '') {
   errorMessage.value = message
 }
 
-async function postAction(body: Record<string, unknown>) {
+async function authedFetch(path: string, init: RequestInit = {}) {
   successMessage.value = ''
-  const response = await fetch('/api/platform-admin', {
-    method: 'POST',
+  const response = await fetch(path, {
+    ...init,
     headers: {
-      'Content-Type': 'application/json',
       Accept: 'application/json',
       Authorization: `Bearer ${token.value}`,
+      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(init.headers ?? {}),
     },
-    body: JSON.stringify(body),
   })
   const data = await response.json().catch(() => ({}))
   if (response.status === 401 || response.status === 403) {
@@ -131,13 +106,10 @@ async function loadOrgs() {
   errorMessage.value = ''
   successMessage.value = ''
   try {
-    const data = await postAction({ action: 'listOrgs' })
-    rows.value = data.organizations ?? data.orgs ?? []
+    const data = await authedFetch('/api/platform/organizations')
+    rows.value = data.organizations ?? []
     unlocked.value = true
   } catch (err) {
-    // A dead session has already been cleared by postAction, and its message
-    // is the one worth keeping; anything else is a transient failure that
-    // should not throw the operator back to the sign-in screen.
     if (unlocked.value) {
       errorMessage.value = err instanceof Error ? err.message : 'Something went wrong.'
     }
@@ -152,7 +124,7 @@ async function signIn() {
   loading.value = true
   errorMessage.value = ''
   try {
-    const response = await fetch('/api/platform-admin/login', {
+    const response = await fetch('/api/platform/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
@@ -162,14 +134,10 @@ async function signIn() {
     })
     const data = await response.json().catch(() => ({}))
     if (!response.ok) {
-      // 422 from Laravel carries the field errors; the single message under
-      // `email` is the deliberately vague one, so show it as-is.
       throw new Error(data.errors?.email?.[0] || data.message || 'Unable to sign in.')
     }
     token.value = data.token
     operator.value = { name: data.admin.name, email: data.admin.email }
-    // Cleared as soon as it has been exchanged for a token — there is no
-    // reason for the password to stay in memory for the rest of the session.
     passwordInput.value = ''
     window.sessionStorage.setItem(TOKEN_STORAGE_KEY, data.token)
     await loadOrgs()
@@ -183,9 +151,7 @@ async function signIn() {
 async function signOut() {
   const current = token.value
   endSession()
-  // Best-effort: the local session is already gone, and a failed request here
-  // must not leave the operator looking at a dashboard they just left.
-  await fetch('/api/platform-admin/logout', {
+  await fetch('/api/platform/logout', {
     method: 'POST',
     headers: { Accept: 'application/json', Authorization: `Bearer ${current}` },
   }).catch(() => undefined)
@@ -198,7 +164,10 @@ async function refresh() {
 async function markVerified(row: OrgRow) {
   busyKey.value = row.organizationSlug
   try {
-    await postAction({ action: 'verify', organizationSlug: row.organizationSlug })
+    await authedFetch(`/api/platform/organizations/${encodeURIComponent(row.organizationSlug)}/subscription`, {
+      method: 'POST',
+      body: JSON.stringify({ status: 'active' }),
+    })
     if (row.subscription) {
       row.subscription.status = 'active'
       row.subscription.verifiedAt = new Date().toISOString()
@@ -213,7 +182,10 @@ async function markVerified(row: OrgRow) {
 async function rejectSignup(row: OrgRow) {
   busyKey.value = row.organizationSlug
   try {
-    await postAction({ action: 'reject', organizationSlug: row.organizationSlug })
+    await authedFetch(`/api/platform/organizations/${encodeURIComponent(row.organizationSlug)}/subscription`, {
+      method: 'POST',
+      body: JSON.stringify({ status: 'rejected' }),
+    })
     if (row.subscription) {
       row.subscription.status = 'rejected'
     }
@@ -228,9 +200,9 @@ async function toggleSuspended(row: OrgRow) {
   busyKey.value = row.organizationSlug
   const nextSuspended = !row.suspended
   try {
-    await postAction({
-      action: nextSuspended ? 'suspendOrg' : 'reactivateOrg',
-      organizationSlug: row.organizationSlug,
+    await authedFetch(`/api/platform/organizations/${encodeURIComponent(row.organizationSlug)}/suspension`, {
+      method: 'POST',
+      body: JSON.stringify({ suspended: nextSuspended }),
     })
     row.suspended = nextSuspended
   } catch (err) {
@@ -243,11 +215,10 @@ async function toggleSuspended(row: OrgRow) {
 async function resetPassword(row: OrgRow, admin: OrgAdmin) {
   busyKey.value = admin.uid
   try {
-    const data = await postAction({
-      action: 'resetOwnerPassword',
-      organizationSlug: row.organizationSlug,
-      uid: admin.uid,
-    })
+    const data = await authedFetch(
+      `/api/platform/organizations/${encodeURIComponent(row.organizationSlug)}/owners/${encodeURIComponent(admin.uid)}/password-reset`,
+      { method: 'POST' },
+    )
     revealedPassword.value = { username: admin.username, password: data.password }
     passwordCopied.value = false
   } catch (err) {
@@ -261,12 +232,13 @@ async function toggleDisabled(row: OrgRow, admin: OrgAdmin) {
   busyKey.value = admin.uid
   const nextDisabled = !admin.disabled
   try {
-    await postAction({
-      action: 'setOwnerDisabled',
-      organizationSlug: row.organizationSlug,
-      uid: admin.uid,
-      disabled: nextDisabled,
-    })
+    await authedFetch(
+      `/api/platform/organizations/${encodeURIComponent(row.organizationSlug)}/owners/${encodeURIComponent(admin.uid)}/status`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ disabled: nextDisabled }),
+      },
+    )
     admin.disabled = nextDisabled
   } catch (err) {
     errorMessage.value = err instanceof Error ? err.message : 'Unable to update that login.'
@@ -282,60 +254,13 @@ async function copyRevealedPassword() {
     passwordCopied.value = true
     setTimeout(() => { passwordCopied.value = false }, 2000)
   } catch {
-    // Clipboard permission denied — the password is still shown on screen to copy manually.
+    // Clipboard permission denied. The password stays visible for manual copy.
   }
 }
 
 function closeRevealedPassword() {
   revealedPassword.value = null
   passwordCopied.value = false
-}
-
-function startEmailComposer(row: OrgRow, admin: OrgAdmin) {
-  if (!admin.email) return
-  emailComposer.value = {
-    row,
-    admin,
-    subject: `Re: ${row.organizationName}`,
-    message: '',
-  }
-  emailComposerError.value = ''
-}
-
-function closeEmailComposer() {
-  emailComposer.value = null
-  emailComposerError.value = ''
-}
-
-async function sendOwnerEmail() {
-  if (!emailComposer.value) return
-
-  const subject = emailComposer.value.subject.trim()
-  const message = emailComposer.value.message.trim()
-
-  if (!subject || !message) {
-    emailComposerError.value = 'Add both a subject and a message.'
-    return
-  }
-
-  busyKey.value = `email:${emailComposer.value.admin.uid}`
-  emailComposerError.value = ''
-
-  try {
-    await postAction({
-      action: 'sendOwnerEmail',
-      organizationSlug: emailComposer.value.row.organizationSlug,
-      uid: emailComposer.value.admin.uid,
-      subject,
-      message,
-    })
-    successMessage.value = `Email queued for ${emailComposer.value.admin.email}.`
-    closeEmailComposer()
-  } catch (err) {
-    emailComposerError.value = err instanceof Error ? err.message : 'Unable to send that email.'
-  } finally {
-    busyKey.value = ''
-  }
 }
 
 function startDelete(row: OrgRow) {
@@ -353,12 +278,13 @@ async function confirmDelete() {
   const target = deleteTarget.value
   busyKey.value = target.organizationSlug
   try {
-    await postAction({
-      action: 'deleteOrg',
-      organizationSlug: target.organizationSlug,
-      confirmSlug: deleteConfirmInput.value.trim(),
+    await authedFetch(`/api/platform/organizations/${encodeURIComponent(target.organizationSlug)}`, {
+      method: 'DELETE',
+      body: JSON.stringify({
+        confirmSlug: deleteConfirmInput.value.trim(),
+      }),
     })
-    rows.value = rows.value.filter((r) => r.organizationSlug !== target.organizationSlug)
+    rows.value = rows.value.filter((row) => row.organizationSlug !== target.organizationSlug)
     deleteTarget.value = null
     deleteConfirmInput.value = ''
   } catch (err) {
@@ -368,12 +294,6 @@ async function confirmDelete() {
   }
 }
 
-/*
- * Restores the session across a reload. `/me` rather than going straight to
- * listOrgs: it confirms the token is still good and gets the operator's name
- * back for the header, and a stale token is cleared here rather than surfacing
- * as an error on the first thing the operator clicks.
- */
 onMounted(async () => {
   const stored = window.sessionStorage.getItem(TOKEN_STORAGE_KEY)
   if (!stored) return
@@ -381,7 +301,7 @@ onMounted(async () => {
   token.value = stored
   loading.value = true
   try {
-    const response = await fetch('/api/platform-admin/me', {
+    const response = await fetch('/api/platform/me', {
       headers: { Accept: 'application/json', Authorization: `Bearer ${stored}` },
     })
     if (!response.ok) {
@@ -430,7 +350,7 @@ onMounted(async () => {
             >
           </label>
           <button class="primary-button auth-submit" type="submit" :disabled="loading">
-            {{ loading ? 'Signing in…' : 'Sign in' }}
+            {{ loading ? 'Signing in...' : 'Sign in' }}
           </button>
         </form>
         <p v-if="errorMessage" class="auth-error">{{ errorMessage }}</p>
@@ -478,156 +398,147 @@ onMounted(async () => {
       </nav>
 
       <template v-if="view === 'stores'">
-      <div class="pa-header">
-        <div>
-          <h1 class="pa-title">Stores</h1>
-          <p class="pa-copy">Review signups, and manage every store's account and access.</p>
+        <div class="pa-header">
+          <div>
+            <h1 class="pa-title">Stores</h1>
+            <p class="pa-copy">Review signups, and manage every store's account and access.</p>
+          </div>
+          <button class="segment-button" type="button" :disabled="loading" @click="refresh">
+            {{ loading ? 'Refreshing...' : 'Refresh' }}
+          </button>
         </div>
-        <button class="segment-button" type="button" :disabled="loading" @click="refresh">
-          {{ loading ? 'Refreshing…' : 'Refresh' }}
-        </button>
-      </div>
 
-      <p v-if="errorMessage" class="auth-error">{{ errorMessage }}</p>
-      <p v-else-if="successMessage" class="pa-success">{{ successMessage }}</p>
+        <p v-if="errorMessage" class="auth-error">{{ errorMessage }}</p>
+        <p v-else-if="successMessage" class="pa-success">{{ successMessage }}</p>
 
-      <div v-if="revealedPassword" class="pa-reveal">
-        <div>
-          <p class="pa-reveal__title">New password for {{ revealedPassword.username }}</p>
-          <p class="pa-reveal__copy">Share this with the owner now — it won't be shown again.</p>
+        <div v-if="revealedPassword" class="pa-reveal">
+          <div>
+            <p class="pa-reveal__title">New password for {{ revealedPassword.username }}</p>
+            <p class="pa-reveal__copy">Share this with the owner now. It will not be shown again.</p>
+          </div>
+          <div class="pa-reveal__value">{{ revealedPassword.password }}</div>
+          <button class="settings-upload-button" type="button" @click="copyRevealedPassword">
+            <Check v-if="passwordCopied" :size="16" />
+            <Copy v-else :size="16" />
+            <span>{{ passwordCopied ? 'Copied' : 'Copy' }}</span>
+          </button>
+          <button class="segment-button" type="button" @click="closeRevealedPassword">Done</button>
         </div>
-        <div class="pa-reveal__value">{{ revealedPassword.password }}</div>
-        <button class="settings-upload-button" type="button" @click="copyRevealedPassword">
-          <Check v-if="passwordCopied" :size="16" />
-          <Copy v-else :size="16" />
-          <span>{{ passwordCopied ? 'Copied' : 'Copy' }}</span>
-        </button>
-        <button class="segment-button" type="button" @click="closeRevealedPassword">Done</button>
-      </div>
 
-      <div class="pa-table-wrap surface-panel">
-        <table class="pa-table">
-          <thead>
-            <tr>
-              <th>Store</th>
-              <th>Owner</th>
-              <th>Business type</th>
-              <th>Subscription</th>
-              <th>Account</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in rows" :key="row.organizationSlug">
-              <td>
-                <strong>{{ row.organizationName }}</strong>
-                <div class="pa-slug">{{ row.organizationSlug }}</div>
-              </td>
-              <td>
-                <div v-if="!row.admins.length" class="pa-empty-cell">—</div>
-                <div v-for="admin in row.admins" :key="admin.uid" class="pa-admin">
-                  <div class="pa-admin__info">
-                    <div class="pa-admin__identity">
-                      <strong>{{ admin.fullName || admin.username }}</strong>
-                      <span class="pa-slug">@{{ admin.username }}</span>
-                      <span class="pa-slug">{{ admin.email || 'No email on file' }}</span>
+        <div class="pa-table-wrap surface-panel">
+          <table class="pa-table">
+            <thead>
+              <tr>
+                <th>Store</th>
+                <th>Owner</th>
+                <th>Business type</th>
+                <th>Subscription</th>
+                <th>Account</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in rows" :key="row.organizationSlug">
+                <td>
+                  <strong>{{ row.organizationName }}</strong>
+                  <div class="pa-slug">{{ row.organizationSlug }}</div>
+                </td>
+                <td>
+                  <div v-if="!row.admins.length" class="pa-empty-cell">-</div>
+                  <div v-for="admin in row.admins" :key="admin.uid" class="pa-admin">
+                    <div class="pa-admin__info">
+                      <div class="pa-admin__identity">
+                        <strong>{{ admin.fullName || admin.username }}</strong>
+                        <span class="pa-slug">@{{ admin.username }}</span>
+                      </div>
+                      <span v-if="admin.disabled" class="pa-badge pa-badge--danger">Login disabled</span>
                     </div>
-                    <span v-if="admin.disabled" class="pa-badge pa-badge--danger">Login disabled</span>
+                    <div class="pa-admin__actions">
+                      <button
+                        class="pa-link-button"
+                        type="button"
+                        :disabled="busyKey === admin.uid"
+                        @click="resetPassword(row, admin)"
+                      >
+                        Reset password
+                      </button>
+                      <button
+                        class="pa-link-button"
+                        type="button"
+                        :disabled="busyKey === admin.uid"
+                        @click="toggleDisabled(row, admin)"
+                      >
+                        {{ admin.disabled ? 'Enable login' : 'Disable login' }}
+                      </button>
+                    </div>
                   </div>
-                  <div class="pa-admin__actions">
+                </td>
+                <td>{{ row.store?.businessTypeLabel ?? row.store?.businessMode ?? '-' }}</td>
+                <td>
+                  <span
+                    class="pa-badge"
+                    :class="{
+                      'pa-badge--active': row.subscription?.status === 'active',
+                      'pa-badge--danger': row.subscription?.status === 'rejected',
+                    }"
+                  >
+                    {{ subscriptionLabel(row.subscription?.status) }}
+                  </span>
+                  <div v-if="row.subscription" class="pa-sub-detail">
+                    {{ formatPesos(row.subscription.amountCents) }} · {{ row.subscription.gcashReference }}
+                    <div class="pa-slug">Submitted {{ formatDate(row.subscription.submittedAt) }}</div>
+                  </div>
+                  <div v-if="row.subscription?.status === 'pending' || row.subscription?.status === 'pending_verification'" class="pa-row-actions">
                     <button
-                      class="pa-link-button"
+                      class="segment-button"
                       type="button"
-                      :disabled="!admin.email || busyKey === `email:${admin.uid}`"
-                      @click="startEmailComposer(row, admin)"
+                      :disabled="busyKey === row.organizationSlug"
+                      @click="markVerified(row)"
                     >
-                      Email
+                      Verify
                     </button>
                     <button
                       class="pa-link-button"
                       type="button"
-                      :disabled="busyKey === admin.uid"
-                      @click="resetPassword(row, admin)"
+                      :disabled="busyKey === row.organizationSlug"
+                      @click="rejectSignup(row)"
                     >
-                      Reset password
-                    </button>
-                    <button
-                      class="pa-link-button"
-                      type="button"
-                      :disabled="busyKey === admin.uid"
-                      @click="toggleDisabled(row, admin)"
-                    >
-                      {{ admin.disabled ? 'Enable login' : 'Disable login' }}
+                      Reject
                     </button>
                   </div>
-                </div>
-              </td>
-              <td>{{ row.store?.businessMode ?? '—' }}</td>
-              <td>
-                <span
-                  class="pa-badge"
-                  :class="{
-                    'pa-badge--active': row.subscription?.status === 'active',
-                    'pa-badge--danger': row.subscription?.status === 'rejected',
-                  }"
-                >
-                  {{ subscriptionLabel(row.subscription?.status) }}
-                </span>
-                <div v-if="row.subscription" class="pa-sub-detail">
-                  {{ formatPesos(row.subscription.amountCents) }} · {{ row.subscription.gcashReference }}
-                  <div class="pa-slug">Submitted {{ formatDate(row.subscription.submittedAt) }}</div>
-                </div>
-                <div v-if="row.subscription?.status === 'pending_verification'" class="pa-row-actions">
+                </td>
+                <td>
+                  <span class="pa-badge" :class="row.suspended ? 'pa-badge--danger' : 'pa-badge--active'">
+                    {{ row.suspended ? 'Suspended' : 'Active' }}
+                  </span>
+                  <div class="pa-row-actions">
+                    <button
+                      class="pa-link-button"
+                      type="button"
+                      :disabled="busyKey === row.organizationSlug"
+                      @click="toggleSuspended(row)"
+                    >
+                      {{ row.suspended ? 'Reactivate' : 'Suspend' }}
+                    </button>
+                  </div>
+                </td>
+                <td>
                   <button
-                    class="segment-button"
+                    class="outline-danger-button"
                     type="button"
                     :disabled="busyKey === row.organizationSlug"
-                    @click="markVerified(row)"
+                    @click="startDelete(row)"
                   >
-                    Verify
+                    Delete
                   </button>
-                  <button
-                    class="pa-link-button"
-                    type="button"
-                    :disabled="busyKey === row.organizationSlug"
-                    @click="rejectSignup(row)"
-                  >
-                    Reject
-                  </button>
-                </div>
-              </td>
-              <td>
-                <span class="pa-badge" :class="row.suspended ? 'pa-badge--danger' : 'pa-badge--active'">
-                  {{ row.suspended ? 'Suspended' : 'Active' }}
-                </span>
-                <div class="pa-row-actions">
-                  <button
-                    class="pa-link-button"
-                    type="button"
-                    :disabled="busyKey === row.organizationSlug"
-                    @click="toggleSuspended(row)"
-                  >
-                    {{ row.suspended ? 'Reactivate' : 'Suspend' }}
-                  </button>
-                </div>
-              </td>
-              <td>
-                <button
-                  class="outline-danger-button"
-                  type="button"
-                  :disabled="busyKey === row.organizationSlug"
-                  @click="startDelete(row)"
-                >
-                  Delete
-                </button>
-              </td>
-            </tr>
-            <tr v-if="!rows.length">
-              <td colspan="6" class="pa-empty">No stores yet.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+                </td>
+              </tr>
+              <tr v-if="!rows.length">
+                <td colspan="6" class="pa-empty">No stores yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </template>
 
       <RiderReview v-else-if="view === 'riders'" :token="token" @session-ended="endSession" />
@@ -654,43 +565,7 @@ onMounted(async () => {
             :disabled="!deleteConfirmMatches || busyKey === deleteTarget.organizationSlug"
             @click="confirmDelete"
           >
-            {{ busyKey === deleteTarget.organizationSlug ? 'Deleting…' : 'Delete permanently' }}
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <div v-if="emailComposer" class="pa-modal-backdrop" @click.self="closeEmailComposer">
-      <div class="pa-modal pa-modal--wide">
-        <h2 class="pa-modal__title">Email {{ emailComposer.admin.fullName || emailComposer.admin.username }}</h2>
-        <p class="pa-modal__copy">
-          This will send from the Omaykan mailbox to {{ emailComposer.admin.email }}.
-        </p>
-        <label class="settings-field">
-          <span class="settings-row__label">Subject</span>
-          <input v-model="emailComposer.subject" class="sheet-input" type="text" maxlength="190">
-        </label>
-        <label class="settings-field">
-          <span class="settings-row__label">Message</span>
-          <textarea v-model="emailComposer.message" class="sheet-input pa-textarea" rows="8" maxlength="5000"></textarea>
-        </label>
-        <p v-if="emailComposerError" class="auth-error">{{ emailComposerError }}</p>
-        <div class="pa-modal-actions">
-          <button
-            class="segment-button"
-            type="button"
-            :disabled="busyKey === `email:${emailComposer.admin.uid}`"
-            @click="closeEmailComposer"
-          >
-            Cancel
-          </button>
-          <button
-            class="primary-button"
-            type="button"
-            :disabled="busyKey === `email:${emailComposer.admin.uid}`"
-            @click="sendOwnerEmail"
-          >
-            {{ busyKey === `email:${emailComposer.admin.uid}` ? 'Sending…' : 'Send email' }}
+            {{ busyKey === deleteTarget.organizationSlug ? 'Deleting...' : 'Delete permanently' }}
           </button>
         </div>
       </div>
@@ -734,7 +609,6 @@ onMounted(async () => {
   color: #fff;
 }
 
-/* Pushed to the far end of the nav — who you are signed in as, and the way out. */
 .pa-operator {
   display: inline-flex;
   align-items: center;
@@ -952,10 +826,6 @@ onMounted(async () => {
   gap: var(--space-3);
 }
 
-.pa-modal--wide {
-  max-width: 560px;
-}
-
 .pa-modal__title {
   margin: 0;
   font: var(--type-title2);
@@ -971,11 +841,6 @@ onMounted(async () => {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-3);
-}
-
-.pa-textarea {
-  min-height: 180px;
-  resize: vertical;
 }
 
 .pa-success {

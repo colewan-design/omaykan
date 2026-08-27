@@ -42,6 +42,11 @@ function entryRouteAliases(): Plugin {
 
     if (req.url === '/platform-admin' || req.url?.startsWith('/platform-admin?')) {
       req.url = req.url.replace('/platform-admin', '/platform-admin.html')
+      return
+    }
+
+    if (req.url === '/support-inbox' || req.url?.startsWith('/support-inbox?')) {
+      req.url = req.url.replace('/support-inbox', '/support-inbox.html')
     }
   }
   return {
@@ -83,6 +88,7 @@ export default defineConfig({
         account: path.resolve(__dirname, 'account.html'),
         rider: path.resolve(__dirname, 'rider.html'),
         platformAdmin: path.resolve(__dirname, 'platform-admin.html'),
+        supportInbox: path.resolve(__dirname, 'support-inbox.html'),
       },
     },
   },

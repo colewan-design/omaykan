@@ -57,6 +57,7 @@ class SignupController extends Controller
             'email' => ['required', 'email', 'max:190'],
             'username' => ['required', 'string', 'max:60'],
             'password' => ['required', 'string', 'min:6'],
+            'businessTypeLabel' => ['required', 'string', 'max:120'],
             'businessMode' => ['required', Rule::in(self::BUSINESS_MODES)],
             // Optional: the signup form stopped collecting payment when early
             // access was made free, but the field is still accepted so that
@@ -66,6 +67,13 @@ class SignupController extends Controller
 
         $username = strtolower(trim($validated['username']));
         $email = strtolower(trim($validated['email']));
+        $businessTypeLabel = trim($validated['businessTypeLabel']);
+
+        if ($businessTypeLabel === '') {
+            throw ValidationException::withMessages([
+                'businessTypeLabel' => 'Please tell us what kind of business you run.',
+            ]);
+        }
 
         if (User::query()->where('username', $username)->exists()) {
             throw ValidationException::withMessages([
@@ -81,7 +89,7 @@ class SignupController extends Controller
             ]);
         }
 
-        $result = DB::transaction(function () use ($validated, $username, $email) {
+        $result = DB::transaction(function () use ($validated, $username, $email, $businessTypeLabel) {
             $businessName = trim($validated['businessName']);
 
             $organization = Organization::query()->create([
@@ -101,6 +109,7 @@ class SignupController extends Controller
                 'code' => 'main',
                 'address' => '',
                 'business_mode' => $validated['businessMode'],
+                'business_type_label' => $businessTypeLabel,
                 'timezone' => 'Asia/Manila',
                 'currency_code' => 'PHP',
                 'status' => 'active',

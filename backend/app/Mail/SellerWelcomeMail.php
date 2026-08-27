@@ -41,8 +41,8 @@ class SellerWelcomeMail extends OmaykanMailable
             view: 'mail.seller-welcome',
             with: [
                 'firstName' => explode(' ', trim($this->owner->name))[0],
-                'businessTypeLabel' => self::BUSINESS_MODE_LABELS[$this->store->business_mode]
-                    ?? $this->store->business_mode,
+                'businessTypeLabel' => $this->store->business_type_label
+                    ?: (self::BUSINESS_MODE_LABELS[$this->store->business_mode] ?? $this->store->business_mode),
                 'appUrl' => rtrim((string) config('app.url'), '/').'/app',
             ],
         );

@@ -22,6 +22,7 @@ class Store extends Model
         'pairing_code_hash',
         'public_store_code',
         'business_mode',
+        'business_type_label',
         'address',
         'lat',
         'lng',

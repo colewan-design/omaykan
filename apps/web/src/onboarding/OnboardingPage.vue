@@ -4,7 +4,7 @@ import { reactive, ref } from 'vue'
 import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import BrandLogo from '@pos/core/components/BrandLogo.vue'
 import { businessModeLabel, SUPPORT_EMAIL, supportMailto, type BusinessMode } from '@pos/shared/index'
-import { writePendingInitialSettings, writeStaffTenant } from '@pos/web/tenantBinding'
+import { writePendingInitialSettings, writePendingPairingCode, writeStaffTenant } from '@pos/web/tenantBinding'
 import MerchantFooter from './MerchantFooter.vue'
 import MerchantHeader from './MerchantHeader.vue'
 import MerchantPitch from './MerchantPitch.vue'
@@ -18,6 +18,8 @@ const businessModeOptions = (['coffee-shop', 'grocery', 'restaurant', 'nail-salo
   value,
   label: businessModeLabel(value),
 }))
+const businessTypeSuggestions = businessModeOptions.map((option) => option.label)
+const defaultBusinessMode = 'coffee-shop' as BusinessMode
 
 const signupForm = reactive({
   businessName: '',
@@ -25,8 +27,10 @@ const signupForm = reactive({
   email: '',
   username: '',
   password: '',
-  businessMode: 'coffee-shop' as BusinessMode,
+  businessMode: defaultBusinessMode,
+  businessTypeLabel: businessModeLabel(defaultBusinessMode),
 })
+const lastSuggestedBusinessType = ref(signupForm.businessTypeLabel)
 
 const pairForm = reactive({
   pairingCode: '',
@@ -40,6 +44,19 @@ const codeCopied = ref(false)
 
 function clearError() {
   errorMessage.value = ''
+}
+
+function updateBusinessMode(value: BusinessMode) {
+  const nextLabel = businessModeLabel(value)
+  const currentLabel = signupForm.businessTypeLabel.trim()
+  const shouldSyncBusinessType = currentLabel === '' || currentLabel === lastSuggestedBusinessType.value
+
+  signupForm.businessMode = value
+  lastSuggestedBusinessType.value = nextLabel
+
+  if (shouldSyncBusinessType) {
+    signupForm.businessTypeLabel = nextLabel
+  }
 }
 
 /**
@@ -66,12 +83,20 @@ function bindAndEnter(
 async function submitSignup() {
   clearError()
   if (saving.value) return
+  const businessTypeLabel = signupForm.businessTypeLabel.trim()
+  if (!businessTypeLabel) {
+    errorMessage.value = 'Please tell us what kind of business you run.'
+    return
+  }
   saving.value = true
   try {
     const response = await fetch('/api/signup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(signupForm),
+      body: JSON.stringify({
+        ...signupForm,
+        businessTypeLabel,
+      }),
     })
     const body = await response.json().catch(() => ({})) as {
       organizationSlug?: string
@@ -137,6 +162,9 @@ async function submitPairing() {
       return
     }
     if (bindAndEnter(body, 'Unable to find that store.')) {
+      // Hand the code to main.ts so this device can open a backend sync
+      // session, without resetting the existing store's own settings.
+      writePendingPairingCode(pairForm.pairingCode)
       window.location.href = '/app'
     }
   } catch {
@@ -239,8 +267,31 @@ async function submitPairing() {
                 </label>
                 <label class="settings-field">
                   <span class="settings-row__label">Business type</span>
-                  <AutocompleteSelect v-model="signupForm.businessMode" label="Business type" :options="businessModeOptions" />
-                  <span class="onboarding-hint">Sets your starting catalog, layout, and checkout flow. Changeable later.</span>
+                  <input
+                    v-model="signupForm.businessTypeLabel"
+                    class="sheet-input"
+                    type="text"
+                    list="business-type-suggestions"
+                    autocomplete="off"
+                    placeholder="e.g. Bakery, Flower shop, Pet supplies"
+                    required
+                  >
+                  <datalist id="business-type-suggestions">
+                    <option v-for="option in businessTypeSuggestions" :key="option" :value="option">
+                      {{ option }}
+                    </option>
+                  </datalist>
+                  <span class="onboarding-hint">Type it your way, or pick one of the suggestions.</span>
+                </label>
+                <label class="settings-field">
+                  <span class="settings-row__label">Starter setup</span>
+                  <AutocompleteSelect
+                    :model-value="signupForm.businessMode"
+                    label="Starter setup"
+                    :options="businessModeOptions"
+                    @update:model-value="(value) => updateBusinessMode(value as BusinessMode)"
+                  />
+                  <span class="onboarding-hint">Sets your starting catalog, layout, and checkout flow. Pick the closest fit; changeable later.</span>
                 </label>
 
                 <!-- Was a GCash transfer collected mid-form, against a

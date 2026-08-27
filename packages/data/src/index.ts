@@ -35,14 +35,6 @@ import {
   type Supplier,
   type UserAccount,
 } from '@pos/shared/index'
-import {
-  createFirebaseSync,
-  type FirebaseSyncConfig,
-  type FirebaseSyncSession,
-  type FirebaseSync,
-} from './firebase-sync'
-
-export type { FirebaseSyncConfig }
 
 export interface DataStore {
   read<T>(key: string, fallback: T): Promise<T>
@@ -134,6 +126,9 @@ export interface PosRepository {
   saveRoles(roles: RoleDefinition[]): Promise<void>
   loadSession(): Promise<AuthSession | null>
   saveSession(session: AuthSession | null): Promise<void>
+  // The paired store's id, for subscribing to its live (Reverb) channel. Null
+  // until a backend device session exists (local-only, or not yet paired).
+  getSyncStoreId(): Promise<string | null>
   loadAppEvents(): Promise<AppEvent[]>
   trackAppEvent(input: {
     eventType: AppEventType
@@ -149,14 +144,17 @@ export interface PosRepository {
 
 export interface BrowserPosRepositoryOptions {
   store?: DataStore
-  sync?: Partial<SyncConfig> | Partial<FirebaseSyncConfig>
+  sync?: Partial<SyncConfig>
 }
 
 interface SyncConfig {
   apiBaseUrl: string
   organizationSlug: string
   storeCode: string
-  pairingCode: string
+  // Optional at construction: staff sign-in (POST /api/staff-sessions) needs
+  // only the org/store, while device pairing reads the code from persisted
+  // settings (seeded by onboarding). See ensureRemoteSession.
+  pairingCode?: string
   deviceName: string
   platform: string
   appVersion: string
@@ -445,9 +443,11 @@ export async function clearLocalPosCache(): Promise<void> {
   })
 }
 
-function normalizeSyncConfig(input?: Partial<SyncConfig> | Partial<FirebaseSyncConfig>): SyncConfig | null {
+function normalizeSyncConfig(input?: Partial<SyncConfig>): SyncConfig | null {
   const cfg = input as Partial<SyncConfig>
-  if (!cfg?.apiBaseUrl || !cfg.organizationSlug || !cfg.storeCode || !cfg.pairingCode) {
+  // The pairing code is not required here — staff sign-in only needs the
+  // org/store, and device pairing falls back to the persisted settings code.
+  if (!cfg?.apiBaseUrl || !cfg.organizationSlug || !cfg.storeCode) {
     return null
   }
 
@@ -455,25 +455,7 @@ function normalizeSyncConfig(input?: Partial<SyncConfig> | Partial<FirebaseSyncC
     apiBaseUrl: cfg.apiBaseUrl.replace(/\/+$/, ''),
     organizationSlug: cfg.organizationSlug,
     storeCode: cfg.storeCode,
-    pairingCode: cfg.pairingCode,
-    deviceName: cfg.deviceName?.trim() || defaultDeviceName(),
-    platform: cfg.platform?.trim() || 'web',
-    appVersion: cfg.appVersion?.trim() || '0.1.0',
-  }
-}
-
-function normalizeFirebaseSyncConfig(
-  input?: Partial<SyncConfig> | Partial<FirebaseSyncConfig>,
-): FirebaseSyncConfig | null {
-  const cfg = input as Partial<FirebaseSyncConfig>
-  if (!cfg?.firebaseConfig?.apiKey || !cfg.organizationSlug || !cfg.storeCode) {
-    return null
-  }
-
-  return {
-    firebaseConfig: cfg.firebaseConfig,
-    organizationSlug: cfg.organizationSlug,
-    storeCode: cfg.storeCode,
+    pairingCode: cfg.pairingCode?.trim() || '',
     deviceName: cfg.deviceName?.trim() || defaultDeviceName(),
     platform: cfg.platform?.trim() || 'web',
     appVersion: cfg.appVersion?.trim() || '0.1.0',
@@ -1057,36 +1039,16 @@ function createDemoOrders(createdByUserId: string | null): OrderSummary[] {
 
 export function createBrowserPosRepository(options: BrowserPosRepositoryOptions = {}): PosRepository {
   const store = options.store ?? new BrowserIndexedDbStore()
-  const firebaseConfig = normalizeFirebaseSyncConfig(options.sync)
-  const syncConfig = firebaseConfig ? null : normalizeSyncConfig(options.sync)
-  const firebaseSync: FirebaseSync | null = firebaseConfig ? createFirebaseSync(firebaseConfig) : null
-  const appVersion = firebaseConfig?.appVersion ?? syncConfig?.appVersion ?? '0.1.0'
+  const syncConfig = normalizeSyncConfig(options.sync)
+  const appVersion = syncConfig?.appVersion ?? '0.1.0'
 
   async function isOnlineSyncEnabled() {
-    if (!syncConfig && !firebaseSync) {
+    if (!syncConfig) {
       return false
     }
 
     const settings = await store.read<Partial<AppSettings>>(storageKeys.settings, defaultSettings)
     return settings.syncMode === 'online-sync'
-  }
-
-  async function readFirebaseSession(): Promise<FirebaseSyncSession | null> {
-    return store.read<FirebaseSyncSession | null>(storageKeys.syncSession, null)
-  }
-
-  async function writeFirebaseSession(session: FirebaseSyncSession | null): Promise<void> {
-    await store.write(storageKeys.syncSession, session)
-  }
-
-  async function getFirebaseSession(): Promise<FirebaseSyncSession | null> {
-    if (!firebaseSync) return null
-    const cached = await readFirebaseSession()
-    const live = await firebaseSync.getCurrentSession(cached)
-    if (live && (!cached || live.organizationId !== cached.organizationId)) {
-      await writeFirebaseSession(live)
-    }
-    return live
   }
 
   async function getDeviceId() {
@@ -1171,13 +1133,6 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
   }
 
   async function refreshRemoteShift() {
-    if (firebaseSync) {
-      const session = await getFirebaseSession()
-      if (!session) return null
-      const shift = await firebaseSync.getCurrentShift(session.storeId)
-      await writeActiveShift(shift)
-      return shift
-    }
     const response = await backendFetch<{ shift: BackendShiftSummary | null }>('/api/shifts/current')
     const shift = response.shift ? mapBackendShift(response.shift) : null
     await writeActiveShift(shift)
@@ -1237,10 +1192,15 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       return session
     }
 
+    // Onboarding persists the store's pairing code into settings; prefer that
+    // over any build-time config so a paired device can open a device session.
+    const settings = await store.read<Partial<AppSettings>>(storageKeys.settings, defaultSettings)
+    const pairingCode = (syncConfig.pairingCode ?? '') || (settings.pairingCode ?? '')
+
     const payload = {
       organizationSlug: syncConfig.organizationSlug,
       storeCode: syncConfig.storeCode,
-      pairingCode: syncConfig.pairingCode,
+      pairingCode,
       deviceName: syncConfig.deviceName,
       platform: syncConfig.platform,
       appVersion: syncConfig.appVersion,
@@ -1282,16 +1242,6 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
   }
 
   async function syncCatalogFromBootstrap() {
-    if (firebaseSync) {
-      const session = await getFirebaseSession()
-      if (!session) throw new Error('No Firebase session for bootstrap.')
-      const result = await firebaseSync.bootstrapCatalog(session.organizationId, session.storeId)
-      await store.write(storageKeys.categories, result.categories)
-      await store.write(storageKeys.products, result.products)
-      await writeSyncCursor(result.cursor)
-      return result
-    }
-
     const response = await backendFetch<{
       catalog: {
         categories: BackendCategory[]
@@ -1315,27 +1265,6 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
   }
 
   async function pullCatalogChanges() {
-    if (firebaseSync) {
-      const session = await getFirebaseSession()
-      if (!session) return
-      const cursor = await readSyncCursor()
-      if (!cursor) return
-      const result = await firebaseSync.pullChanges(session.organizationId, session.storeId, cursor)
-
-      const currentCategories = await store.read<Category[]>(storageKeys.categories, [])
-      const currentProducts = await store.read<Product[]>(storageKeys.products, [])
-      const nextCategories = new Map(currentCategories.map((entry) => [entry.id, entry]))
-      const nextProducts = new Map(currentProducts.map((entry) => [entry.id, entry]))
-
-      for (const cat of result.categories) nextCategories.set(cat.id, cat)
-      for (const prod of result.products) nextProducts.set(prod.id, prod)
-
-      await store.write(storageKeys.categories, Array.from(nextCategories.values()))
-      await store.write(storageKeys.products, Array.from(nextProducts.values()))
-      await writeSyncCursor(result.cursor)
-      return
-    }
-
     const cursor = await readSyncCursor()
     const response = await backendFetch<{
       cursor: string
@@ -1393,18 +1322,6 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     const events = await readOutbox()
     if (events.length === 0) {
       return new Set()
-    }
-
-    if (firebaseSync) {
-      const session = await getFirebaseSession()
-      if (!session) return new Set()
-      const appliedIds = await firebaseSync.pushEvents(events, session)
-      if (appliedIds.size > 0) {
-        await writeOutbox(events.filter((event) => !appliedIds.has(event.id)))
-        await markAppEventsSent(appliedIds)
-      }
-      await pullCatalogChanges()
-      return appliedIds
     }
 
     const session = await ensureRemoteSession()
@@ -1576,14 +1493,6 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       return null
     }
 
-    if (firebaseSync) {
-      const session = await getFirebaseSession()
-      if (!session) return null
-      const users = await firebaseSync.loadUsers(session.organizationId)
-      await store.write(storageKeys.users, users)
-      return users
-    }
-
     const response = await backendFetch<{ users: UserAccount[] }>('/api/staff-users')
     await store.write(storageKeys.users, response.users)
     return response.users
@@ -1592,14 +1501,6 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
   async function tryLoadRemoteRoles() {
     if (!await isOnlineSyncEnabled()) {
       return null
-    }
-
-    if (firebaseSync) {
-      const session = await getFirebaseSession()
-      if (!session) return null
-      const roles = await firebaseSync.loadRoles(session.organizationId)
-      await store.write(storageKeys.roles, roles)
-      return roles
     }
 
     const response = await backendFetch<{ roles: RoleDefinition[] }>('/api/staff-roles')
@@ -1744,21 +1645,12 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     async loadShiftHistory() {
       if (await isOnlineSyncEnabled()) {
         try {
-          if (firebaseSync) {
-            const session = await getFirebaseSession()
-            if (session) {
-              const shifts = await firebaseSync.getShiftHistory(session.storeId)
-              await store.write(storageKeys.shiftHistory, shifts)
-              return shifts
-            }
-          } else {
-            const response = await backendFetch<{ shifts: BackendShiftSummary[] }>('/api/shifts/history')
-            const shifts = response.shifts.map(mapBackendShift)
-            await store.write(storageKeys.shiftHistory, shifts)
-            return shifts
-          }
+          const response = await backendFetch<{ shifts: BackendShiftSummary[] }>('/api/shifts/history')
+          const shifts = response.shifts.map(mapBackendShift)
+          await store.write(storageKeys.shiftHistory, shifts)
+          return shifts
         } catch {
-          // Fall back to the cached history if the backend/Firebase is unavailable.
+          // Fall back to the cached history if the backend is unavailable.
         }
       }
 
@@ -1915,64 +1807,32 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     // Storefront orders are written server-side, not by this device — unlike
     // in-person sales they are not in the local cache/outbox, so they need
     // their own pull, and a local-only store has no storefront to receive them
-    // from at all.
-    //
-    // The API is the live path: the storefront POSTs to Laravel, so that is
-    // where today's orders are. Firestore is the legacy one, kept for stores
-    // still on the old sync — without it, every order a shop took before the
-    // migration would vanish from the dashboard.
+    // from at all. The storefront POSTs to Laravel, so the backend is where
+    // today's orders are.
     async loadOnlineOrders() {
       if (!(await isOnlineSyncEnabled())) {
         return []
       }
 
-      if (syncConfig) {
-        try {
-          const payload = await backendFetch<{ orders: OrderSummary[] }>('/api/seller/online-orders')
-          return (payload.orders ?? []).map(normalizeOrder)
-        } catch {
-          // Fall through to Firestore rather than blanking the dashboard: a
-          // store mid-migration may still have its orders on the old transport.
-        }
-      }
-
-      if (!firebaseSync) {
+      try {
+        const payload = await backendFetch<{ orders: OrderSummary[] }>('/api/seller/online-orders')
+        return (payload.orders ?? []).map(normalizeOrder)
+      } catch {
+        // Don't blank the dashboard on a transient sync hiccup.
         return []
       }
-
-      const session = await getFirebaseSession()
-      if (!session) {
-        return []
-      }
-
-      return firebaseSync.pullOnlineOrders(session.storeId)
     },
 
     async settleOrderPayment(orderId, input) {
-      if (syncConfig) {
-        const payload = await backendFetch<{ order: OrderSummary }>(
-          `/api/seller/online-orders/${encodeURIComponent(orderId)}/settle-payment`,
-          { method: 'POST', body: JSON.stringify(input) },
-        )
-        return normalizeOrder(payload.order)
-      }
-
-      if (!firebaseSync) {
-        throw new Error('Settling an online order requires online sync to be enabled.')
-      }
-
-      const session = await getFirebaseSession()
-      if (!session) {
-        throw new Error('Settling an online order requires an active Firebase session.')
-      }
-
-      return firebaseSync.settleOrderPayment(session.storeId, orderId, input)
+      const payload = await backendFetch<{ order: OrderSummary }>(
+        `/api/seller/online-orders/${encodeURIComponent(orderId)}/settle-payment`,
+        { method: 'POST', body: JSON.stringify(input) },
+      )
+      return normalizeOrder(payload.order)
     },
 
-    // The three below are API-only: the Firestore transport never grew a
-    // rider or a delivery stage, so a store still on it cannot dispatch from
-    // here. backendFetch throws without a sync config, and the dashboard shows
-    // that message on the card rather than looking like the rider was told.
+    // backendFetch throws without a sync config, and the dashboard shows that
+    // message on the card rather than looking like the rider was told.
     async updateOnlineOrderStatus(orderId, status) {
       const payload = await backendFetch<{ order: OrderSummary }>(
         `/api/seller/online-orders/${encodeURIComponent(orderId)}/status`,
@@ -2173,30 +2033,16 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
     async openShift(input) {
       if (await isOnlineSyncEnabled()) {
-        if (firebaseSync) {
-          const session = await getFirebaseSession()
-          if (session) {
-            const shift = await firebaseSync.openShift({
-              openingCashCents: input.openingCashCents,
-              userId: input.userId ?? null,
-              storeId: session.storeId,
-              organizationId: session.organizationId,
-            })
-            await writeActiveShift(shift)
-            return shift
-          }
-        } else {
-          const response = await backendFetch<{ shift: BackendShiftSummary }>('/api/shifts/open', {
-            method: 'POST',
-            body: JSON.stringify({
-              openingCashCents: input.openingCashCents,
-              userId: input.userId ?? null,
-            }),
-          })
-          const shift = mapBackendShift(response.shift)
-          await writeActiveShift(shift)
-          return shift
-        }
+        const response = await backendFetch<{ shift: BackendShiftSummary }>('/api/shifts/open', {
+          method: 'POST',
+          body: JSON.stringify({
+            openingCashCents: input.openingCashCents,
+            userId: input.userId ?? null,
+          }),
+        })
+        const shift = mapBackendShift(response.shift)
+        await writeActiveShift(shift)
+        return shift
       }
 
       const shift: ShiftSummary = {
@@ -2223,36 +2069,18 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
     async addCashMovement(input) {
       if (await isOnlineSyncEnabled()) {
-        if (firebaseSync) {
-          const session = await getFirebaseSession()
-          const current = await readActiveShift()
-          if (session && current && !current.closedAt) {
-            const shift = await firebaseSync.addCashMovement({
-              shiftId: current.id,
-              storeId: session.storeId,
-              organizationId: session.organizationId,
-              movementType: input.movementType,
-              amountCents: input.amountCents,
-              reason: input.reason,
-              userId: input.userId ?? null,
-            })
-            await writeActiveShift(shift)
-            return shift
-          }
-        } else {
-          const response = await backendFetch<{ shift: BackendShiftSummary }>('/api/shifts/current/movements', {
-            method: 'POST',
-            body: JSON.stringify({
-              movementType: input.movementType,
-              amountCents: input.amountCents,
-              reason: input.reason ?? null,
-              userId: input.userId ?? null,
-            }),
-          })
-          const shift = mapBackendShift(response.shift)
-          await writeActiveShift(shift)
-          return shift
-        }
+        const response = await backendFetch<{ shift: BackendShiftSummary }>('/api/shifts/current/movements', {
+          method: 'POST',
+          body: JSON.stringify({
+            movementType: input.movementType,
+            amountCents: input.amountCents,
+            reason: input.reason ?? null,
+            userId: input.userId ?? null,
+          }),
+        })
+        const shift = mapBackendShift(response.shift)
+        await writeActiveShift(shift)
+        return shift
       }
 
       const shift = await updateCachedShift((current) => {
@@ -2290,31 +2118,16 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
     async closeShift(input) {
       if (await isOnlineSyncEnabled()) {
-        if (firebaseSync) {
-          const session = await getFirebaseSession()
-          const current = await readActiveShift()
-          if (session && current && !current.closedAt) {
-            const shift = await firebaseSync.closeShift({
-              shiftId: current.id,
-              countedCashCents: input.countedCashCents,
-              expectedCashCents: current.expectedCashCents,
-              userId: input.userId ?? null,
-            })
-            await writeActiveShift(null)
-            return shift
-          }
-        } else {
-          const response = await backendFetch<{ shift: BackendShiftSummary }>('/api/shifts/current/close', {
-            method: 'POST',
-            body: JSON.stringify({
-              countedCashCents: input.countedCashCents,
-              userId: input.userId ?? null,
-            }),
-          })
-          const shift = mapBackendShift(response.shift)
-          await writeActiveShift(null)
-          return shift
-        }
+        const response = await backendFetch<{ shift: BackendShiftSummary }>('/api/shifts/current/close', {
+          method: 'POST',
+          body: JSON.stringify({
+            countedCashCents: input.countedCashCents,
+            userId: input.userId ?? null,
+          }),
+        })
+        const shift = mapBackendShift(response.shift)
+        await writeActiveShift(null)
+        return shift
       }
 
       const current = await readActiveShift()
@@ -2379,9 +2192,7 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
       if (settings.syncMode === 'online-sync') {
         try {
-          if (!firebaseSync) {
-            await ensureRemoteSession()
-          }
+          await ensureRemoteSession()
           await enqueuePendingAppTelemetryEvents()
           await syncCatalogFromBootstrap()
           await flushOutbox()
@@ -2411,52 +2222,38 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     async loginUser(username, password) {
       if (await isOnlineSyncEnabled()) {
         try {
-          if (firebaseSync) {
-            const result = await firebaseSync.loginUser(username, password)
-            if (result) {
-              const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
-              await store.write(storageKeys.users, [
-                result.user,
-                ...existingUsers.filter((u) => u.id !== result.user.id),
-              ])
-              await store.write(storageKeys.session, result.session)
-              await writeFirebaseSession(result.syncSession)
-              return { user: result.user, session: result.session }
-            }
-          } else {
-            const response = await fetch(`${syncConfig?.apiBaseUrl}/api/staff-sessions`, {
-              method: 'POST',
-              headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                organizationSlug: syncConfig?.organizationSlug,
-                storeCode: syncConfig?.storeCode,
-                username,
-                password,
-              }),
-            })
+          const response = await fetch(`${syncConfig?.apiBaseUrl}/api/staff-sessions`, {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              organizationSlug: syncConfig?.organizationSlug,
+              storeCode: syncConfig?.storeCode,
+              username,
+              password,
+            }),
+          })
 
-            if (response.ok) {
-              const body = await response.json() as {
-                user: UserAccount
-                session: AuthSession
-              }
-              const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
-              await store.write(storageKeys.users, [
-                body.user,
-                ...existingUsers.filter((entry) => entry.id !== body.user.id),
-              ])
-              await store.write(storageKeys.session, body.session)
-              return body
+          if (response.ok) {
+            const body = await response.json() as {
+              user: UserAccount
+              session: AuthSession
             }
+            const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
+            await store.write(storageKeys.users, [
+              body.user,
+              ...existingUsers.filter((entry) => entry.id !== body.user.id),
+            ])
+            await store.write(storageKeys.session, body.session)
+            return body
+          }
 
-            if (response.status === 403) {
-              throw new RemoteAuthError(
-                await responseMessage(response, 'Please verify your email first.'),
-              )
-            }
+          if (response.status === 403) {
+            throw new RemoteAuthError(
+              await responseMessage(response, 'Please verify your email first.'),
+            )
           }
         } catch (error) {
           if (error instanceof RemoteAuthError) {
@@ -2498,47 +2295,33 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     async registerUser(input) {
       if (await isOnlineSyncEnabled()) {
         try {
-          if (firebaseSync) {
-            const result = await firebaseSync.registerUser(input)
-            if (result) {
-              const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
-              await store.write(storageKeys.users, [
-                result.user,
-                ...existingUsers.filter((u) => u.id !== result.user.id),
-              ])
-              await store.write(storageKeys.session, result.session)
-              await writeFirebaseSession(result.syncSession)
-              return { user: result.user, session: result.session }
-            }
-          } else {
-            const response = await fetch(`${syncConfig?.apiBaseUrl}/api/staff-register`, {
-              method: 'POST',
-              headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                organizationSlug: syncConfig?.organizationSlug,
-                storeCode: syncConfig?.storeCode,
-                fullName: input.fullName,
-                username: input.username,
-                password: input.password,
-              }),
-            })
+          const response = await fetch(`${syncConfig?.apiBaseUrl}/api/staff-register`, {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              organizationSlug: syncConfig?.organizationSlug,
+              storeCode: syncConfig?.storeCode,
+              fullName: input.fullName,
+              username: input.username,
+              password: input.password,
+            }),
+          })
 
-            if (response.ok) {
-              const body = await response.json() as {
-                user: UserAccount
-                session: AuthSession
-              }
-              const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
-              await store.write(storageKeys.users, [
-                body.user,
-                ...existingUsers.filter((entry) => entry.id !== body.user.id),
-              ])
-              await store.write(storageKeys.session, body.session)
-              return body
+          if (response.ok) {
+            const body = await response.json() as {
+              user: UserAccount
+              session: AuthSession
             }
+            const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
+            await store.write(storageKeys.users, [
+              body.user,
+              ...existingUsers.filter((entry) => entry.id !== body.user.id),
+            ])
+            await store.write(storageKeys.session, body.session)
+            return body
           }
         } catch {
           // Fall back to local registration below.
@@ -2591,21 +2374,9 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         throw new Error('Full name, username, password, and role are required.')
       }
 
-      if (await isOnlineSyncEnabled() && firebaseSync) {
-        const session = await getFirebaseSession()
-        if (!session) {
-          throw new Error('Your admin session has expired — please sign in again.')
-        }
-
-        // No try/catch here: a remote failure must propagate so the admin sees a
-        // real error, rather than silently creating a local-only account the new
-        // employee could never actually log into from another device.
-        const user = await firebaseSync.createStaffAccount({ fullName, username, password, roleId })
-        const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
-        await store.write(storageKeys.users, [user, ...existingUsers.filter((u) => u.id !== user.id)])
-        return user
-      }
-
+      // Backend note: there is no POST /staff-users endpoint yet, so an admin
+      // creating a colleague from the POS writes a local-only account. Add a
+      // backend create endpoint if these need to sign in from another device.
       const users = await store.read<UserAccount[]>(storageKeys.users, [])
       if (users.some((user) => user.username === username)) {
         throw new Error('That username is already in use.')
@@ -2632,21 +2403,12 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
       if (await isOnlineSyncEnabled()) {
         try {
-          if (firebaseSync) {
-            const session = await getFirebaseSession()
-            if (session) {
-              await firebaseSync.updateUserRole(userId, roleId, session.organizationId)
-              const refreshedUsers = await tryLoadRemoteUsers()
-              if (refreshedUsers) return
-            }
-          } else {
-            await backendFetch<{ user: UserAccount }>(`/api/staff-users/${userId}/role`, {
-              method: 'PATCH',
-              body: JSON.stringify({ roleId }),
-            })
-            const refreshedUsers = await tryLoadRemoteUsers()
-            if (refreshedUsers) return
-          }
+          await backendFetch<{ user: UserAccount }>(`/api/staff-users/${userId}/role`, {
+            method: 'PATCH',
+            body: JSON.stringify({ roleId }),
+          })
+          const refreshedUsers = await tryLoadRemoteUsers()
+          if (refreshedUsers) return
         } catch {
           // Keep the local role update even if the backend call fails.
         }
@@ -2672,19 +2434,11 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
       if (await isOnlineSyncEnabled()) {
         try {
-          if (firebaseSync) {
-            const session = await getFirebaseSession()
-            if (session) {
-              const saved = await firebaseSync.saveRoles(roles, session.organizationId)
-              await store.write(storageKeys.roles, saved)
-            }
-          } else {
-            const response = await backendFetch<{ roles: RoleDefinition[] }>('/api/staff-roles', {
-              method: 'PUT',
-              body: JSON.stringify({ roles }),
-            })
-            await store.write(storageKeys.roles, response.roles)
-          }
+          const response = await backendFetch<{ roles: RoleDefinition[] }>('/api/staff-roles', {
+            method: 'PUT',
+            body: JSON.stringify({ roles }),
+          })
+          await store.write(storageKeys.roles, response.roles)
         } catch {
           // Keep local roles cached if remote sync fails.
         }
@@ -2699,15 +2453,13 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       await store.write(storageKeys.session, session)
 
       if (!session || session.userId === guestSessionUserId) {
-        await writeFirebaseSession(null)
-        if (firebaseSync) {
-          try {
-            await firebaseSync.signOut()
-          } catch {
-            // Clearing the local session is the priority even if Firebase sign-out fails.
-          }
-        }
+        await writeSyncSession(null)
       }
+    },
+
+    async getSyncStoreId() {
+      const session = await readSyncSession()
+      return session?.storeId ?? null
     },
 
     async loadAppEvents() {

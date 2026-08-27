@@ -25,37 +25,77 @@ Delivery aggregators take 20–30% from the merchant, squeeze the rider's per-dr
 
 ```
 /packages
-  /core            # Vue POS app - pages, components, stores
-  /data            # Repository + Firestore sync layer
+  /core            # Vue POS app - pages, components, stores, the Reverb order channel
   /shared          # Types and shared domain logic
+  /data            # Browser repository: IndexedDB with a localStorage mirror,
+                   # syncing to the Laravel API over /api/sync/*
 /apps
-  /web             # PWA: merchant till + customer storefront + platform admin
-  /mobile          # Capacitor Android app (customer storefront)
-  /mobile-admin    # Capacitor Android app (merchant)
-/backend           # Laravel 12 + PostgreSQL + Reverb (the target backend)
-/api               # HTTP handlers (legacy, being retired) — served by /server
-/server            # Self-hosted Node runner for /api on the VPS
-/firebase          # Firestore rules and schema (legacy)
+  /web             # PWA: merchant till + customer storefront + rider + platform admin
+/backend           # Laravel 12 + PostgreSQL + Reverb — the backend
 ```
 
 The marketing site is not a separate app — it is `apps/web/src/landing`, built into
 `landing.html`.
 
+There is no mobile app in the tree. The two Capacitor shells were deleted — neither
+built, and both reached for the Firebase SDK that the Laravel migration removed. A
+native Kotlin app replaces them and has not landed yet.
+
 ## Running
 
+Two halves, both needed: the Laravel API and the Vite dev server.
+
+### From a fresh clone
+
 ```bash
-npm install
-npm run dev:web      # merchant POS + storefront
-npm run build:web
+npm install                        # workspaces: root, apps/web, packages/*
+cp apps/web/.env.example apps/web/.env
+
+cd backend
+composer install
+cp .env.example .env
+php artisan key:generate
+php artisan migrate
+php artisan db:seed                # demo tenant — see below
+php artisan storage:link           # rider licence and plate photos
 ```
 
-`vite dev` does not serve `/api/*.ts`. To exercise those locally, run the same
-self-hosted runner the VPS uses, with Firebase Admin credentials in the environment:
+`db:seed` is `firstOrCreate` throughout, so it is safe to re-run. It leaves an
+org `demo-coffee` with store `main`, pairing code **123456**, one product, and a
+merchant login of `admin@example.com` / `password`.
+
+Then join the two halves. In `apps/web/.env`, `VITE_API_BASE` and
+`VITE_ONLINE_ORDER_API_BASE` point at the Laravel origin — `http://127.0.0.1:8000`
+locally, blank only when the API is served from the same host as the app. The
+`VITE_REVERB_*` values must match the backend's own `REVERB_*`: a blank
+`VITE_REVERB_APP_KEY` switches realtime off and the app falls back to polling.
+Generate the `REVERB_*` secrets per environment — never reuse them.
+
+The backend targets **PostgreSQL**, and that is what the VPS runs. For local work
+`DB_CONNECTION=sqlite` is enough — no migration uses Postgres-specific SQL, and
+the suite passes on it.
+
+### Day to day
 
 ```bash
-cd server
-npm install && npm run build
-npm start            # listens on 127.0.0.1:3005, /api/health for a liveness probe
+npm run dev:web      # merchant POS + storefront on :5173
+npm run build:web    # vue-tsc, then vite build into apps/web/dist
+```
+
+```bash
+cd backend
+php artisan serve           # :8000
+php artisan queue:work      # required — broadcasts are queued
+php artisan reverb:start    # websocket server on :8080
+php artisan test
+```
+
+An operator account for `/platform-admin` is made on the server rather than
+through any endpoint — that is deliberate, and it is why there is no
+password-reset route:
+
+```bash
+php artisan platform-admin:create you@example.com
 ```
 
 ### Static hosting
@@ -73,13 +113,15 @@ needs these rewrites (nginx `try_files`, or equivalent):
 | `/account` | `account.html` |
 | `/rider` | `rider.html` |
 | `/platform-admin` | `platform-admin.html` |
+| `/support-inbox` | `support-inbox.html` |
 
-`/api/*` proxies to the runner above. The client build also needs the
-`VITE_FIREBASE_*` / `VITE_POS_*` variables set at build time — see `apps/web/.env`.
+`/api/*` proxies to the Laravel backend. The client build also needs the
+`VITE_API_BASE` / `VITE_REVERB_*` / `VITE_POS_*` variables set at build time — see
+`apps/web/.env.example`.
 
 ## Status
 
-Working: merchant POS (17 pages, four business modes, shifts with cash reconciliation, full-order voids, inventory), customer storefront on web and mobile, store pairing by code, signup, and the platform admin dashboard.
+Working: merchant POS (17 pages, four business modes, shifts with cash reconciliation, full-order voids, inventory), the customer storefront on web, store pairing by code, signup, and the platform admin dashboard.
 
 The rider side is now built too: riders apply at `/rider` with their licence and
 plate — number and photo of each — and can do nothing until an operator has
@@ -92,17 +134,12 @@ Customer payment is **COD only** — cash at handover, no online collection, by 
 
 Not built: loyalty, and discounts. The merchant subscription is a ₱499 placeholder collected by manual GCash transfer.
 
-See [feature-log.md](documentation/feature-log.md) for audited detail and [plan.md](documentation/plan.md) for the phase order. Phase 0 — migrating off Firestore onto the Laravel VPS backend and verifying BIR requirements — blocks charging anyone.
+See [feature-log.md](documentation/feature-log.md) for audited detail and [plan.md](documentation/plan.md) for the phase order. Phase 0's migration off Firestore has landed in the code; verifying BIR requirements has not, and it still blocks charging anyone.
 
 ## Backend
 
-Laravel 12 + PostgreSQL, self-hosted on a VPS. Realtime runs on **Laravel Reverb**, with broadcasts dispatched through the queue.
+Laravel 12 + PostgreSQL, self-hosted on a VPS. Realtime runs on **Laravel Reverb**, with broadcasts dispatched through the queue — an order placed on the storefront is written, queued, and pushed to the merchant's `store.{id}` channel, so `queue:work` is not optional.
 
-```bash
-cd backend
-php artisan serve
-php artisan queue:work      # required — broadcasts are queued
-php artisan reverb:start    # websocket server
-```
-
-Firestore and the handlers in `/api` are the legacy path, still live and being retired.
+Firebase is gone: the Firestore sync layer, the `api/*.ts` handlers, their Node
+runner, and the Cloud Functions were all deleted. The Laravel API is the only
+backend.

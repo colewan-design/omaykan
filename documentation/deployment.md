@@ -226,10 +226,18 @@ thing standing between the next developer and a confusing failure.
   before a deploy. There is no schedule and nothing is copied off the box.
 - **Backups live on the same disk as the thing they back up.**
 - **No staging.** Every deploy has been straight to production.
+- **Local SQLite locks under a running queue worker.** SQLite takes a single
+  writer, and `queue:work` holds it briefly after each broadcast, so concurrent
+  order writes intermittently fail with `SQLSTATE[HY000]: General error: 5
+  database is locked`. Production is PostgreSQL and is unaffected — but use
+  PostgreSQL locally for anything concurrency-shaped, and do not mistake the
+  lock for an application bug. Seen during the run in
+  [e2e-findings.md §3.3](./e2e-findings.md).
 
 ---
 
 ## 7. Related
 
 - [feature-audit.md](./feature-audit.md) — what is missing and unfinished in the product
+- [e2e-findings.md](./e2e-findings.md) — a ten-run pass of the whole order chain, and what it found
 - [plan.md](./plan.md) — stale in places; see feature-audit §6

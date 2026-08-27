@@ -31,6 +31,11 @@ the running system.
 | Frontend tests | ~~None~~ — **28 added 2026-08-27**; still no component or store coverage |
 | BIR compliance | Unverified — blocks charging anyone |
 
+A ten-run end-to-end pass of seller → customer → rider → completion is in
+[e2e-findings.md](./e2e-findings.md). It found one high-severity defect not
+listed here: a product a merchant creates in their own POS can never be sold
+online, because the sync path never sets `business_modes`.
+
 Operational gaps — deploy process, backups, monitoring, and the fact that the
 production schema no longer matches `main`'s migrations — are in
 [deployment.md](./deployment.md), not here.

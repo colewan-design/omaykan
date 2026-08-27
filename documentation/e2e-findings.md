@@ -141,7 +141,7 @@ cache:clear` between phases.
 way to reset the limiter. Also: when a step fails with `Unauthenticated`, check
 whether *setup* failed before assuming the step did.
 
-### 3.3 SQLite locked under the queue worker
+### 3.3 SQLite locked under the queue worker — RESOLVED
 
 One run failed scenario 7 with `SQLSTATE[HY000]: General error: 5 database is
 locked` while inserting an order. SQLite allows a single writer, and the queue
@@ -151,9 +151,12 @@ Local-only — production is PostgreSQL and does not have this constraint. But i
 makes local runs flaky and could easily be misread as an application bug. The
 harness now retries a locked write up to three times.
 
-*Improvement:* worth noting in [deployment.md](./deployment.md) that a local
-SQLite database plus a running `queue:work` will intermittently lock. Anyone
-doing concurrency work locally should use PostgreSQL.
+*Improvement:* **done.** Local development moved to PostgreSQL 16.15 the same
+day — the same major the VPS runs — so the dev/prod database split is gone and
+this lock cannot recur. The whole ten-run suite was replayed on PostgreSQL:
+**identical results, 7 of 10, no flake.** That replay also confirms the §2
+defect is a genuine application bug rather than a SQLite artifact, which is
+worth more than the lock fix itself.
 
 ### 3.4 I wrote a test that asserted the wrong thing
 

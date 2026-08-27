@@ -74,9 +74,18 @@ locally, blank only when the API is served from the same host as the app. The
 `VITE_REVERB_APP_KEY` switches realtime off and the app falls back to polling.
 Generate the `REVERB_*` secrets per environment — never reuse them.
 
-The backend targets **PostgreSQL**, and that is what the VPS runs. For local work
-`DB_CONNECTION=sqlite` is enough — no migration uses Postgres-specific SQL, and
-the suite passes on it.
+The backend runs **PostgreSQL 16** in every environment, local included. Install
+the same major the VPS runs rather than substituting another engine: a local
+SQLite database takes a single writer and deadlocks against `queue:work`, which
+looks exactly like an application bug and is not one.
+
+On Windows, `winget install PostgreSQL.PostgreSQL.16`, then uncomment
+`extension=pdo_pgsql` in `php.ini` — the DLL ships with XAMPP but is off by
+default, which is why the toolchain can look MySQL-shaped at a glance.
+
+The only other database here is the **SQLite in-memory** one `phpunit.xml` uses
+for the test suite. That is deliberate — it is what lets a fresh clone run
+`php artisan test` with no database setup at all.
 
 ### Day to day
 

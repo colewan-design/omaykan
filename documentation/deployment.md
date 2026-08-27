@@ -226,13 +226,11 @@ thing standing between the next developer and a confusing failure.
   before a deploy. There is no schedule and nothing is copied off the box.
 - **Backups live on the same disk as the thing they back up.**
 - **No staging.** Every deploy has been straight to production.
-- **Local SQLite locks under a running queue worker.** SQLite takes a single
-  writer, and `queue:work` holds it briefly after each broadcast, so concurrent
-  order writes intermittently fail with `SQLSTATE[HY000]: General error: 5
-  database is locked`. Production is PostgreSQL and is unaffected — but use
-  PostgreSQL locally for anything concurrency-shaped, and do not mistake the
-  lock for an application bug. Seen during the run in
-  [e2e-findings.md §3.3](./e2e-findings.md).
+- ~~Local SQLite locks under a running queue worker.~~ **Resolved 2026-08-27**:
+  local development moved to PostgreSQL 16.15, the same major the VPS runs, so
+  there is no longer a dev/prod database split. The lock described in
+  [e2e-findings.md §3.3](./e2e-findings.md) cannot recur; the ten-run suite was
+  replayed on PostgreSQL with identical results and no flake.
 
 ---
 

@@ -11,13 +11,27 @@ import { onBeforeUnmount, ref } from 'vue'
  *
  * The document images are the awkward part. They live on the private disk and
  * have no URL: the only way to see one is POST /api/rider-review/{id}/document
- * carrying the operator secret, which is not something an <img src> can do. So
- * each image is fetched as a blob and shown from an object URL — which also
- * means every one has to be revoked by hand, and none of them are ever put
+ * carrying the operator's bearer token, which is not something an <img src> can
+ * do. So each image is fetched as a blob and shown from an object URL — which
+ * also means every one has to be revoked by hand, and none of them are ever put
  * anywhere a browser or a proxy would cache them.
  */
 
-const props = defineProps<{ secret: string }>()
+const props = defineProps<{ token: string }>()
+
+/*
+ * Raised when the API rejects the token, so the page above can drop the
+ * session rather than leaving this screen retrying against a dead one.
+ */
+const emit = defineEmits<{ (event: 'session-ended', message: string): void }>()
+
+function authHeaders(json = true): Record<string, string> {
+  return {
+    ...(json ? { 'Content-Type': 'application/json' } : {}),
+    Accept: 'application/json',
+    Authorization: `Bearer ${props.token}`,
+  }
+}
 
 interface ReviewRider {
   id: string
@@ -57,10 +71,15 @@ function formatDate(value: string | null): string {
 async function post(path: string, body: Record<string, unknown> = {}) {
   const response = await fetch(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...body, secret: props.secret }),
+    headers: authHeaders(),
+    body: JSON.stringify(body),
   })
   const data = await response.json().catch(() => ({}))
+  if (response.status === 401 || response.status === 403) {
+    const message = data.message || 'Your session has ended. Sign in again.'
+    emit('session-ended', message)
+    throw new Error(message)
+  }
   if (!response.ok) {
     throw new Error(data.message || data.error || 'Something went wrong.')
   }
@@ -102,12 +121,11 @@ async function decide(rider: ReviewRider, status: 'approved' | 'rejected' | 'sus
   }
 }
 
-/** Fetches one document as a blob, because it is a POST behind a secret. */
+/** Fetches one document as a blob, because it is a POST behind the token. */
 async function fetchDocument(riderId: string, document: 'license' | 'plate'): Promise<string> {
   const response = await fetch(`/api/rider-review/${riderId}/document/${document}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ secret: props.secret }),
+    headers: authHeaders(false),
   })
 
   if (!response.ok) throw new Error('That document could not be loaded.')

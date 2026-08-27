@@ -2,10 +2,13 @@
 
 namespace Tests\Feature\Api;
 
+use App\Mail\PlatformAdminReplyMail;
 use App\Models\Organization;
+use App\Models\PlatformAdmin;
 use App\Models\Subscription;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 /**
@@ -15,13 +18,19 @@ class PlatformAdminApiTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const SECRET = 'test-operator-secret';
+    private const OPERATOR_PASSWORD = 'operator-password-1234';
+
+    private PlatformAdmin $operator;
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        config(['services.platform_admin.secret' => self::SECRET]);
+        $this->operator = PlatformAdmin::query()->create([
+            'name' => 'Platform Operator',
+            'email' => 'operator@example.test',
+            'password' => self::OPERATOR_PASSWORD,
+        ]);
     }
 
     /** Creates a real tenant the way a merchant would. */
@@ -45,23 +54,85 @@ class PlatformAdminApiTest extends TestCase
 
     private function call_admin(array $body)
     {
-        return $this->postJson('/api/platform-admin', array_merge(['secret' => self::SECRET], $body));
+        return $this->withToken($this->operatorToken())->postJson('/api/platform-admin', $body);
     }
 
-    public function test_the_secret_is_required(): void
+    /** A real sign-in rather than actingAs, so the login path is exercised too. */
+    private function operatorToken(): string
+    {
+        return $this->postJson('/api/platform-admin/login', [
+            'email' => $this->operator->email,
+            'password' => self::OPERATOR_PASSWORD,
+        ])->assertOk()->json('token');
+    }
+
+    public function test_sign_in_is_required(): void
     {
         $this->postJson('/api/platform-admin', ['action' => 'listOrgs'])->assertStatus(401);
-        $this->postJson('/api/platform-admin', ['action' => 'listOrgs', 'secret' => 'wrong'])->assertStatus(401);
+
+        $this->withToken('not-a-real-token')
+            ->postJson('/api/platform-admin', ['action' => 'listOrgs'])
+            ->assertStatus(401);
     }
 
-    public function test_an_unconfigured_secret_refuses_rather_than_opening_the_door(): void
+    public function test_a_wrong_password_is_refused_without_saying_which_half_was_wrong(): void
     {
-        config(['services.platform_admin.secret' => null]);
+        $missing = $this->postJson('/api/platform-admin/login', [
+            'email' => 'nobody@example.test',
+            'password' => self::OPERATOR_PASSWORD,
+        ])->assertStatus(422);
 
-        // An empty configured secret must not be satisfiable by sending an
-        // empty secret.
-        $this->postJson('/api/platform-admin', ['action' => 'listOrgs', 'secret' => ''])
-            ->assertStatus(500);
+        $wrong = $this->postJson('/api/platform-admin/login', [
+            'email' => $this->operator->email,
+            'password' => 'not-the-password',
+        ])->assertStatus(422);
+
+        // The same message for "no such account" and "wrong password", so the
+        // endpoint cannot be used to enumerate operators.
+        $this->assertSame($missing->json('errors.email.0'), $wrong->json('errors.email.0'));
+    }
+
+    /**
+     * The reason operator accounts exist at all: access can be taken away from
+     * one person, immediately, without rotating anything for anyone else.
+     */
+    public function test_a_disabled_operator_cannot_use_a_token_it_already_holds(): void
+    {
+        $token = $this->operatorToken();
+
+        $this->withToken($token)->postJson('/api/platform-admin', ['action' => 'listOrgs'])->assertOk();
+
+        $this->operator->forceFill(['disabled_at' => now()])->save();
+
+        // A test reuses one container across requests, so the guard still holds
+        // the operator it resolved a moment ago. Production gets a fresh
+        // container per request; this is what that looks like.
+        $this->app['auth']->forgetGuards();
+
+        $this->withToken($token)
+            ->postJson('/api/platform-admin', ['action' => 'listOrgs'])
+            ->assertStatus(403);
+
+        $this->postJson('/api/platform-admin/login', [
+            'email' => $this->operator->email,
+            'password' => self::OPERATOR_PASSWORD,
+        ])->assertStatus(403);
+    }
+
+    /**
+     * The guard separation is the whole argument for a fourth table: a store
+     * owner's token is a perfectly valid token, and it must not reach here.
+     */
+    public function test_a_staff_token_cannot_reach_the_operator_tools(): void
+    {
+        $this->signUpTenant();
+
+        $owner = User::query()->where('email', 'anareyes@example.test')->firstOrFail();
+        $staffToken = $owner->createToken('staff-session:test', ['staff'])->plainTextToken;
+
+        $this->withToken($staffToken)
+            ->postJson('/api/platform-admin', ['action' => 'listOrgs'])
+            ->assertStatus(401);
     }
 
     public function test_list_orgs_returns_store_subscription_and_admins(): void
@@ -123,6 +194,7 @@ class PlatformAdminApiTest extends TestCase
         $created = $this->signUpTenant();
         $slug = $created['organizationSlug'];
         $owner = User::query()->where('username', 'anareyes')->firstOrFail();
+        $owner->forceFill(['email_verified_at' => now()])->save();
 
         // An existing session, which must not survive the reset.
         $this->postJson('/api/staff-sessions', [
@@ -173,6 +245,46 @@ class PlatformAdminApiTest extends TestCase
         $this->call_admin(['action' => 'listOrgs'])
             ->assertOk()
             ->assertJsonPath('organizations.0.admins.0.disabled', true);
+    }
+
+    public function test_a_superadmin_can_email_an_owner_from_the_portal(): void
+    {
+        Mail::fake();
+
+        $slug = $this->signUpTenant()['organizationSlug'];
+        $owner = User::query()->where('username', 'anareyes')->firstOrFail();
+
+        $this->call_admin([
+            'action' => 'sendOwnerEmail',
+            'organizationSlug' => $slug,
+            'uid' => $owner->id,
+            'subject' => 'Need one more document',
+            'message' => "Please send a clearer GCash receipt.\nThank you.",
+        ])->assertOk()->assertJsonPath('queued', true);
+
+        Mail::assertQueued(PlatformAdminReplyMail::class, function (PlatformAdminReplyMail $mail) use ($owner) {
+            return $mail->hasTo($owner->email)
+                && $mail->subjectLine === 'Need one more document'
+                && $mail->messageBody === "Please send a clearer GCash receipt.\nThank you.";
+        });
+    }
+
+    public function test_emailing_an_owner_without_an_email_is_rejected(): void
+    {
+        $slug = $this->signUpTenant()['organizationSlug'];
+        $owner = User::query()->where('username', 'anareyes')->firstOrFail();
+        Mail::fake();
+        $owner->forceFill(['email' => null])->save();
+
+        $this->call_admin([
+            'action' => 'sendOwnerEmail',
+            'organizationSlug' => $slug,
+            'uid' => $owner->id,
+            'subject' => 'Hello',
+            'message' => 'Test body',
+        ])->assertStatus(422);
+
+        Mail::assertNotQueued(PlatformAdminReplyMail::class);
     }
 
     public function test_an_owner_of_another_org_cannot_be_targeted(): void

@@ -16,6 +16,16 @@ export let STORE_CODE: string = import.meta.env.VITE_POS_STORE_CODE
 export let STORE_ADDRESS: string = import.meta.env.VITE_POS_STORE_ADDRESS ?? ''
 export let BUSINESS_MODE = import.meta.env.VITE_POS_BUSINESS_MODE as BusinessMode
 
+// The one tenant allowed to show the bundled demo catalog when its real
+// catalog cannot be loaded. Blank — the default — means no tenant may, which
+// is what a live shop wants: demo products carry slug ids that no order can
+// ever be priced against, so putting them in front of a real shopper is a
+// checkout that fails at the last step.
+//
+// Build-time on purpose, and read only here: clearing this one variable is the
+// whole of "take the demo catalog down", and nothing else has to change.
+export const DEMO_ORG_SLUG: string = import.meta.env.VITE_POS_DEMO_ORG_SLUG ?? ''
+
 // Store pin used to quote a distance-based delivery fee (merged in from Baguio
 // Delivery). Null when the store never set one — the checkout then falls back
 // to the flat base fee.

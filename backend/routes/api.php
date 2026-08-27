@@ -9,7 +9,10 @@ use App\Http\Controllers\Api\CustomerOrderController;
 use App\Http\Controllers\Api\CustomerPaymentMethodController;
 use App\Http\Controllers\Api\DeviceSessionController;
 use App\Http\Controllers\Api\OnlineOrderController;
+use App\Http\Controllers\Api\PlatformAdminAuthController;
 use App\Http\Controllers\Api\PlatformAdminController;
+use App\Http\Controllers\Api\PlatformAdminInboxController;
+use App\Http\Controllers\Api\PlatformCustomerController;
 use App\Http\Controllers\Api\RiderAuthController;
 use App\Http\Controllers\Api\RiderDeliveryController;
 use App\Http\Controllers\Api\RiderReviewController;
@@ -58,10 +61,49 @@ Route::post('/store-codes/resolve-staff', [StoreCodeController::class, 'resolveF
 Route::post('/signup', [SignupController::class, 'store'])
     ->middleware('throttle:5,1');
 
-// Cross-tenant operator tool, gated by a shared secret rather than a session.
-// Throttled because that secret is the only thing standing in front of it.
-Route::post('/platform-admin', [PlatformAdminController::class, 'handle'])
-    ->middleware('throttle:30,1');
+/*
+ * The platform operator: the one identity that acts across every tenant.
+ *
+ * `auth:platform` resolves the platform_admins table and nothing else, so a
+ * staff, customer or rider token can never reach these however it was minted —
+ * and an operator token can never reach a tenant's own routes. See
+ * config/auth.php. `platform.active` then rejects a token whose account has
+ * since been disabled, on every request rather than only at sign-in.
+ *
+ * Sign-in is throttled to 5/min: it is the one door in front of cross-tenant
+ * access, and there is no legitimate reason to hit it often. Accounts are
+ * created from the console (`php artisan platform-admin:create`) — there is
+ * deliberately no register or password-reset endpoint here.
+ */
+Route::post('/platform-admin/login', [PlatformAdminAuthController::class, 'login'])
+    ->middleware('throttle:5,1');
+
+Route::middleware(['auth:platform', 'platform.active', 'throttle:60,1'])->group(function () {
+    Route::post('/platform-admin/logout', [PlatformAdminAuthController::class, 'logout']);
+    Route::get('/platform-admin/me', [PlatformAdminAuthController::class, 'me']);
+
+    Route::post('/platform-admin', [PlatformAdminController::class, 'handle']);
+    Route::post('/platform-admin/inbox', [PlatformAdminInboxController::class, 'index']);
+    Route::get('/platform-admin/inbox/{messageId}', [PlatformAdminInboxController::class, 'show']);
+    Route::post('/platform-admin/inbox/{messageId}/reply', [PlatformAdminInboxController::class, 'reply']);
+
+    /*
+     * Shoppers, for support. Read-only: a store sees only its own orders and a
+     * customer sees only themselves, so this is the one place a whole account
+     * can be looked at when someone writes in about one.
+     */
+    Route::get('/platform-admin/customers', [PlatformCustomerController::class, 'index']);
+    Route::get('/platform-admin/customers/{customer}', [PlatformCustomerController::class, 'show']);
+
+    /*
+     * Rider review. Same operator, same guard — and the only way to see a
+     * rider's licence photo, since the images live on the private disk and
+     * have no URL of their own.
+     */
+    Route::post('/rider-review', [RiderReviewController::class, 'index']);
+    Route::post('/rider-review/{rider}/decision', [RiderReviewController::class, 'decide']);
+    Route::post('/rider-review/{rider}/document/{document}', [RiderReviewController::class, 'document']);
+});
 
 /*
  * Customer accounts.
@@ -135,17 +177,8 @@ Route::middleware('auth:rider')->prefix('rider')->group(function () {
     });
 });
 
-/*
- * Rider review, for the platform operator. Secret-gated like /platform-admin,
- * and the only way to see a rider's licence photo — the images live on the
- * private disk and have no URL of their own.
- */
-Route::post('/rider-review', [RiderReviewController::class, 'index'])
-    ->middleware('throttle:30,1');
-Route::post('/rider-review/{rider}/decision', [RiderReviewController::class, 'decide'])
-    ->middleware('throttle:30,1');
-Route::post('/rider-review/{rider}/document/{document}', [RiderReviewController::class, 'document'])
-    ->middleware('throttle:60,1');
+// Rider review moved up into the `auth:platform` group with the rest of the
+// operator tools when the shared secret was replaced by operator accounts.
 
 // `merchant.token` alongside auth:sanctum: that guard has no configured
 // provider, so Sanctum accepts any tokenable — including a shopper's portal

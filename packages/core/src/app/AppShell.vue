@@ -197,6 +197,9 @@ onUnmounted(() => {
 
 <style scoped>
 .workspace-shell {
+  --workspace-shell-edge-gap: 20px;
+  --workspace-shell-sidebar-width: 248px;
+  --workspace-shell-content-gap: 40px;
   min-height: 100vh;
 }
 
@@ -213,8 +216,8 @@ onUnmounted(() => {
 
 .workspace-shell__sidebar {
   position: fixed;
-  inset: 20px auto 20px 20px;
-  width: 248px;
+  inset: var(--workspace-shell-edge-gap) auto var(--workspace-shell-edge-gap) var(--workspace-shell-edge-gap);
+  width: var(--workspace-shell-sidebar-width);
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: 1fr auto;
@@ -228,9 +231,14 @@ onUnmounted(() => {
 }
 
 .workspace-shell__main {
-  margin-left: 292px;
+  min-width: 0;
+  margin-left: calc(
+    var(--workspace-shell-edge-gap) +
+    var(--workspace-shell-sidebar-width) +
+    var(--workspace-shell-content-gap)
+  );
   min-height: 100vh;
-  padding: 20px 20px 20px 0;
+  padding: var(--workspace-shell-edge-gap) var(--workspace-shell-edge-gap) var(--workspace-shell-edge-gap) 0;
 }
 
 .workspace-topbar {
@@ -344,6 +352,7 @@ onUnmounted(() => {
 .workspace-topbar__content {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: var(--space-5);
 }
 

@@ -16,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'rider.approved' => \App\Http\Middleware\EnsureRiderIsApproved::class,
             'merchant.token' => \App\Http\Middleware\EnsureMerchantToken::class,
+            'platform.active' => \App\Http\Middleware\EnsurePlatformAdminIsActive::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

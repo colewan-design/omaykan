@@ -70,7 +70,12 @@ class OnlineOrderController extends Controller
             'businessMode' => ['required', Rule::in(self::ONLINE_MODES)],
 
             'items' => ['required', 'array', 'min:1'],
-            'items.*.productId' => ['required', 'string'],
+            // Shape-checked, not existence-checked — priceLines still has to
+            // look the product up. What this buys is that a cart line carrying
+            // something that is not an id at all is rejected here, before it
+            // reaches a uuid column that would raise a driver error rather
+            // than simply not match. See priceLines.
+            'items.*.productId' => ['required', 'uuid'],
             'items.*.quantity' => ['required', 'numeric', 'gt:0'],
 
             'guest.name' => ['required', 'string', 'max:120'],
@@ -86,6 +91,13 @@ class OnlineOrderController extends Controller
             'fulfillment.lng' => ['nullable', 'numeric', 'between:-180,180', 'required_with:fulfillment.lat'],
 
             'paymentMethod' => ['nullable', Rule::in(['cash', 'ewallet'])],
+        ], [
+            // The storefront mirrors the cart into localStorage, so a line put
+            // there by an older catalog outlives the visit that created it and
+            // comes back on every checkout. The default message names a field
+            // and a format the shopper cannot act on; this one names the one
+            // thing that clears it.
+            'items.*.productId.uuid' => 'Your cart is out of date. Please empty it and add your items again.',
         ]);
 
         $organization = Organization::query()
@@ -139,10 +151,16 @@ class OnlineOrderController extends Controller
             // about an order a rollback removed. Matches SyncController. The
             // customer's receipt is queued from the same place, for the same
             // reason: the queue is the database.
-            DB::afterCommit(function () use ($order, $store) {
-                OrderPlaced::dispatch($order);
-                $this->emailConfirmation($order, $store);
-            });
+            //
+            // Registered as two callbacks, each swallowing its own failures.
+            // Laravel runs after-commit callbacks *outside* the try/catch that
+            // wraps the transaction, so anything thrown here escapes as a 500
+            // on an order that is already committed and already has its stock
+            // decremented — and the customer, told the order failed, places it
+            // again. Neither the register's strip nor the receipt is worth
+            // that, so both only ever get reported.
+            DB::afterCommit(fn () => $this->announce($order));
+            DB::afterCommit(fn () => $this->emailConfirmation($order, $store));
 
             return $order;
         });
@@ -172,6 +190,23 @@ class OnlineOrderController extends Controller
         // The shape lives on the model, because the signed-in customer's order
         // list returns the same view of an order — see Order::toTrackedArray.
         return response()->json($order->toTrackedArray());
+    }
+
+    /**
+     * Tell the store's register that an order arrived.
+     *
+     * OrderPlaced is a ShouldBroadcast event, so this only ever writes a job
+     * to the queue — a slow or down Reverb cannot reach this far. What it does
+     * catch is a queue that cannot be written to at all, which must not cost
+     * the customer their already-recorded order.
+     */
+    private function announce(Order $order): void
+    {
+        try {
+            OrderPlaced::dispatch($order);
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 
     /**

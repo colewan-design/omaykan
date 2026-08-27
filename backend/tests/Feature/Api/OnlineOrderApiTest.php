@@ -94,6 +94,51 @@ class OnlineOrderApiTest extends TestCase
         );
     }
 
+    /**
+     * The order is committed before anything is announced, and Laravel runs
+     * after-commit callbacks outside the try/catch around the transaction — so
+     * an unguarded failure here would 500 an order that exists, and the
+     * customer would place it a second time.
+     */
+    public function test_a_failing_broadcast_does_not_fail_an_order_that_is_already_recorded(): void
+    {
+        $this->seed();
+
+        Event::listen(OrderPlaced::class, function (): void {
+            throw new \RuntimeException('queue is unreachable');
+        });
+
+        $this->postJson('/api/online-orders', $this->payload())->assertCreated();
+
+        $this->assertSame(1, Order::query()->count());
+    }
+
+    /**
+     * The id that took production down on 2026-08-27. `products.id` is a uuid
+     * column, so a slug-shaped id from the bundled demo catalog reached the
+     * database as one and was rejected at the type boundary — a 500, not a
+     * miss. It must be a plain rejection the shopper can act on.
+     *
+     * The crash was on the database the backend ran on at the time, which
+     * rejected the malformed uuid outright; MySQL stores the column as
+     * char(36) and would simply fail to match. The validation is what makes
+     * the answer the same either way.
+     */
+    public function test_a_product_id_that_is_not_a_uuid_is_rejected_rather_than_crashing(): void
+    {
+        $this->seed();
+        Event::fake([OrderPlaced::class]);
+
+        $response = $this->postJson('/api/online-orders', $this->payload([
+            'items' => [
+                ['productId' => 'sm-meat-master-beef-sukiyaki-cut-7m', 'quantity' => 1],
+            ],
+        ]));
+
+        $response->assertStatus(422)->assertJsonValidationErrors('items.0.productId');
+        $this->assertSame(0, Order::query()->count());
+    }
+
     public function test_stock_is_decremented_and_an_adjustment_recorded(): void
     {
         $this->seed();

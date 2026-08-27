@@ -18,6 +18,13 @@ interface CartLine {
 // doesn't silently empty the cart. Same storage pattern as orderHistory.ts.
 const STORAGE_KEY = 'sf_cart'
 
+// A real product's id is a uuid, because that is what the column holds. The
+// bundled demo catalog numbers its products with slugs instead, so a line the
+// demo fallback put in the cart is one the server can never price — and the
+// cart outlives the visit that created it, so without this it comes back and
+// fails checkout on every visit until the shopper clears their own storage.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 function loadPersisted(): [string, CartLine][] {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
@@ -26,6 +33,7 @@ function loadPersisted(): [string, CartLine][] {
     if (!Array.isArray(parsed)) return []
     return parsed
       .filter((line) => line?.product?.id && Number.isFinite(line.quantity) && line.quantity > 0)
+      .filter((line) => UUID.test(line.product.id))
       .map((line) => [line.product.id, line])
   } catch {
     return []

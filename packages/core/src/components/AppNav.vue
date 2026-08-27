@@ -15,6 +15,7 @@ import {
 } from '@lucide/vue'
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+import BrandLogo from '@pos/core/components/BrandLogo.vue'
 import { usePosStore } from '@pos/core/stores/pos'
 import { useAuthStore } from '@pos/core/stores/auth'
 import type { AppPageKey } from '@pos/shared/index'
@@ -67,9 +68,8 @@ function isActive(path: string) {
 <template>
   <nav class="workspace-nav">
     <div class="workspace-nav__brand">
-      <div class="workspace-nav__brand-mark">B</div>
-      <div>
-        <strong>Omaykan</strong>
+      <BrandLogo variant="light" :size="20" />
+      <div class="workspace-nav__brand-copy">
         <p>{{ store.settings.businessName || 'Smart POS Solutions' }}</p>
       </div>
     </div>
@@ -98,31 +98,20 @@ function isActive(path: string) {
 
 .workspace-nav__brand {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   gap: var(--space-3);
   margin-bottom: var(--space-3);
   padding: var(--space-2) 0 var(--space-4);
   border-bottom: 1px solid var(--separator);
 }
 
-.workspace-nav__brand-mark {
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-pressed));
-  color: var(--accent-text-on);
-  display: grid;
-  place-items: center;
-  font: 700 1.1rem/1 var(--font-brand, var(--font-sans));
-}
-
-.workspace-nav__brand strong {
-  display: block;
-  font: var(--type-headline);
+.workspace-nav__brand-copy {
+  min-width: 0;
 }
 
 .workspace-nav__brand p {
-  margin: 2px 0 0;
+  margin: 0;
   color: var(--text-secondary);
   font: var(--type-caption);
 }

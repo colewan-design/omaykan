@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * Everything the orders table needs before a customer order placed on the
- * storefront can be represented in Postgres at all.
+ * storefront can be represented in MySQL at all.
  *
  * The original schema assumed every order came from a register: `device_id`
  * and `completed_at` were both NOT NULL, and there was nowhere to record who

@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\CustomerAccount;
+use App\Models\PlatformAdmin;
 use App\Models\Rider;
 use App\Models\User;
 
@@ -66,6 +67,18 @@ return [
             'driver' => 'sanctum',
             'provider' => 'riders',
         ],
+
+        /*
+         * The platform operator. The one identity here that is not scoped to a
+         * tenant at all — it acts across every organization — which is exactly
+         * why it gets its own guard rather than a role on `users`: nothing that
+         * resolves on `auth:sanctum`, `auth:customer` or `auth:rider` can ever
+         * reach it, and it can never reach them. Reached as `auth:platform`.
+         */
+        'platform' => [
+            'driver' => 'sanctum',
+            'provider' => 'platform_admins',
+        ],
     ],
 
     /*
@@ -99,6 +112,11 @@ return [
         'riders' => [
             'driver' => 'eloquent',
             'model' => Rider::class,
+        ],
+
+        'platform_admins' => [
+            'driver' => 'eloquent',
+            'model' => PlatformAdmin::class,
         ],
 
         // 'users' => [

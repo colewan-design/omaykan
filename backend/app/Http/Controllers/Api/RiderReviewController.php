@@ -15,22 +15,20 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * The operator's side of rider registration: reading the queue, looking at the
  * documents, and deciding.
  *
- * Gated by the same shared secret as PlatformAdminController rather than a
- * session, because it is the same operator tool — but kept in its own
- * controller: that one is entirely about organizations, and its `handle`
- * action switch is already the longest thing in it.
+ * Behind `auth:platform`, the same guard as PlatformAdminController, because it
+ * is the same operator tool — but kept in its own controller: that one is
+ * entirely about organizations, and its `handle` action switch is already the
+ * longest thing in it.
  *
  * The document endpoint is the reason this file exists at all. A driver's
  * licence photo cannot live on the public disk and cannot be handed to a shop
- * or a customer; it is streamed from private storage, to a caller holding the
- * operator secret, and nowhere else.
+ * or a customer; it is streamed from private storage, to a signed-in operator,
+ * and nowhere else.
  */
 class RiderReviewController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $this->requireSecret($request);
-
         $validated = $request->validate([
             'status' => ['nullable', Rule::in(Rider::STATUSES)],
         ]);
@@ -61,8 +59,6 @@ class RiderReviewController extends Controller
      */
     public function decide(Request $request, Rider $rider): JsonResponse
     {
-        $this->requireSecret($request);
-
         $validated = $request->validate([
             'status' => ['required', Rule::in([
                 Rider::STATUS_APPROVED,
@@ -102,8 +98,6 @@ class RiderReviewController extends Controller
      */
     public function document(Request $request, Rider $rider, string $document): StreamedResponse
     {
-        $this->requireSecret($request);
-
         $path = match ($document) {
             'license' => $rider->license_image_path,
             'plate' => $rider->plate_image_path,
@@ -120,22 +114,5 @@ class RiderReviewController extends Controller
         return $disk->response($path, null, [
             'Cache-Control' => 'no-store, max-age=0',
         ]);
-    }
-
-    /**
-     * Constant-time compare so the secret cannot be recovered by timing the
-     * response, and a missing config is a 500 rather than an open door.
-     * Deliberately identical to PlatformAdminController's — one operator
-     * secret, checked the same way wherever it is checked.
-     */
-    private function requireSecret(Request $request): void
-    {
-        $expected = config('services.platform_admin.secret');
-
-        abort_if(! is_string($expected) || $expected === '', 500, 'Platform admin is not configured.');
-
-        $provided = (string) $request->input('secret', '');
-
-        abort_unless(hash_equals($expected, $provided), 401, 'Incorrect secret.');
     }
 }

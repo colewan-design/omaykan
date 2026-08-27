@@ -36,12 +36,18 @@ return [
     ],
 
     /*
-     * Shared secret gating the cross-tenant operator dashboard. Server-side
-     * only — never expose it to a client build. Unset means the endpoint
-     * refuses every request rather than running unguarded.
+     * Operator dashboard mailbox access. This is the inbox behind
+     * support@omaykan.com, read over IMAP so the portal can show incoming
+     * messages and reply to them.
      */
-    'platform_admin' => [
-        'secret' => env('PLATFORM_ADMIN_SECRET'),
+    'support_inbox' => [
+        'host' => env('SUPPORT_INBOX_HOST'),
+        'port' => env('SUPPORT_INBOX_PORT', 993),
+        'username' => env('SUPPORT_INBOX_USERNAME'),
+        'password' => env('SUPPORT_INBOX_PASSWORD'),
+        'mailbox' => env('SUPPORT_INBOX_MAILBOX', 'INBOX'),
+        'encryption' => env('SUPPORT_INBOX_ENCRYPTION', 'ssl'),
+        'validate_cert' => env('SUPPORT_INBOX_VALIDATE_CERT', true),
     ],
 
 ];

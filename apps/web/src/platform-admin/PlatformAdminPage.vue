@@ -2,12 +2,15 @@
 import { Check, Copy } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
 import BrandLogo from '@pos/core/components/BrandLogo.vue'
+import Customers from './Customers.vue'
 import RiderReview from './RiderReview.vue'
+import SupportInbox from './SupportInbox.vue'
 
 interface OrgAdmin {
   uid: string
   username: string
   fullName: string
+  email: string | null
   disabled: boolean
 }
 
@@ -27,26 +30,42 @@ interface OrgRow {
   admins: OrgAdmin[]
 }
 
-const SECRET_STORAGE_KEY = 'platform_admin_secret'
+/*
+ * sessionStorage, not localStorage: the operator token outlives a reload but
+ * not the tab. This dashboard can delete a tenant, so leaving a live session
+ * on a machine someone walks away from is not a convenience worth having.
+ */
+const TOKEN_STORAGE_KEY = 'platform_admin_token'
 
 /*
- * Two queues behind one secret: the stores waiting on a subscription check,
+ * Two queues behind one sign-in: the stores waiting on a subscription check,
  * and the riders waiting on a licence check. The rider side is mounted only
- * once it is switched to, so unlocking the page does not pull a queue of
- * identity documents nobody asked to see.
+ * once it is switched to, so signing in does not pull a queue of identity
+ * documents nobody asked to see.
  */
-const view = ref<'stores' | 'riders'>('stores')
+const view = ref<'stores' | 'riders' | 'customers' | 'inbox'>('stores')
 
-const secretInput = ref('')
-const secret = ref('')
+const emailInput = ref('')
+const passwordInput = ref('')
+const token = ref('')
+const operator = ref<{ name: string; email: string } | null>(null)
 const unlocked = ref(false)
 const loading = ref(false)
 const errorMessage = ref('')
+const successMessage = ref('')
 const rows = ref<OrgRow[]>([])
 const busyKey = ref('')
 
 const revealedPassword = ref<{ username: string; password: string } | null>(null)
 const passwordCopied = ref(false)
+
+const emailComposer = ref<{
+  row: OrgRow
+  admin: OrgAdmin
+  subject: string
+  message: string
+} | null>(null)
+const emailComposerError = ref('')
 
 const deleteTarget = ref<OrgRow | null>(null)
 const deleteConfirmInput = ref('')
@@ -70,52 +89,110 @@ function subscriptionLabel(status: string | undefined) {
   return '—'
 }
 
+/**
+ * Drops the session and returns to the sign-in screen. Called both on an
+ * explicit sign-out and whenever the API says the token is no longer good —
+ * a 401 (expired or revoked) or a 403 (the account was disabled).
+ */
+function endSession(message = '') {
+  token.value = ''
+  operator.value = null
+  unlocked.value = false
+  rows.value = []
+  passwordInput.value = ''
+  window.sessionStorage.removeItem(TOKEN_STORAGE_KEY)
+  errorMessage.value = message
+}
+
 async function postAction(body: Record<string, unknown>) {
+  successMessage.value = ''
   const response = await fetch('/api/platform-admin', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...body, secret: secret.value }),
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      Authorization: `Bearer ${token.value}`,
+    },
+    body: JSON.stringify(body),
   })
   const data = await response.json().catch(() => ({}))
+  if (response.status === 401 || response.status === 403) {
+    endSession(data.message || 'Your session has ended. Sign in again.')
+    throw new Error(data.message || 'Your session has ended. Sign in again.')
+  }
   if (!response.ok) {
-    throw new Error(data.error || 'Something went wrong.')
+    throw new Error(data.error || data.message || 'Something went wrong.')
   }
   return data
 }
 
-async function loadOrgs(candidateSecret: string) {
+async function loadOrgs() {
   loading.value = true
   errorMessage.value = ''
+  successMessage.value = ''
   try {
-    const response = await fetch('/api/platform-admin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'listOrgs', secret: candidateSecret }),
-    })
-    const data = await response.json().catch(() => ({}))
-    if (!response.ok) {
-      throw new Error(data.error || 'Something went wrong.')
-    }
-    rows.value = data.orgs ?? []
-    secret.value = candidateSecret
+    const data = await postAction({ action: 'listOrgs' })
+    rows.value = data.organizations ?? data.orgs ?? []
     unlocked.value = true
-    window.sessionStorage.setItem(SECRET_STORAGE_KEY, candidateSecret)
   } catch (err) {
-    unlocked.value = false
-    window.sessionStorage.removeItem(SECRET_STORAGE_KEY)
-    errorMessage.value = err instanceof Error ? err.message : 'Something went wrong.'
+    // A dead session has already been cleared by postAction, and its message
+    // is the one worth keeping; anything else is a transient failure that
+    // should not throw the operator back to the sign-in screen.
+    if (unlocked.value) {
+      errorMessage.value = err instanceof Error ? err.message : 'Something went wrong.'
+    }
   } finally {
     loading.value = false
   }
 }
 
-async function submitSecret() {
-  if (!secretInput.value.trim()) return
-  await loadOrgs(secretInput.value.trim())
+async function signIn() {
+  if (!emailInput.value.trim() || !passwordInput.value) return
+
+  loading.value = true
+  errorMessage.value = ''
+  try {
+    const response = await fetch('/api/platform-admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        email: emailInput.value.trim(),
+        password: passwordInput.value,
+      }),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      // 422 from Laravel carries the field errors; the single message under
+      // `email` is the deliberately vague one, so show it as-is.
+      throw new Error(data.errors?.email?.[0] || data.message || 'Unable to sign in.')
+    }
+    token.value = data.token
+    operator.value = { name: data.admin.name, email: data.admin.email }
+    // Cleared as soon as it has been exchanged for a token — there is no
+    // reason for the password to stay in memory for the rest of the session.
+    passwordInput.value = ''
+    window.sessionStorage.setItem(TOKEN_STORAGE_KEY, data.token)
+    await loadOrgs()
+  } catch (err) {
+    errorMessage.value = err instanceof Error ? err.message : 'Unable to sign in.'
+  } finally {
+    loading.value = false
+  }
+}
+
+async function signOut() {
+  const current = token.value
+  endSession()
+  // Best-effort: the local session is already gone, and a failed request here
+  // must not leave the operator looking at a dashboard they just left.
+  await fetch('/api/platform-admin/logout', {
+    method: 'POST',
+    headers: { Accept: 'application/json', Authorization: `Bearer ${current}` },
+  }).catch(() => undefined)
 }
 
 async function refresh() {
-  await loadOrgs(secret.value)
+  await loadOrgs()
 }
 
 async function markVerified(row: OrgRow) {
@@ -214,6 +291,53 @@ function closeRevealedPassword() {
   passwordCopied.value = false
 }
 
+function startEmailComposer(row: OrgRow, admin: OrgAdmin) {
+  if (!admin.email) return
+  emailComposer.value = {
+    row,
+    admin,
+    subject: `Re: ${row.organizationName}`,
+    message: '',
+  }
+  emailComposerError.value = ''
+}
+
+function closeEmailComposer() {
+  emailComposer.value = null
+  emailComposerError.value = ''
+}
+
+async function sendOwnerEmail() {
+  if (!emailComposer.value) return
+
+  const subject = emailComposer.value.subject.trim()
+  const message = emailComposer.value.message.trim()
+
+  if (!subject || !message) {
+    emailComposerError.value = 'Add both a subject and a message.'
+    return
+  }
+
+  busyKey.value = `email:${emailComposer.value.admin.uid}`
+  emailComposerError.value = ''
+
+  try {
+    await postAction({
+      action: 'sendOwnerEmail',
+      organizationSlug: emailComposer.value.row.organizationSlug,
+      uid: emailComposer.value.admin.uid,
+      subject,
+      message,
+    })
+    successMessage.value = `Email queued for ${emailComposer.value.admin.email}.`
+    closeEmailComposer()
+  } catch (err) {
+    emailComposerError.value = err instanceof Error ? err.message : 'Unable to send that email.'
+  } finally {
+    busyKey.value = ''
+  }
+}
+
 function startDelete(row: OrgRow) {
   deleteTarget.value = row
   deleteConfirmInput.value = ''
@@ -244,10 +368,34 @@ async function confirmDelete() {
   }
 }
 
-onMounted(() => {
-  const stored = window.sessionStorage.getItem(SECRET_STORAGE_KEY)
-  if (stored) {
-    void loadOrgs(stored)
+/*
+ * Restores the session across a reload. `/me` rather than going straight to
+ * listOrgs: it confirms the token is still good and gets the operator's name
+ * back for the header, and a stale token is cleared here rather than surfacing
+ * as an error on the first thing the operator clicks.
+ */
+onMounted(async () => {
+  const stored = window.sessionStorage.getItem(TOKEN_STORAGE_KEY)
+  if (!stored) return
+
+  token.value = stored
+  loading.value = true
+  try {
+    const response = await fetch('/api/platform-admin/me', {
+      headers: { Accept: 'application/json', Authorization: `Bearer ${stored}` },
+    })
+    if (!response.ok) {
+      endSession()
+      return
+    }
+    const data = await response.json()
+    operator.value = { name: data.admin.name, email: data.admin.email }
+    unlocked.value = true
+    await loadOrgs()
+  } catch {
+    endSession()
+  } finally {
+    loading.value = false
   }
 })
 </script>
@@ -260,13 +408,29 @@ onMounted(() => {
           <BrandLogo variant="light" :size="21" />
           <strong>Platform admin</strong>
         </div>
-        <form class="auth-form" @submit.prevent="submitSecret">
+        <form class="auth-form" @submit.prevent="signIn">
           <label class="settings-field">
-            <span class="settings-row__label">Secret</span>
-            <input v-model="secretInput" class="sheet-input" type="password" autocomplete="off">
+            <span class="settings-row__label">Email</span>
+            <input
+              v-model="emailInput"
+              class="sheet-input"
+              type="email"
+              autocomplete="username"
+              autocapitalize="none"
+              spellcheck="false"
+            >
+          </label>
+          <label class="settings-field">
+            <span class="settings-row__label">Password</span>
+            <input
+              v-model="passwordInput"
+              class="sheet-input"
+              type="password"
+              autocomplete="current-password"
+            >
           </label>
           <button class="primary-button auth-submit" type="submit" :disabled="loading">
-            {{ loading ? 'Checking…' : 'Unlock' }}
+            {{ loading ? 'Signing in…' : 'Sign in' }}
           </button>
         </form>
         <p v-if="errorMessage" class="auth-error">{{ errorMessage }}</p>
@@ -291,6 +455,26 @@ onMounted(() => {
         >
           Riders
         </button>
+        <button
+          class="pa-view"
+          :class="{ 'pa-view--on': view === 'customers' }"
+          type="button"
+          @click="view = 'customers'"
+        >
+          Customers
+        </button>
+        <button
+          class="pa-view"
+          :class="{ 'pa-view--on': view === 'inbox' }"
+          type="button"
+          @click="view = 'inbox'"
+        >
+          Inbox
+        </button>
+        <span v-if="operator" class="pa-operator">
+          {{ operator.name }}
+          <button class="pa-signout" type="button" @click="signOut">Sign out</button>
+        </span>
       </nav>
 
       <template v-if="view === 'stores'">
@@ -305,6 +489,7 @@ onMounted(() => {
       </div>
 
       <p v-if="errorMessage" class="auth-error">{{ errorMessage }}</p>
+      <p v-else-if="successMessage" class="pa-success">{{ successMessage }}</p>
 
       <div v-if="revealedPassword" class="pa-reveal">
         <div>
@@ -342,10 +527,22 @@ onMounted(() => {
                 <div v-if="!row.admins.length" class="pa-empty-cell">—</div>
                 <div v-for="admin in row.admins" :key="admin.uid" class="pa-admin">
                   <div class="pa-admin__info">
-                    <span>{{ admin.username }}</span>
+                    <div class="pa-admin__identity">
+                      <strong>{{ admin.fullName || admin.username }}</strong>
+                      <span class="pa-slug">@{{ admin.username }}</span>
+                      <span class="pa-slug">{{ admin.email || 'No email on file' }}</span>
+                    </div>
                     <span v-if="admin.disabled" class="pa-badge pa-badge--danger">Login disabled</span>
                   </div>
                   <div class="pa-admin__actions">
+                    <button
+                      class="pa-link-button"
+                      type="button"
+                      :disabled="!admin.email || busyKey === `email:${admin.uid}`"
+                      @click="startEmailComposer(row, admin)"
+                    >
+                      Email
+                    </button>
                     <button
                       class="pa-link-button"
                       type="button"
@@ -433,7 +630,9 @@ onMounted(() => {
       </div>
       </template>
 
-      <RiderReview v-else :secret="secret" />
+      <RiderReview v-else-if="view === 'riders'" :token="token" @session-ended="endSession" />
+      <Customers v-else-if="view === 'customers'" :token="token" @session-ended="endSession" />
+      <SupportInbox v-else :token="token" @session-ended="endSession" />
     </section>
 
     <div v-if="deleteTarget" class="pa-modal-backdrop" @click.self="cancelDelete">
@@ -456,6 +655,42 @@ onMounted(() => {
             @click="confirmDelete"
           >
             {{ busyKey === deleteTarget.organizationSlug ? 'Deleting…' : 'Delete permanently' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="emailComposer" class="pa-modal-backdrop" @click.self="closeEmailComposer">
+      <div class="pa-modal pa-modal--wide">
+        <h2 class="pa-modal__title">Email {{ emailComposer.admin.fullName || emailComposer.admin.username }}</h2>
+        <p class="pa-modal__copy">
+          This will send from the Omaykan mailbox to {{ emailComposer.admin.email }}.
+        </p>
+        <label class="settings-field">
+          <span class="settings-row__label">Subject</span>
+          <input v-model="emailComposer.subject" class="sheet-input" type="text" maxlength="190">
+        </label>
+        <label class="settings-field">
+          <span class="settings-row__label">Message</span>
+          <textarea v-model="emailComposer.message" class="sheet-input pa-textarea" rows="8" maxlength="5000"></textarea>
+        </label>
+        <p v-if="emailComposerError" class="auth-error">{{ emailComposerError }}</p>
+        <div class="pa-modal-actions">
+          <button
+            class="segment-button"
+            type="button"
+            :disabled="busyKey === `email:${emailComposer.admin.uid}`"
+            @click="closeEmailComposer"
+          >
+            Cancel
+          </button>
+          <button
+            class="primary-button"
+            type="button"
+            :disabled="busyKey === `email:${emailComposer.admin.uid}`"
+            @click="sendOwnerEmail"
+          >
+            {{ busyKey === `email:${emailComposer.admin.uid}` ? 'Sending…' : 'Send email' }}
           </button>
         </div>
       </div>
@@ -497,6 +732,26 @@ onMounted(() => {
   border-color: transparent;
   background: var(--accent, #1a6b3c);
   color: #fff;
+}
+
+/* Pushed to the far end of the nav — who you are signed in as, and the way out. */
+.pa-operator {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  color: var(--text-secondary);
+  font: 600 13px/1 inherit;
+}
+
+.pa-signout {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--text-secondary);
+  font: 600 13px/1 inherit;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .pa-header {
@@ -640,6 +895,11 @@ onMounted(() => {
   gap: var(--space-2);
 }
 
+.pa-admin__identity {
+  display: grid;
+  gap: 2px;
+}
+
 .pa-admin__actions {
   display: flex;
   gap: var(--space-3);
@@ -692,6 +952,10 @@ onMounted(() => {
   gap: var(--space-3);
 }
 
+.pa-modal--wide {
+  max-width: 560px;
+}
+
 .pa-modal__title {
   margin: 0;
   font: var(--type-title2);
@@ -707,5 +971,21 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-3);
+}
+
+.pa-textarea {
+  min-height: 180px;
+  resize: vertical;
+}
+
+.pa-success {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--success) 10%, var(--bg-surface));
+  border: 0.5px solid color-mix(in srgb, var(--success) 40%, transparent);
+  color: var(--success);
+  font: var(--type-caption);
+  font-weight: 600;
 }
 </style>

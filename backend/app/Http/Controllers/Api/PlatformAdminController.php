@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Mail\PlatformAdminReplyMail;
 use App\Models\Organization;
 use App\Models\OrganizationMembership;
 use App\Models\Store;
@@ -12,6 +13,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -20,12 +22,13 @@ use Illuminate\Validation\ValidationException;
  * rejects GCash payments, and manages orgs and owner accounts across every
  * tenant.
  *
- * Replaces api/platform-admin.ts. Gated by a shared secret rather than a user
- * account, because this is a cross-tenant operator tool and is deliberately not
- * scoped to any one organization's Admin role.
+ * Replaces api/platform-admin.ts. Reached behind `auth:platform` — a signed-in
+ * PlatformAdmin, not any organization's own Admin role, because this is a
+ * cross-tenant tool and is deliberately not scoped to one tenant.
  *
- * PLATFORM_ADMIN_SECRET must reach this process as a server-side env var only —
- * never anywhere that feeds a client build.
+ * This used to be gated by a single shared PLATFORM_ADMIN_SECRET. Every action
+ * below is logged, and an audit line naming a secret tells you nothing about
+ * who acted; the routes now carry a real account. See routes/api.php.
  */
 class PlatformAdminController extends Controller
 {
@@ -34,12 +37,10 @@ class PlatformAdminController extends Controller
 
     public function handle(Request $request): JsonResponse
     {
-        $this->requireSecret($request);
-
         $validated = $request->validate([
             'action' => ['required', Rule::in([
                 'listOrgs', 'verify', 'reject', 'suspendOrg', 'reactivateOrg',
-                'resetOwnerPassword', 'setOwnerDisabled', 'deleteOrg',
+                'resetOwnerPassword', 'setOwnerDisabled', 'deleteOrg', 'sendOwnerEmail',
             ])],
         ]);
 
@@ -52,22 +53,8 @@ class PlatformAdminController extends Controller
             'resetOwnerPassword' => $this->resetOwnerPassword($request),
             'setOwnerDisabled' => $this->setOwnerDisabled($request),
             'deleteOrg' => $this->deleteOrg($request),
+            'sendOwnerEmail' => $this->sendOwnerEmail($request),
         };
-    }
-
-    /**
-     * Constant-time compare so the secret cannot be recovered by timing the
-     * response, and a missing config is a 500 rather than an open door.
-     */
-    private function requireSecret(Request $request): void
-    {
-        $expected = config('services.platform_admin.secret');
-
-        abort_if(! is_string($expected) || $expected === '', 500, 'Platform admin is not configured.');
-
-        $provided = (string) $request->input('secret', '');
-
-        abort_unless(hash_equals($expected, $provided), 401, 'Incorrect secret.');
     }
 
     private function organizationFrom(Request $request): Organization
@@ -81,9 +68,17 @@ class PlatformAdminController extends Controller
             ->firstOr(fn () => abort(404, 'Organization not found.'));
     }
 
+    /**
+     * Names the operator who acted. The whole point of replacing the shared
+     * secret was that these lines resolve to a person; `?->` rather than a bare
+     * access so a log call can never be the thing that 500s an action.
+     */
     private function audit(string $action, string $slug, array $context = []): void
     {
-        Log::info('[platform-admin] '.$action, ['organizationSlug' => $slug] + $context);
+        Log::info('[platform-admin] '.$action, [
+            'organizationSlug' => $slug,
+            'operator' => auth('platform')->user()?->email,
+        ] + $context);
     }
 
     /**
@@ -136,6 +131,7 @@ class PlatformAdminController extends Controller
                         'uid' => $membership->user->id,
                         'username' => $membership->user->username,
                         'fullName' => $membership->user->name,
+                        'email' => $membership->user->email,
                         'disabled' => $membership->user->status !== 'active',
                     ])->values(),
             ];
@@ -223,6 +219,33 @@ class PlatformAdminController extends Controller
         ]);
 
         return response()->json(['disabled' => $user->status !== 'active']);
+    }
+
+    private function sendOwnerEmail(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'subject' => ['required', 'string', 'max:190'],
+            'message' => ['required', 'string', 'max:5000'],
+        ]);
+
+        $organization = $this->organizationFrom($request);
+        $user = $this->ownerFrom($request, $organization);
+        $store = $organization->stores()->orderBy('created_at')->first();
+
+        $email = is_string($user->email) ? trim($user->email) : '';
+        abort_if($email === '', 422, 'That account does not have an email address.');
+
+        Mail::to($email)->queue(new PlatformAdminReplyMail(
+            recipient: $user,
+            organization: $organization,
+            store: $store,
+            subjectLine: trim($validated['subject']),
+            messageBody: trim($validated['message']),
+        ));
+
+        $this->audit('sendOwnerEmail', $organization->slug, ['uid' => $user->id]);
+
+        return response()->json(['queued' => true]);
     }
 
     /**

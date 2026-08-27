@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api;
 
+use App\Models\PlatformAdmin;
 use App\Models\Rider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -16,7 +17,7 @@ class RiderAuthApiTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const SECRET = 'test-operator-secret';
+    private string $operatorToken;
 
     protected function setUp(): void
     {
@@ -25,7 +26,24 @@ class RiderAuthApiTest extends TestCase
         // Documents are written to the private disk; faking it keeps real
         // files out of storage/ and lets the assertions look at what landed.
         Storage::fake('local');
-        config()->set('services.platform_admin.secret', self::SECRET);
+
+        // The review endpoints sit behind `auth:platform`; every operator call
+        // below carries this token.
+        $operator = PlatformAdmin::query()->create([
+            'name' => 'Platform Operator',
+            'email' => 'operator@example.test',
+            'password' => 'operator-password-1234',
+        ]);
+
+        $this->operatorToken = $operator
+            ->createToken('platform-admin', [PlatformAdmin::ABILITY])
+            ->plainTextToken;
+    }
+
+    /** Every operator-side request in this file goes through here. */
+    private function asOperator(): self
+    {
+        return $this->withToken($this->operatorToken);
     }
 
     /** @return array<string, mixed> */
@@ -158,7 +176,7 @@ class RiderAuthApiTest extends TestCase
     {
         $this->register();
 
-        $queue = $this->postJson('/api/rider-review', ['secret' => self::SECRET])
+        $queue = $this->asOperator()->postJson('/api/rider-review')
             ->assertOk()
             ->json('riders');
 
@@ -170,8 +188,7 @@ class RiderAuthApiTest extends TestCase
 
         $riderId = $queue[0]['id'];
 
-        $this->postJson("/api/rider-review/{$riderId}/decision", [
-            'secret' => self::SECRET,
+        $this->asOperator()->postJson("/api/rider-review/{$riderId}/decision", [
             'status' => Rider::STATUS_APPROVED,
         ])->assertOk()->assertJsonPath('rider.status', Rider::STATUS_APPROVED);
 
@@ -195,8 +212,7 @@ class RiderAuthApiTest extends TestCase
             ->getJson('/api/rider/board')
             ->assertOk();
 
-        $this->postJson("/api/rider-review/{$rider->id}/decision", [
-            'secret' => self::SECRET,
+        $this->asOperator()->postJson("/api/rider-review/{$rider->id}/decision", [
             'status' => Rider::STATUS_SUSPENDED,
             'note' => 'Repeated no-shows.',
         ])->assertOk();
@@ -226,22 +242,24 @@ class RiderAuthApiTest extends TestCase
         $this->register();
         $rider = Rider::findByEmail('jun@example.com');
 
-        $this->post("/api/rider-review/{$rider->id}/document/license", ['secret' => 'wrong'])
+        // An identity document is the one thing here that must never be
+        // reachable without a signed-in operator.
+        $this->postJson("/api/rider-review/{$rider->id}/document/license")
             ->assertUnauthorized();
 
-        $this->post("/api/rider-review/{$rider->id}/document/license", ['secret' => self::SECRET])
+        $this->asOperator()->post("/api/rider-review/{$rider->id}/document/license")
             ->assertOk();
 
         // Laravel reorders and adds to the directive list, so the assertion is
         // on the directive that matters, not the whole header string.
         $this->assertStringContainsString(
             'no-store',
-            $this->post("/api/rider-review/{$rider->id}/document/license", ['secret' => self::SECRET])
+            $this->asOperator()->post("/api/rider-review/{$rider->id}/document/license")
                 ->headers->get('Cache-Control'),
         );
 
         // The document name is a fixed set, not a path off the request.
-        $this->post("/api/rider-review/{$rider->id}/document/passport", ['secret' => self::SECRET])
+        $this->asOperator()->post("/api/rider-review/{$rider->id}/document/passport")
             ->assertNotFound();
     }
 }

@@ -72,7 +72,10 @@ function backToTop() {
 </template>
 
 <style scoped>
-.fd-footer { background: #f7f8f7; padding: 0 var(--fd-gutter) 40px; }
+/* Top padding rather than a margin on .fd-totop: the button is the footer's
+   first child, so its top margin would collapse out through the parent and
+   push the grey block down instead of seating the button inside it. */
+.fd-footer { background: #f7f8f7; padding: 48px var(--fd-gutter) 40px; }
 
 /* Auto width, centred — stretched edge to edge this was a 1384px pill holding
    two words, which read as a broken container rather than a button. */
@@ -127,7 +130,7 @@ function backToTop() {
   .fd-footer__cols { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 760px) {
-  .fd-footer { padding: 0 var(--fd-gutter) 32px; }
+  .fd-footer { padding: 36px var(--fd-gutter) 32px; }
 }
 @media (max-width: 460px) {
   .fd-footer__cols { grid-template-columns: 1fr; }

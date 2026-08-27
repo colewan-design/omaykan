@@ -2545,74 +2545,109 @@ button {
 
 /* ── Page header ────────────────────────────────────────────────────────── */
 
+/* Matches .inv-header / .orders-header / .customers-header: title, a line of
+   copy, and the page's primary action. This page used to lead with a bare
+   title and an inline count instead, which is why it read as a different app.
+   The count now lives in the KPI row below, with its three siblings. */
+
 .p-header {
   display: flex;
-  align-items: center;
+  align-items: end;
   justify-content: space-between;
   gap: var(--space-4);
 }
 
-.p-header__titlewrap {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
-  min-width: 0;
-}
-
-.p-header__title {
+.p-title {
   margin: 0;
   font: var(--type-title1);
 }
 
-.p-header__count {
-  color: var(--text-tertiary);
-  font: var(--type-subhead);
-  white-space: nowrap;
+.p-copy {
+  max-width: 64ch;
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
 }
 
-.p-header__add {
+.p-header .primary-button {
   flex: none;
 }
 
-/* ── Products / Categories segmented control ───────────────────────────── */
+/* ── KPI metrics ────────────────────────────────────────────────────────── */
 
-.p-segctrl {
-  position: relative;
+.p-kpis {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 2px;
-  height: 36px;
-  padding: 2px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.p-kpi {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
+}
+
+.p-kpi__icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
   border-radius: var(--radius-md);
-  background: var(--fill);
 }
 
-.p-segctrl__knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: calc(50% - 2px);
-  height: calc(100% - 4px);
-  border-radius: calc(var(--radius-md) - 2px);
-  background: var(--bg-elevated);
-  box-shadow: var(--shadow-sm);
-  transition: transform 0.2s ease-out;
-  will-change: transform;
-}
+.p-kpi__icon--blue   { background: color-mix(in srgb, var(--accent)  14%, transparent); color: var(--accent); }
+.p-kpi__icon--green  { background: color-mix(in srgb, var(--success) 14%, transparent); color: var(--success); }
+.p-kpi__icon--orange { background: color-mix(in srgb, var(--warning) 14%, transparent); color: var(--warning); }
+.p-kpi__icon--red    { background: color-mix(in srgb, var(--danger)  14%, transparent); color: var(--danger); }
 
-.p-segctrl__option {
-  position: relative;
-  z-index: 1;
-  height: 100%;
-  border: none;
-  background: transparent;
+.p-kpi__label {
+  margin: 0 0 2px;
   color: var(--text-secondary);
-  font: 600 0.8125rem/1 var(--font-sans);
-  transition: color 0.2s ease-out;
+  font: var(--type-caption);
 }
 
-.p-segctrl__option--active {
+.p-kpi__value {
+  font: var(--type-title2);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
   color: var(--text-primary);
+}
+
+.p-kpi__value--success { color: var(--success); }
+.p-kpi__value--warning { color: var(--warning); }
+.p-kpi__value--danger  { color: var(--danger); }
+
+/* 1100px matches .inv-kpis, so the two pages break to two columns together
+   rather than at different widths. */
+@media (max-width: 1100px) {
+  .p-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Same 780px the Customers and Orders headers stack at. Without this the copy
+   is squeezed into three lines beside the button on a phone. */
+@media (max-width: 780px) {
+  .p-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+  }
+
+  .p-header .primary-button {
+    align-self: start;
+  }
+}
+
+/* ── Products / Categories tabs ─────────────────────────────────────────── */
+
+/* The shared .segmented-control, sized to content like the mode filter under
+   it. The bespoke sliding-knob control this replaces was the only one of its
+   kind in the app. */
+.p-tabs {
+  width: fit-content;
+  max-width: 100%;
 }
 
 .products-page__mode-filter {

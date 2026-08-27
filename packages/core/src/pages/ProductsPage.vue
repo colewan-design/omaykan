@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check, ChevronRight, Pencil, Plus, Search, Trash2, X } from '@lucide/vue'
+import { AlertTriangle, Check, ChevronRight, Package, Pencil, Plus, Search, TrendingDown, Trash2, X } from '@lucide/vue'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import ProductSheet from '@pos/core/components/ProductSheet.vue'
 import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
@@ -323,6 +323,24 @@ async function submitRestock(id: string, e: Event) {
   haptic(ImpactStyle.Medium)
 }
 
+// ── KPI counts ───────────────────────────────────────────────────────────────
+// The same four every other list page leads with (see InventoryPage), so the
+// numbers sit where a merchant already expects to find them.
+function isOut(p: Product): boolean {
+  return p.stockQty !== undefined ? p.stockQty === 0 : p.outOfStock === true
+}
+
+function isLow(p: Product): boolean {
+  return p.stockQty !== undefined
+    && p.stockQty > 0
+    && p.stockQty <= (p.lowStockThreshold ?? 5)
+}
+
+const totalCount = computed(() => store.products.length)
+const outCount = computed(() => store.products.filter(isOut).length)
+const lowCount = computed(() => store.products.filter(isLow).length)
+const availableCount = computed(() => totalCount.value - outCount.value - lowCount.value)
+
 // ── Stock status (dot + label) ───────────────────────────────────────────────
 function stockDotClass(p: Product): string {
   if (p.stockQty !== undefined) {
@@ -423,14 +441,18 @@ async function confirmDeleteCategory(id: string) {
 <template>
   <div class="products-page">
     <!-- ── Page header ──────────────────────────────────────────────────── -->
+    <!-- Title + one line of copy, then a KPI row: the shape every other list
+         page uses (Inventory, Orders, Customers, Suppliers, Employees). The
+         product count moved into the KPIs, where the other three numbers that
+         matter sit beside it. -->
     <div class="p-header">
-      <div class="p-header__titlewrap">
-        <h1 class="p-header__title">Products</h1>
-        <span class="p-header__count">{{ store.products.length }} products</span>
+      <div>
+        <h1 class="p-title">Products</h1>
+        <p class="p-copy">Prices, stock levels, and which storefront each product is sold in.</p>
       </div>
       <button
         v-if="activeTab === 'products'"
-        class="primary-button p-header__add"
+        class="primary-button"
         type="button"
         @click="openAdd"
       >
@@ -439,25 +461,52 @@ async function confirmDeleteCategory(id: string) {
       </button>
     </div>
 
-    <!-- ── Products / Categories segmented control ─────────────────────────── -->
-    <div class="p-segctrl" role="tablist" aria-label="View">
-      <div class="p-segctrl__knob" :style="{ transform: `translateX(${activeTab === 'products' ? 0 : 100}%)` }" aria-hidden="true" />
+    <!-- ── KPI metrics ─────────────────────────────────────────────────────── -->
+    <section class="p-kpis">
+      <div class="p-kpi">
+        <span class="p-kpi__icon p-kpi__icon--blue"><Package :size="18" /></span>
+        <div>
+          <p class="p-kpi__label">Total Products</p>
+          <strong class="p-kpi__value">{{ totalCount }}</strong>
+        </div>
+      </div>
+      <div class="p-kpi">
+        <span class="p-kpi__icon p-kpi__icon--green"><Check :size="18" /></span>
+        <div>
+          <p class="p-kpi__label">Available</p>
+          <strong class="p-kpi__value p-kpi__value--success">{{ availableCount }}</strong>
+        </div>
+      </div>
+      <div class="p-kpi">
+        <span class="p-kpi__icon p-kpi__icon--orange"><TrendingDown :size="18" /></span>
+        <div>
+          <p class="p-kpi__label">Low Stock</p>
+          <strong class="p-kpi__value p-kpi__value--warning">{{ lowCount }}</strong>
+        </div>
+      </div>
+      <div class="p-kpi">
+        <span class="p-kpi__icon p-kpi__icon--red"><AlertTriangle :size="18" /></span>
+        <div>
+          <p class="p-kpi__label">Out of Stock</p>
+          <strong class="p-kpi__value p-kpi__value--danger">{{ outCount }}</strong>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Products / Categories ───────────────────────────────────────────── -->
+    <!-- The shared segmented-control, not a bespoke sliding-knob widget: this
+         page was the only one in the app with its own tab component. -->
+    <div class="segmented-control p-tabs" role="tablist" aria-label="View">
       <button
-        class="p-segctrl__option"
-        :class="{ 'p-segctrl__option--active': activeTab === 'products' }"
+        v-for="tab in [{ value: 'products', label: 'Products' }, { value: 'categories', label: 'Categories' }]"
+        :key="tab.value"
+        class="segment-button"
+        :class="{ active: activeTab === tab.value }"
         type="button"
         role="tab"
-        :aria-selected="activeTab === 'products'"
-        @click="setActiveTab('products')"
-      >Products</button>
-      <button
-        class="p-segctrl__option"
-        :class="{ 'p-segctrl__option--active': activeTab === 'categories' }"
-        type="button"
-        role="tab"
-        :aria-selected="activeTab === 'categories'"
-        @click="setActiveTab('categories')"
-      >Categories</button>
+        :aria-selected="activeTab === tab.value"
+        @click="setActiveTab(tab.value as 'products' | 'categories')"
+      >{{ tab.label }}</button>
     </div>
 
     <!-- ══ Products tab ══════════════════════════════════════════════════════ -->

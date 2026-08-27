@@ -19,6 +19,10 @@ artifacts/
 
 .vercel
 .env*
+# ...but the *.example files are the committed record of what a build needs.
+!.env.example
+!*/.env.example
+!**/.env.production.example
 
 # Deploy build output (the tarball source for the VPS), not source.
 apps/web/dist-deploy/

@@ -31,6 +31,10 @@ the running system.
 | Frontend tests | **None** |
 | BIR compliance | Unverified — blocks charging anyone |
 
+Operational gaps — deploy process, backups, monitoring, and the fact that the
+production schema no longer matches `main`'s migrations — are in
+[deployment.md](./deployment.md), not here.
+
 ---
 
 ## 2. Missing outright
@@ -199,6 +203,23 @@ events is surfaced on the Diagnostics and Integrations pages.
 Nothing consumes the events after they arrive. There is no reporting surface
 over them and no PostHog, which [analytics.md](./analytics.md) names as the
 intended sink. The pipe is built at both ends and empty in the middle.
+
+---
+
+### 3.6 The "under ₱100" shelf does not filter by price (latent)
+
+[LandingPage.vue:146](../apps/web/src/landing/LandingPage.vue#L146) builds the
+`cheapest` shelf by sorting on price and taking the first 12. It applies no
+price predicate. The shelf it feeds is titled **"Everyday essentials under
+₱100"** ([:350](../apps/web/src/landing/LandingPage.vue#L350)).
+
+Not currently visible in production: SM's 464-product catalog puts the cheapest
+twelve between ₱7.50 and ₱21.50, so the title happens to hold. It breaks the
+moment a shop's twelve cheapest items are not all under ₱100 — a thin catalog,
+or a shop selling nothing cheap. Seen for real against the one-product demo
+tenant, where the shelf advertised a ₱120 espresso as under ₱100.
+
+Either filter on `priceCents < 10000` or retitle the shelf.
 
 ---
 

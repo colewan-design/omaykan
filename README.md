@@ -15,8 +15,10 @@ Delivery aggregators take 20–30% from the merchant, squeeze the rider's per-dr
 | Doc | What it covers |
 |---|---|
 | [positioning.md](documentation/positioning.md) | What this is, who it's for, the price-parity covenant, business model, beachhead, risks. **Start here.** |
-| [plan.md](documentation/plan.md) | Current state of the code and the phased build sequence |
-| [feature-log.md](documentation/feature-log.md) | Page-by-page status of what is actually built, audited against the code |
+| [plan.md](documentation/plan.md) | The phased build sequence. Stale in places — see feature-audit.md §6 |
+| [feature-audit.md](documentation/feature-audit.md) | What is missing, unfinished, or inert. Audited against the code and the live database |
+| [deployment.md](documentation/deployment.md) | The VPS, the deploy procedure, rollback, and why production's schema differs from `main` |
+| [feature-log.md](documentation/feature-log.md) | Page-by-page status of what is built. Stale in places — see feature-audit.md §6 |
 | [backend-multistore-sync.md](documentation/backend-multistore-sync.md) | Multi-store tenancy model and sync contract |
 | [design.md](documentation/design.md) | Visual language and design tokens |
 | [analytics.md](documentation/analytics.md) | Reporting and telemetry plan |

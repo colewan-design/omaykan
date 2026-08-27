@@ -1,7 +1,15 @@
 # End-to-end test run — 2026-08-27
 
-Ten runs of the whole chain: **seller lists a product → customer orders → rider
-delivers → order completes.** Driven through the same HTTP API the apps use,
+Two suites. **§1–§5** run the whole chain ten times: *seller lists a product →
+customer orders → rider delivers → order completes.* **[§6](#6-second-pass--boundaries-authorization-and-races-2026-08-27)**
+is a second ten-case pass over boundaries, authorization and races.
+
+Between them they found **two defects**, neither with any existing test
+coverage: a product listed in the POS cannot be sold online (§2), and settling
+an order twice double-records the payment and corrupts cash reconciliation
+(§6.1).
+
+The first suite: Driven through the same HTTP API the apps use,
 nothing stubbed. Harness: [`scripts/e2e-order-flow.mjs`](../scripts/e2e-order-flow.mjs).
 
 Run against a **local** instance on a freshly seeded database. Deliberately not
@@ -202,6 +210,9 @@ Worth recording, because it is the part that works.
 
 ## 5. Recommended next steps
 
+0. **Guard `settlePayment` against an already-paid order**, and clean up any
+   duplicate payment rows already written — this one mis-states cash at shift
+   close and points the discrepancy at a cashier. (§6.1)
 1. Default `business_modes` from the store in `applyProductEvent`, and backfill
    any product already created through the POS. (§2)
 2. Add a regression test that lists a product through `/api/sync/push` and
@@ -209,3 +220,106 @@ Worth recording, because it is the part that works.
    test covering it.
 3. Consider relaxing throttles under `APP_ENV=local`. (§3.2)
 4. Note the local SQLite + `queue:work` locking behaviour in deployment.md. (§3.3)
+5. Add regression tests for both defects — a second `settlePayment` call, and a
+   product listed through `/api/sync/push` appearing in the catalog. Neither had
+   any coverage, which is why both survived 150 backend tests.
+
+---
+
+## 6. Second pass — boundaries, authorization and races (2026-08-27)
+
+Where §1–§5 asked *"does the chain work"*, this asks *"what happens when
+someone pushes on it"*. Ten invariants, run on PostgreSQL.
+Harness: [`scripts/e2e-edge-cases.mjs`](../scripts/e2e-edge-cases.mjs).
+
+**9 of 10 upheld.** Most of these pass by *refusing* something, which is the
+point.
+
+| # | Invariant | Result |
+|---|---|---|
+| 1 | Refuse an order larger than stock | PASS — 422, "doesn't have enough stock" |
+| 2 | Stock falls by exactly the quantity ordered | PASS — 20 → 17 on qty 3 |
+| 3 | Two simultaneous orders for the last unit: exactly one wins | PASS — 1/2, stock 0, never negative |
+| 4 | Server recomputes money, ignoring client-sent totals | PASS — claimed ₱0.01, charged ₱183.40 |
+| 5 | A device cannot write into another org/store | PASS — 403 "Device scope mismatch" |
+| 6 | A rider cannot advance a delivery they do not hold | PASS — 403 |
+| 7 | An unapproved rider cannot reach the delivery board | PASS — 403 |
+| 8 | An already-paid order refuses a second settlement | **FAIL** |
+| 9 | Cannot mark delivered without picking up first | PASS — 422 |
+| 10 | A replayed sync event is deduplicated | PASS — second reported `duplicate`, one row |
+
+`lockForUpdate` in `OnlineOrderController` does its job — case 3 is a genuine
+race and stock never went negative.
+
+### 6.1 Settling an order twice records the payment twice — and it corrupts cash reconciliation
+
+**Severity: high. This one touches money.**
+
+[`SellerOrderController::settlePayment`](../backend/app/Http/Controllers/Api/SellerOrderController.php#L141)
+has no guard on `payment_status`. Calling it twice returns `200` both times and
+runs `Payment::query()->create(...)` unconditionally, so a second row lands for
+the full order total.
+
+Confirmed in the database rather than inferred:
+
+```
+ticket_number | total_cents | payment_rows | recorded
+DB1D8AFE      |       18340 |            2 |    36680
+```
+
+A ₱183.40 order with **₱366.80 recorded against it.**
+
+**Why it matters more than a stray row.** The payments table is what the till
+counts cash against:
+
+```php
+// ShiftController::cashSalesForShift
+Payment::query()
+    ->where('store_id', $shift->store_id)
+    ->where('payment_method', 'cash')
+    ->…->sum('amount_cents');
+```
+
+That feeds `expectedCashCents` at shift close. A duplicated cash payment
+inflates the cash the drawer is expected to hold, so the shift reconciles
+**short by the duplicated amount**. The system would tell a merchant their
+cashier is ₱183.40 down when the drawer is correct — a false discrepancy
+pointed at a named person.
+
+How it happens in practice: a rider or cashier taps "settle" twice on a slow
+connection, or a merchant re-confirms a COD payment already marked paid. There
+is nothing in the API stopping either.
+
+**Fix.** Refuse when `payment_status === 'paid'`, or make the write idempotent
+by keying the payment to the order. Refusing is better — a second settlement is
+a real signal that something confusing happened at the counter, and it should
+surface rather than be swallowed. Any duplicate rows already written need
+cleaning up before they reach a shift report.
+
+### 6.2 Lapse: I guessed a response field name again
+
+Case 10 first reported `0 product row(s)` and looked like a broken sync. It was
+not. The harness read `pull.data.products`; `/api/sync/pull` returns
+`{ cursor, changes: { categories, products, overrides, inventoryLevels } }`.
+The product was there, exactly once, and the API had reported `duplicate`
+correctly.
+
+**This is §3.1 repeating, in the suite written to avoid it.** I nearly filed a
+correct system as a bug. What saved it was checking the endpoint's real shape
+before writing it up, rather than trusting my own failing assertion.
+
+*Improvement, stated more sharply than last time:* when a test says the system
+is broken, verify the system independently before believing the test. A test
+and the thing it tests are equally capable of being wrong, and the test is
+younger.
+
+### 6.3 Lapse: I reached past the API again
+
+The first draft of this suite shelled into `php artisan tinker` to read stock
+and payment counts. It broke on Windows quoting — **the same failure as §3.5**,
+in the run whose write-up called that out.
+
+Now every assertion reads state back through the API: stock from the storefront
+catalog's `stockQty`, product rows from `/api/sync/pull`, and case 8 asserts the
+refusal itself rather than counting rows. The database was consulted exactly
+once, by hand, to confirm the money bug in §6.1 — which is the right use for it.

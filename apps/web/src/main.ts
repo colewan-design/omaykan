@@ -24,10 +24,16 @@ function resolveApiBaseUrl(): string {
   return (trimmed || window.location.origin).replace(/\/+$/, '')
 }
 
+function resolveConfiguredPairingCode(): string {
+  const configured = import.meta.env.VITE_POS_PAIRING_CODE
+  return typeof configured === 'string' ? configured.trim() : ''
+}
+
 async function bootstrap() {
   const boundTenant = readStaffTenant()
   const organizationSlug = boundTenant?.organizationSlug ?? import.meta.env.VITE_POS_ORGANIZATION_SLUG
   const storeCode = boundTenant?.storeCode ?? import.meta.env.VITE_POS_STORE_CODE
+  const configuredPairingCode = resolveConfiguredPairingCode()
 
   if (boundTenant) {
     const activeTenantId = `${organizationSlug}/${storeCode}`
@@ -44,6 +50,11 @@ async function bootstrap() {
       apiBaseUrl: resolveApiBaseUrl(),
       organizationSlug,
       storeCode,
+      // The production seller app is hard-wired to one tenant; without this
+      // public code a fresh browser can sign staff in, but it cannot open the
+      // device session needed for sync-backed features like publishing the
+      // shop photo to the public directory.
+      pairingCode: configuredPairingCode,
       deviceName: import.meta.env.VITE_POS_DEVICE_NAME,
       platform: 'web',
       appVersion: import.meta.env.VITE_POS_APP_VERSION ?? '0.1.0',
@@ -72,9 +83,10 @@ async function bootstrap() {
     // existing store also drops its code in here without touching the store's
     // business identity, which lives on the server already.
     const current = await repository.loadSettings()
+    const pairingCode = (pendingPairingCode ?? '').trim() || current.pairingCode.trim() || configuredPairingCode
     await repository.saveSettings({
       ...current,
-      pairingCode: pendingPairingCode ?? current.pairingCode,
+      pairingCode,
       syncMode: 'online-sync',
     })
     window.localStorage.setItem(SYNC_SEEDED_KEY, '1')

@@ -170,7 +170,10 @@ falls back to the demo catalog, which is itself empty unless
 `apps/web/.env.production` holds the correct values, and **`.gitignore` excludes
 every `.env*`**, so it is not in the repository. `apps/web/.env.production.example`
 is committed alongside it as the reproducible record — keep the two in step, and
-treat a blank tenant slug as a release blocker.
+treat a blank tenant slug as a release blocker, and include the tenant's
+`VITE_POS_PAIRING_CODE` whenever the seller app is pinned to one live store.
+Without that code, a fresh browser can render `/app` but cannot open the device
+session the profile-image publish depends on.
 
 After any frontend deploy, confirm the call actually resolves:
 

@@ -159,7 +159,7 @@ function onImageError(shop: StoreSummary) {
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
 
-      <ul ref="track" class="pc-track" @scroll.passive="measure">
+      <ul ref="track" class="pc-track" :class="{ 'pc-track--fits': !scrollable }" @scroll.passive="measure">
         <li v-for="shop in shops" :key="shop.orgSlug" class="pc-item">
           <a class="pc-card" :href="shopUrl(shop)">
             <span class="pc-card__photo">
@@ -213,6 +213,11 @@ function onImageError(shop: StoreSummary) {
 }
 
 .pc-track {
+  /* Fills whatever the arrows leave, and min-width:0 lets it actually shrink
+     to that — without it the track sizes to its content and the page, not the
+     strip, is what ends up scrolling sideways. */
+  flex: 1;
+  min-width: 0;
   display: flex;
   gap: 20px;
   margin: 0;
@@ -225,6 +230,11 @@ function onImageError(shop: StoreSummary) {
   scrollbar-width: none;
 }
 .pc-track::-webkit-scrollbar { display: none; }
+
+/* Centred only while everything fits. Centring a track that does overflow
+   puts its first card off the left edge with no way to scroll back to it, so
+   this is a class rather than a plain justify-content on the track. */
+.pc-track--fits { justify-content: center; }
 
 .pc-item {
   flex: 0 0 clamp(200px, 22vw, 248px);

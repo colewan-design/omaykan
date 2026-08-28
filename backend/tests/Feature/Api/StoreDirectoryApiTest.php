@@ -35,6 +35,7 @@ class StoreDirectoryApiTest extends TestCase
         string $address = '',
         string $storeStatus = 'active',
         string $orgStatus = 'active',
+        ?string $image = null,
     ): Store {
         $organization = Organization::query()->create([
             'name' => $name,
@@ -77,6 +78,9 @@ class StoreDirectoryApiTest extends TestCase
                 'track_inventory' => false,
                 'is_active' => true,
                 'business_modes' => [$businessMode],
+                // Numbered so a shop's photos differ, which is what makes
+                // "always the same one back" an assertion worth making.
+                'image_url' => $image === null ? null : "{$image}-{$i}.jpg",
             ]);
         }
 
@@ -96,6 +100,58 @@ class StoreDirectoryApiTest extends TestCase
             ->assertJsonPath('stores.0.storeCode', 'main')
             ->assertJsonPath('stores.0.productCount', 3)
             ->assertJsonPath('stores.1.name', 'Main Branch');
+    }
+
+    public function test_lists_a_photo_off_the_shops_own_shelf(): void
+    {
+        $this->seed();
+        $this->makeShop('fresh-market', 'Fresh Market', 'grocery', 3, image: '/products/rice');
+
+        $this->getJson('/api/stores')
+            ->assertOk()
+            ->assertJsonPath('stores.0.name', 'Fresh Market')
+            ->assertJsonPath('stores.0.imageUrl', '/products/rice-0.jpg');
+    }
+
+    public function test_a_shop_whose_products_have_no_photos_has_a_null_image(): void
+    {
+        $this->seed();
+        $this->makeShop('bare-shelf', 'Bare Shelf', 'grocery', 2);
+
+        $this->getJson('/api/stores')
+            ->assertOk()
+            ->assertJsonPath('stores.0.name', 'Bare Shelf')
+            ->assertJsonPath('stores.0.imageUrl', null);
+    }
+
+    /**
+     * An empty string in the column is a photo nobody can see. min() would
+     * pick it over every real URL, so the shop would come back with a broken
+     * image rather than the monogram the carousel draws for "no photo".
+     */
+    public function test_a_blank_photo_column_does_not_win_over_a_real_one(): void
+    {
+        $this->seed();
+        $store = $this->makeShop('corner-store', 'Corner Store', 'grocery', 1, image: '/products/tin');
+
+        Product::query()->create([
+            'organization_id' => $store->organization_id,
+            'sku' => 'SKU-corner-blank',
+            'barcode' => 'bar-corner-blank',
+            'name' => 'Aaa unphotographed',
+            'product_type' => 'standard',
+            'tax_rate' => 12,
+            'price_cents' => 1000,
+            'track_inventory' => false,
+            'is_active' => true,
+            'business_modes' => ['grocery'],
+            'image_url' => '',
+        ]);
+
+        $this->getJson('/api/stores')
+            ->assertOk()
+            ->assertJsonPath('stores.0.name', 'Corner Store')
+            ->assertJsonPath('stores.0.imageUrl', '/products/tin-0.jpg');
     }
 
     /**

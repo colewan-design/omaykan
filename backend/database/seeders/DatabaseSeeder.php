@@ -186,5 +186,13 @@ class DatabaseSeeder extends Seeder
                 'qty_on_hand' => 100,
             ],
         );
+
+        // DemoSellerSeeder fills this shop out to its full shelf and adds a
+        // seller for each of the other business modes. It is deliberately NOT
+        // called from here: the tests seed through this class and assert
+        // against exactly the one category and one product above, so chaining
+        // it in turns a fixture into 550 products. Run it by name instead:
+        //
+        //   php artisan db:seed --class=DemoSellerSeeder
     }
 }

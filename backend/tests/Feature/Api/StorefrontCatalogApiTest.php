@@ -4,9 +4,11 @@ namespace Tests\Feature\Api;
 
 use App\Models\Category;
 use App\Models\InventoryLevel;
+use App\Models\OrganizationMembership;
 use App\Models\Product;
 use App\Models\ProductStoreOverride;
 use App\Models\Store;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -35,6 +37,54 @@ class StorefrontCatalogApiTest extends TestCase
             ->assertJsonPath('products.0.stockQty', 100)
             ->assertJsonCount(1, 'categories')
             ->assertJsonPath('categories.0.name', 'Beverages');
+    }
+
+    public function test_returns_the_shop_behind_the_shelf(): void
+    {
+        $this->seed();
+
+        $this->get_catalog()
+            ->assertOk()
+            ->assertJsonPath('store.name', 'Main Branch')
+            ->assertJsonPath('store.ownerName', 'Admin User')
+            ->assertJsonPath('store.address', '12 Session Road, Baguio City');
+    }
+
+    public function test_shop_owner_is_the_founding_admin_not_one_promoted_later(): void
+    {
+        $this->seed();
+
+        $store = Store::query()->firstOrFail();
+
+        $later = User::query()->create([
+            'name' => 'Newer Admin',
+            'username' => 'newer',
+            'email' => 'newer@example.com',
+            'password' => bcrypt('password'),
+            'status' => 'active',
+        ]);
+
+        // created_at is not fillable, so it is forced after the fact — without
+        // it the two admin rows share a timestamp and "oldest" is a coin toss.
+        OrganizationMembership::query()->create([
+            'organization_id' => $store->organization_id,
+            'user_id' => $later->id,
+            'membership_role' => 'admin',
+        ])->forceFill(['created_at' => now()->addDay()])->save();
+
+        $this->get_catalog()->assertOk()->assertJsonPath('store.ownerName', 'Admin User');
+    }
+
+    public function test_shop_is_still_named_when_the_store_has_no_business_mode(): void
+    {
+        $this->seed();
+
+        Store::query()->firstOrFail()->forceFill(['business_mode' => null])->save();
+
+        $this->get_catalog()
+            ->assertOk()
+            ->assertJsonPath('store.name', 'Main Branch')
+            ->assertJsonPath('store.address', '12 Session Road, Baguio City');
     }
 
     public function test_product_outside_the_stores_business_mode_is_hidden(): void

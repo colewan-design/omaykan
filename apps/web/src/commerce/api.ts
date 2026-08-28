@@ -103,7 +103,30 @@ interface ApiProduct {
   lowStockThreshold: number | null
 }
 
+interface ApiShop {
+  name: string
+  businessTypeLabel: string | null
+  ownerName: string | null
+  address: string | null
+}
+
+/**
+ * The shop behind the shelf: who the shopper is buying from, and where they
+ * are. One per storefront — every product on it comes from the same counter.
+ */
+export interface StorefrontShop {
+  name: string
+  /** "Sari-sari store", "Coffee shop" — what kind of counter it is. */
+  businessTypeLabel?: string
+  /** The person whose name is over the door. Absent if the org has no admin. */
+  ownerName?: string
+  /** Street line, as the owner typed it into Settings. */
+  address?: string
+}
+
 export interface StorefrontCatalog {
+  /** Null for the bundled demo shelf, which stands for no real shop. */
+  shop: StorefrontShop | null
   categories: Category[]
   products: Product[]
 }
@@ -135,15 +158,76 @@ function toProduct(product: ApiProduct): Product {
   }
 }
 
+/** A shop as the directory lists it — never its pairing code. */
+export interface StoreSummary {
+  orgSlug: string
+  storeCode: string
+  name: string
+  businessMode: string
+  businessTypeLabel: string | null
+  address: string
+  /**
+   * A photo off the shop's own shelf — stores have no picture of their own in
+   * the schema, so the directory borrows one of their products'. Null for a
+   * shop that has listed nothing with an image.
+   */
+  imageUrl: string | null
+  lat: number | null
+  lng: number | null
+  productCount: number
+  /** Null when either side has no pin, so "no distance" is not "0 km away". */
+  distanceKm: number | null
+}
+
+/**
+ * The shops a customer can order from.
+ *
+ * Unlike fetchCatalog, this is not scoped to the storefront's own tenant — it
+ * is what the visitor picks that tenant from, so it runs before any store
+ * context exists.
+ */
+export async function fetchStores(
+  options: { q?: string; lat?: number | null; lng?: number | null } = {},
+): Promise<StoreSummary[]> {
+  const params = new URLSearchParams()
+  if (options.q) params.set('q', options.q)
+  // Sent only as a pair; the API rejects half a coordinate rather than
+  // quietly sorting by name.
+  if (typeof options.lat === 'number' && typeof options.lng === 'number') {
+    params.set('lat', String(options.lat))
+    params.set('lng', String(options.lng))
+  }
+
+  const query = params.toString()
+  const payload = await request<{ stores: StoreSummary[] }>(
+    `/api/stores${query === '' ? '' : `?${query}`}`,
+    { fallbackError: 'Could not load the shops.' },
+  )
+
+  return payload.stores ?? []
+}
+
+/** Blank strings are as absent as nulls here — both mean "never filled in". */
+function toShop(shop: ApiShop | null | undefined): StorefrontShop | null {
+  if (!shop) return null
+  return {
+    name: shop.name,
+    businessTypeLabel: shop.businessTypeLabel?.trim() || undefined,
+    ownerName: shop.ownerName?.trim() || undefined,
+    address: shop.address?.trim() || undefined,
+  }
+}
+
 export async function fetchCatalog(): Promise<StorefrontCatalog> {
   const params = new URLSearchParams({ orgSlug: ORG_SLUG, storeCode: STORE_CODE })
 
-  const payload = await request<{ categories: Category[]; products: ApiProduct[] }>(
+  const payload = await request<{ store?: ApiShop | null; categories: Category[]; products: ApiProduct[] }>(
     `/api/storefront/catalog?${params}`,
     { fallbackError: 'Could not load the menu.' },
   )
 
   return {
+    shop: toShop(payload.store),
     categories: payload.categories ?? [],
     products: (payload.products ?? []).map(toProduct),
   }

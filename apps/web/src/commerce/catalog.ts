@@ -1,11 +1,11 @@
 import { computed, reactive, type ComputedRef } from 'vue'
 import { demoCategories, demoProducts, type Category } from '@pos/shared/index'
-import { fetchCatalog, type StorefrontCatalog } from '@pos/web/commerce/api'
+import { fetchCatalog, type StorefrontCatalog, type StorefrontShop } from '@pos/web/commerce/api'
 import { BUSINESS_MODE, DEMO_ORG_SLUG, ORG_SLUG } from '@pos/web/commerce/context'
 
-export type { StorefrontCatalog }
+export type { StorefrontCatalog, StorefrontShop }
 
-const EMPTY: StorefrontCatalog = { categories: [], products: [] }
+const EMPTY: StorefrontCatalog = { shop: null, categories: [], products: [] }
 
 /**
  * Demo products are only ever shown to the demo tenant.
@@ -23,7 +23,9 @@ function demoStorefrontCatalog(): StorefrontCatalog {
   const products = demoProducts.filter((product) => product.businessModes.includes(BUSINESS_MODE) && !product.outOfStock)
   const categoryIds = new Set(products.map((product) => product.categoryId))
   const categories = demoCategories.filter((category) => categoryIds.has(category.id))
-  return { categories, products }
+  // No shop: these products are a sample shelf, not a counter anyone can be
+  // named as standing behind.
+  return { shop: null, categories, products }
 }
 
 /**
@@ -65,7 +67,7 @@ interface StorefrontCatalogState extends StorefrontCatalog {
   error: string
 }
 
-const state = reactive<StorefrontCatalogState>({ categories: [], products: [], loading: true, error: '' })
+const state = reactive<StorefrontCatalogState>({ shop: null, categories: [], products: [], loading: true, error: '' })
 let loadStarted = false
 
 export function useStorefrontCatalog(): StorefrontCatalogState {
@@ -73,6 +75,7 @@ export function useStorefrontCatalog(): StorefrontCatalogState {
     loadStarted = true
     loadStorefrontCatalog()
       .then((catalog) => {
+        state.shop = catalog.shop
         state.categories = catalog.categories
         state.products = catalog.products
         // Only worth saying when there is nothing to show for it: the demo

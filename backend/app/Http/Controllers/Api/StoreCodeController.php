@@ -21,8 +21,14 @@ use Illuminate\Http\Request;
  */
 class StoreCodeController extends Controller
 {
-    /** Only these modes can put something in a cart. */
-    private const ONLINE_MODES = ['coffee-shop', 'grocery', 'restaurant'];
+    /**
+     * Only these modes can put something in a cart.
+     *
+     * Public because StoreDirectoryController gates the shop list on the same
+     * rule: a mode that cannot be resolved by code must not be listed as a
+     * place to order from either, and two copies of this list would drift.
+     */
+    public const ONLINE_MODES = ['coffee-shop', 'grocery', 'restaurant'];
 
     /**
      * Customer storefront: "which store is this code?", plus everything the

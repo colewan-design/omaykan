@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\InventoryLevel;
+use App\Models\OrganizationMembership;
 use App\Models\Product;
 use App\Models\ProductStoreOverride;
 use App\Models\Store;
@@ -43,11 +44,12 @@ class StorefrontCatalogController extends Controller
         abort_if($store === null || $store->status !== 'active', 404, 'Store not found.');
 
         $businessMode = $store->business_mode;
+        $shop = $this->shopOf($store);
 
         // A store with no mode set cannot decide which products belong in a
         // cart. Empty beats guessing.
         if ($businessMode === null) {
-            return response()->json(['categories' => [], 'products' => []]);
+            return response()->json(['store' => $shop, 'categories' => [], 'products' => []]);
         }
 
         $products = Product::query()
@@ -135,8 +137,44 @@ class StorefrontCatalogController extends Controller
             ->values();
 
         return response()->json([
+            'store' => $shop,
             'categories' => $categories,
             'products' => $visible,
         ]);
+    }
+
+    /**
+     * Who the shopper is buying from, and where that shop is.
+     *
+     * Omaykan takes no commission and charges nothing online — the shopper
+     * hands cash to a rider on behalf of a shop they have never seen. So the
+     * shop has to be named on the product itself, not only in the footer:
+     * "who am I buying from, and are they near me" is the question a price
+     * on its own cannot answer.
+     *
+     * The owner is the organization's founding admin — the account signup
+     * created (SignupController), which is the person whose name is over the
+     * door. There is no separate 'owner' membership role, so oldest-admin is
+     * the closest thing the schema has; staff promoted later sort after them.
+     *
+     * @return array<string, mixed>
+     */
+    private function shopOf(Store $store): array
+    {
+        $owner = OrganizationMembership::query()
+            ->where('organization_id', $store->organization_id)
+            ->where('membership_role', 'admin')
+            ->with('user')
+            ->oldest()
+            ->first()?->user;
+
+        $label = trim((string) $store->business_type_label);
+
+        return [
+            'name' => $store->name,
+            'businessTypeLabel' => $label === '' ? null : $label,
+            'ownerName' => $owner?->name,
+            'address' => $store->address,
+        ];
     }
 }

@@ -8,6 +8,8 @@ import {
   type Product,
 } from '@pos/shared/index'
 import { useStorefrontCart } from '@pos/web/commerce/cart'
+import { useStorefrontCatalog } from '@pos/web/commerce/catalog'
+import { STORE_ADDRESS } from '@pos/web/commerce/context'
 import ProductRow from './ProductRow.vue'
 
 // The product detail face of the landing page: one product at full size, with
@@ -34,6 +36,21 @@ const emit = defineEmits<{
 }>()
 
 const cart = useStorefrontCart()
+
+/**
+ * Who the shopper is buying from. Read off the catalog rather than passed in
+ * as a prop, the same way the cart is: one storefront is one counter, so the
+ * shop is a property of the shelf and not of the product sitting on it.
+ */
+const catalog = useStorefrontCatalog()
+const shop = computed(() => catalog.shop)
+
+/**
+ * The address the API knows beats the one baked into the build: a store that
+ * moves updates Settings, not a redeploy. The env var stays as the fallback
+ * for the demo shelf, which has no shop record behind it.
+ */
+const shopAddress = computed(() => shop.value?.address ?? (STORE_ADDRESS || undefined))
 
 const quantity = ref(1)
 const justAdded = ref(false)
@@ -268,6 +285,22 @@ function addToCart() {
           <p>Cash or GCash when the rider arrives — nothing is charged online.</p>
         </div>
 
+        <section v-if="shop" class="fdpdp__shop">
+          <h2 class="fdpdp__shoplabel">Sold by</h2>
+          <p class="fdpdp__shopname">{{ shop.name }}</p>
+          <p v-if="shop.businessTypeLabel" class="fdpdp__shopkind">{{ shop.businessTypeLabel }}</p>
+          <dl v-if="shop.ownerName || shopAddress" class="fdpdp__shopfacts">
+            <div v-if="shop.ownerName">
+              <dt>Store owner</dt>
+              <dd>{{ shop.ownerName }}</dd>
+            </div>
+            <div v-if="shopAddress">
+              <dt>Store location</dt>
+              <dd>{{ shopAddress }}</dd>
+            </div>
+          </dl>
+        </section>
+
         <dl class="fdpdp__facts">
           <div>
             <dt>Item code</dt>
@@ -494,6 +527,31 @@ function addToCart() {
 }
 .fdpdp__notes p { margin: 0; font-size: 14px; line-height: 1.6; color: #4b5563; }
 .fdpdp__notes p + p { margin-top: 8px; }
+
+/* The shop card, not a fact row: a shopper who has never been to this counter
+   is handing cash to a rider on its behalf, so who and where it is has to read
+   as a statement about the seller rather than as metadata next to a barcode. */
+.fdpdp__shop {
+  margin-top: 24px;
+  padding: 18px 20px;
+  border: 1px solid #e3e8e5;
+  border-radius: 12px;
+}
+.fdpdp__shoplabel {
+  margin: 0 0 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #9ca3af;
+}
+.fdpdp__shopname { margin: 0; font-size: 17px; font-weight: 800; color: #1a1a1a; }
+.fdpdp__shopkind { margin: 3px 0 0; font-size: 13.5px; color: #6b7280; }
+
+.fdpdp__shopfacts { margin: 14px 0 0; display: grid; gap: 8px; }
+.fdpdp__shopfacts > div { display: flex; gap: 10px; font-size: 13.5px; }
+.fdpdp__shopfacts dt { min-width: 96px; flex: none; color: #9ca3af; }
+.fdpdp__shopfacts dd { margin: 0; color: #4b5563; font-weight: 600; }
 
 .fdpdp__facts { margin: 24px 0 0; display: grid; gap: 10px; }
 .fdpdp__facts > div { display: flex; gap: 10px; font-size: 13.5px; }

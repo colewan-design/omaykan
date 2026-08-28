@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\StaffRoleController;
 use App\Http\Controllers\Api\StaffSessionController;
 use App\Http\Controllers\Api\StaffUserController;
 use App\Http\Controllers\Api\StoreCodeController;
+use App\Http\Controllers\Api\StoreDirectoryController;
 use App\Http\Controllers\Api\StorefrontCatalogController;
 use App\Http\Controllers\Api\ShiftController;
 use App\Http\Controllers\Api\SyncController;
@@ -50,6 +51,12 @@ Route::get('/online-orders/{order}', [OnlineOrderController::class, 'show'])
 // The storefront's product list. Replaces the storefront reading Firestore
 // directly, which is what forced Firebase credentials into the client.
 Route::get('/storefront/catalog', [StorefrontCatalogController::class, 'show'])
+    ->middleware('throttle:60,1');
+
+// The shop list the landing page browses. Public and read-only, and it
+// publishes nothing a shop does not already put on its own storefront, so it
+// is throttled like the catalog rather than like the code lookup above.
+Route::get('/stores', [StoreDirectoryController::class, 'index'])
     ->middleware('throttle:60,1');
 
 Route::post('/store-codes/resolve', [StoreCodeController::class, 'resolve'])

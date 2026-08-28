@@ -4,8 +4,10 @@ import BrandLogo from '@pos/core/components/BrandLogo.vue'
 import { useStorefrontCart } from '@pos/web/commerce/cart'
 import { useStockedCategories } from '@pos/web/commerce/catalog'
 import { useCustomerAccount } from '@pos/web/commerce/customer'
+import { useDeliveryLocation } from '@pos/web/commerce/deliveryLocation'
 import { categoryIcon } from './categories'
 import CartDrawer from './CartDrawer.vue'
+import AddressDialog from './AddressDialog.vue'
 
 // The site chrome — dark green utility bar with the search dominant, then the
 // category nav. Shared by the landing page and the about page so the two can't
@@ -33,6 +35,13 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{ search: [term: string]; category: [categoryId: string] }>()
+
+// "Enter your address" was an anchor to shopHref — it scrolled to the shelves
+// and collected nothing. It opens the address panel now, and lives in the
+// header rather than the landing page so the about and account pages get the
+// same working control, the way the cart already does.
+const delivery = useDeliveryLocation()
+const addressOpen = ref(false)
 
 const categories = useStockedCategories()
 
@@ -79,7 +88,9 @@ defineExpose({ clear: () => (searchTerm.value = '') })
 
       <div class="fd-bar__delivery">
         <span>Delivery</span>
-        <a :href="props.shopHref">Enter your address</a>
+        <button type="button" class="fd-bar__addr" @click="addressOpen = true">
+          {{ delivery.isSet.value ? delivery.summary.value : 'Enter your address' }}
+        </button>
       </div>
 
       <form class="fd-search" @submit.prevent="submitSearch">
@@ -149,6 +160,7 @@ defineExpose({ clear: () => (searchTerm.value = '') })
     </nav>
 
     <CartDrawer :open="cartOpen" :shop-href="props.shopHref" @close="cartOpen = false" />
+    <AddressDialog :open="addressOpen" @close="addressOpen = false" />
   </div>
 </template>
 
@@ -234,13 +246,30 @@ defineExpose({ clear: () => (searchTerm.value = '') })
   white-space: nowrap;
 }
 .fd-bar__delivery span { font-size: 13.5px; font-weight: 700; }
-.fd-bar__delivery a {
+.fd-bar__delivery a,
+.fd-bar__addr {
   font-size: 13px;
   color: rgba(255,255,255,0.85);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.fd-bar__delivery a:hover { color: #fff; }
+.fd-bar__delivery a:hover,
+.fd-bar__addr:hover { color: #fff; }
+
+/* Reset only what the button adds over the anchor it replaced, and cap the
+   width so a long saved address cannot push the search bar off the row. */
+.fd-bar__addr {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .fd-search {
   flex: 1;

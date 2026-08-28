@@ -63,9 +63,66 @@ php artisan db:seed                # demo tenant — see below
 php artisan storage:link           # rider licence and plate photos
 ```
 
-`db:seed` is `firstOrCreate` throughout, so it is safe to re-run. It leaves an
-org `demo-coffee` with store `main`, pairing code **123456**, one product, and a
-merchant login of `admin@example.com` / `password`.
+`db:seed` is `firstOrCreate` throughout, so it is safe to re-run. On its own it
+leaves the minimum the test suite asserts against: org `demo-coffee` with store
+`main`, pairing code **123456**, one product, and an owner signing in as
+`admin` / `password`.
+
+For something you can actually browse, follow it with the demo sellers — one
+per business mode, each with store `main`, an owner whose password is
+`password`, and the shelf its mode declares:
+
+```bash
+php artisan db:seed --class=DemoSellerSeeder
+```
+
+| Organization | Mode | Pairing code | Sign in as | Products |
+| --- | --- | --- | --- | --- |
+| `demo-coffee` | coffee-shop | **123456** | `admin` | 32 |
+| `baguio-fresh-market` | grocery | **234567** | `grocery` | 475 |
+| `session-road-grill` | restaurant | **345678** | `restaurant` | 24 |
+| `polished-nail-lounge` | nail-salon | **456789** | `salon` | 21 |
+
+Staff sign-in takes the **username**, not the email — see
+`POST /api/staff-sessions`. The salon answers `store-codes/resolve` with a 409
+by design: `ONLINE_MODES` keeps appointment businesses out of the cart.
+
+The catalog is not written into the seeder. It is read from
+`backend/database/seeders/data/demo-catalog.json`, which is projected out of
+`packages/shared` — the TypeScript stays the source of truth for what the demo
+store sells:
+
+```bash
+node scripts/export-demo-catalog.mjs   # after changing demoProducts
+```
+
+Products whose catalog entry names no stock quantity — salon services, mostly —
+are seeded with `track_inventory` off, because the storefront drops any tracked
+product sitting at zero.
+
+### Which shop the landing page shows
+
+`GET /api/stores` is the public shop directory, and the landing page browses it
+under "Shops near you". It lists only what a customer could order from: an
+active store, an unsuspended org, a business mode in `ONLINE_MODES`, and at
+least one product that mode can sell — a shop with an empty shelf is a dead
+click, so it is left out rather than listed as unavailable. It takes `?q=` to
+search name, address and business type, and `?lat=&lng=` to sort nearest first
+(both coordinates or neither; half a pair is a 422).
+
+Picking a shop loads `?shop=<orgSlug>`, which `landing/main.ts` resolves through
+the directory and hands to `setStorefrontContext` **before mount** — the catalog
+composable loads once on first use, so setting it later fetches the wrong shelf
+and never corrects it. Without the parameter the build-time
+`VITE_POS_ORGANIZATION_SLUG` tenant stands, so a single-shop install is
+unchanged.
+
+"Enter your address" in the header stores a delivery location in `localStorage`
+(`sf_delivery_location`) and re-sorts the directory by distance. The typed
+address and the map pin are separate on purpose: **no geocoder is configured
+anywhere in this project**, so typed text cannot become coordinates. The pin
+comes from the browser's own geolocation, the same way checkout already gets
+one, and either half can exist without the other.
 
 Then join the two halves. In `apps/web/.env`, `VITE_API_BASE` and
 `VITE_ONLINE_ORDER_API_BASE` point at the Laravel origin — `http://127.0.0.1:8000`

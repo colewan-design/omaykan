@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import ParticleField from '@pos/web/landing/ParticleField.vue'
 import { vReveal } from '@pos/web/landing/reveal'
+import PartnerCarousel from './PartnerCarousel.vue'
 
 // The merchant pitch on /signup.
 //
@@ -261,6 +262,13 @@ const steps = [
         </div>
       </div>
     </section>
+
+    <!-- ── Shop partners ─────────────────────────────────────────────
+         Last thing before the form, and the only band on the page that is
+         evidence rather than argument: shops already trading on Omaykan,
+         read live from the public directory. Removes itself when there are
+         none to name. -->
+    <PartnerCarousel />
 
     <!-- ── Conversion: pitch beside the form ─────────────────────────── -->
     <section id="register" class="pm-signup">

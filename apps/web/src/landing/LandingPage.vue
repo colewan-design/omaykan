@@ -8,6 +8,8 @@ import FdFooter from './FdFooter.vue'
 import ProductRow from './ProductRow.vue'
 import ProductGrid from './ProductGrid.vue'
 import ProductDetail from './ProductDetail.vue'
+import PartnerDialog from './PartnerDialog.vue'
+import ShopDirectory from './ShopDirectory.vue'
 
 // Grocery-marketplace landing, modelled on the FreshDirect reference: a dark
 // green utility bar with the search front and centre, then a stack of
@@ -366,6 +368,12 @@ function clearSearch() {
 
         </div>
 
+        <!-- ── Shops ─────────────────────────────────────────────────────
+             Only on the shelf view: while browsing one category or one
+             product, the visitor is inside a shop, and a list of other shops
+             underneath it is a way out of what they were doing. -->
+        <ShopDirectory v-if="!browsingCategory && !browsingProduct" />
+
         <!-- ── Merchant strip ────────────────────────────────────────── -->
         <section class="fd-merchant">
           <div>
@@ -381,6 +389,9 @@ function clearSearch() {
     </main>
 
     <FdFooter />
+
+    <!-- Teleports to body and opens itself once per visitor. -->
+    <PartnerDialog />
 
   </div>
 </template>

@@ -49,13 +49,18 @@ The browser therefore needs `wsPath: '/reverb'`, which is what
 Key auth, no password:
 
 ```bash
-ssh omaykan          # ~/.ssh/config alias → root@187.124.138.58
+ssh xponent          # ~/.ssh/config alias → root@187.124.138.58
 ```
 
-The key is `~/.ssh/omaykan_vps_ed25519` (ed25519, no passphrase), created
-2026-08-27 and installed in the server's `root` authorized_keys. It is the only
-Omaykan-specific key on the box; `project-tracker-deploy` and
-`vault_vps_ed25519` in the same directory belong to other projects.
+**The alias is `xponent`, not `omaykan`** — this page said `omaykan` until
+2026-08-28, and there is no such `Host` block in `~/.ssh/config`, so the
+command as written could only ever have failed. The box is shared with
+xponent-global, and Omaykan is a tenant on someone else's alias.
+
+The identity that alias uses is `~/.ssh/xponent-global-deploy`. There are also
+`omaykan-deploy` and `omaykan_vps` keypairs in the same directory (this page
+previously named a third, `omaykan_vps_ed25519`, which does not exist); nothing
+in the deploy path reaches for them.
 
 ---
 
@@ -128,13 +133,19 @@ sudo -u www-data env HOME=/tmp php artisan ...
 ### 3.3 Rollback
 
 Directory swaps are reversible. The current rollback point is
-`backend.bak-20260827-131307-main-cutover` and
-`web.bak-20260827-131307-main-cutover`. Swap them back and restart the two
-daemons. A database dump taken immediately before the same cutover is at
-`/root/db-backups/omaykan-cutover-20260827-131307.dump` (`pg_restore` format).
+`backend.bak-20260828-113306-store-image` and
+`web.bak-20260828-113306-store-image`. Swap them back and restart the two
+daemons. A database dump taken immediately before that deploy is at
+`/root/db-backups/omaykan-predeploy-20260828-113306.dump` (`pg_restore` format).
+
+Rolling that one back also means dropping `stores.image_path`, which the
+release before it does not know about. An extra nullable column is harmless to
+older code, so prefer leaving it.
 
 Keep one generation. Older ones were deleted on 2026-08-27 after they had
-accumulated to 525M across 23 directories.
+accumulated to 525M across 23 directories, and by 2026-08-28 six web
+generations had built up again — the pruning is not automatic and nothing
+prompts for it.
 
 ---
 

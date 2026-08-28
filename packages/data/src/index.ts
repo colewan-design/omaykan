@@ -248,7 +248,26 @@ const storageKeys = {
   syncSession: 'pos.sync.session',
   syncCursor: 'pos.sync.cursor',
   syncOutbox: 'pos.sync.outbox',
+  // A fingerprint of the shop photo this device last got onto the server —
+  // not the photo itself, which is a data URL and already stored once.
+  publishedStoreImage: 'pos.sync.store-image',
 } as const
+
+/**
+ * Cheap change-detector for a value too large to keep a second copy of.
+ *
+ * FNV-1a over the string, with its length alongside. Not a security property:
+ * the only question it answers is "is this the same image the server already
+ * has", and the cost of a rare false match is one photo that does not update.
+ */
+function fingerprint(value: string): string {
+  let hash = 0x811c9dc5
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return `${value.length}:${(hash >>> 0).toString(36)}`
+}
 
 const guestSessionUserId = '__guest__'
 
@@ -1180,6 +1199,50 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     }
 
     return response.json() as Promise<T>
+  }
+
+  let publishingStoreImage = false
+
+  /**
+   * Put the shop's own photo — Settings > Business image — where customers can
+   * see it.
+   *
+   * The image lives in AppSettings as a data URL and never had anywhere to go:
+   * until now the only things that read it were the receipt header and the
+   * settings avatar, both on this device. The storefront directory and the
+   * partner carousel on /signup read it off the store record instead, so it
+   * has to be pushed.
+   *
+   * Guarded by a stored fingerprint rather than by "did this save change it",
+   * which is what makes an image uploaded long before this existed reach the
+   * server the first time the app opens after the update.
+   */
+  async function publishStoreImage(settings: AppSettings): Promise<void> {
+    if (settings.syncMode !== 'online-sync' || publishingStoreImage) {
+      return
+    }
+
+    const image = settings.businessImageUrl || ''
+    const stamp = fingerprint(image)
+    if ((await store.read<string>(storageKeys.publishedStoreImage, '')) === stamp) {
+      return
+    }
+
+    publishingStoreImage = true
+    try {
+      await backendFetch('/api/seller/store-image', {
+        method: 'PUT',
+        // An empty image is the owner having pressed Remove, and has to travel
+        // as null — the server treats it as "take the picture down".
+        body: JSON.stringify({ image: image === '' ? null : image }),
+      })
+      await store.write(storageKeys.publishedStoreImage, stamp)
+    } catch {
+      // Offline, unpaired, or refused. The marker is left alone, so the next
+      // settings save — or the next time the app opens — tries again.
+    } finally {
+      publishingStoreImage = false
+    }
   }
 
   async function ensureRemoteSession(): Promise<SyncSession | null> {
@@ -2181,14 +2244,24 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
     async loadSettings() {
       const saved = await store.read<Partial<AppSettings>>(storageKeys.settings, defaultSettings)
-      return {
-        ...defaultSettings,
-        ...saved,
-      }
+      const settings = { ...defaultSettings, ...saved }
+
+      // Deliberately not awaited: opening the app must not wait on an upload.
+      // This is what carries a photo uploaded before the backend knew about
+      // business images, and it is a local string compare on every boot after
+      // the first successful publish.
+      void publishStoreImage(settings)
+
+      return settings
     },
 
     async saveSettings(settings) {
       await store.write(storageKeys.settings, settings)
+
+      // The shop's public face, published separately from the catalog sync
+      // below: it is not a catalog record, it has no outbox, and failing to
+      // publish it must not stop the settings save or hold up the sync.
+      await publishStoreImage(settings)
 
       if (settings.syncMode === 'online-sync') {
         try {

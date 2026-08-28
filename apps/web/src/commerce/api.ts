@@ -204,7 +204,19 @@ export async function fetchStores(
     { fallbackError: 'Could not load the shops.' },
   )
 
-  return payload.stores ?? []
+  return (payload.stores ?? []).map((store) => ({ ...store, imageUrl: resolveImageUrl(store.imageUrl) }))
+}
+
+/**
+ * A shop photo the API serves itself lives on the API's origin; one it merely
+ * names — a product photo, a static file — lives on this page's. Only the
+ * first kind needs the configured base put back in front of it, and the only
+ * deployment where the difference shows is the one where the two origins are
+ * not the same. Which is the mobile app.
+ */
+function resolveImageUrl(url: string | null): string | null {
+  if (url === null || API_BASE === '') return url
+  return url.startsWith('/api/') ? `${API_BASE}${url}` : url
 }
 
 /** Blank strings are as absent as nulls here — both mean "never filled in". */

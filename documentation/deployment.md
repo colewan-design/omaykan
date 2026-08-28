@@ -97,9 +97,12 @@ ssh omaykan "cd /root/staging/backend &&
 Then, on the server, before swapping:
 
 - copy the live `.env` into the release — **never overwrite the server's `.env`**
-- `rsync -a` the live `storage/app/` across (rider licence and plate photos live
-  on the private disk; today it holds nothing but `.gitignore` stubs, and that
-  will stop being true the first time a rider signs up)
+- `rsync -a` the live `storage/app/` across. **This is now load-bearing.** The
+  private disk holds rider licence and plate photos (`rider-documents/`) and,
+  since 2026-08-28, the photo each shop owner uploads for their own shop
+  (`store-images/`, written by `StoreImageController`). Skipping this step
+  leaves every store record pointing at a file that is no longer there, and the
+  shop directory silently falls back to a product photo.
 - create `storage/framework/{cache/data,sessions,views}`, `storage/logs`,
   `bootstrap/cache`
 - delete any `bootstrap/cache/config.php` carried over from a build

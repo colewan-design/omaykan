@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\StaffSessionController;
 use App\Http\Controllers\Api\StaffUserController;
 use App\Http\Controllers\Api\StoreCodeController;
 use App\Http\Controllers\Api\StoreDirectoryController;
+use App\Http\Controllers\Api\StoreImageController;
 use App\Http\Controllers\Api\StorefrontCatalogController;
 use App\Http\Controllers\Api\ShiftController;
 use App\Http\Controllers\Api\SyncController;
@@ -58,6 +59,13 @@ Route::get('/storefront/catalog', [StorefrontCatalogController::class, 'show'])
 // is throttled like the catalog rather than like the code lookup above.
 Route::get('/stores', [StoreDirectoryController::class, 'index'])
     ->middleware('throttle:60,1');
+
+// The shop's own photo, as its owner uploaded it in Settings. Public because
+// it is the picture that shop already puts on its storefront, and throttled
+// more loosely than the listing because a page of shop cards is a page of
+// these — one request each, all at once.
+Route::get('/stores/{store}/image', [StoreImageController::class, 'show'])
+    ->middleware('throttle:240,1');
 
 Route::post('/store-codes/resolve', [StoreCodeController::class, 'resolve'])
     ->middleware('throttle:10,1');
@@ -208,6 +216,9 @@ Route::middleware(['auth:sanctum', 'merchant.token'])->group(function () {
     Route::post('/seller/online-orders/{order}/delivery-stage', [SellerOrderController::class, 'updateDeliveryStage']);
     Route::post('/seller/online-orders/{order}/status', [SellerOrderController::class, 'updateStatus']);
     Route::post('/seller/online-orders/{order}/settle-payment', [SellerOrderController::class, 'settlePayment']);
+    // The till publishing its own shop's photo. Scoped to the calling
+    // device's store, like the sync and seller-order endpoints above.
+    Route::put('/seller/store-image', [StoreImageController::class, 'update']);
     Route::get('/staff-roles', [StaffRoleController::class, 'index']);
     Route::put('/staff-roles', [StaffRoleController::class, 'sync']);
     Route::get('/staff-users', [StaffUserController::class, 'index']);

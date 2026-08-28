@@ -72,7 +72,10 @@ class StoreDirectoryController extends Controller
                     'businessMode' => $store->business_mode,
                     'businessTypeLabel' => $store->business_type_label,
                     'address' => $store->address ?? '',
-                    'imageUrl' => $shelf['imageUrl'] ?? null,
+                    // The owner's own photo when they have uploaded one, and
+                    // only otherwise a picture off their shelf: a shop that
+                    // has chosen how it wants to be seen outranks a guess.
+                    'imageUrl' => StoreImageController::urlFor($store) ?? ($shelf['imageUrl'] ?? null),
                     'lat' => $store->lat === null ? null : (float) $store->lat,
                     'lng' => $store->lng === null ? null : (float) $store->lng,
                     'productCount' => $count,

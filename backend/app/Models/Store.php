@@ -26,6 +26,7 @@ class Store extends Model
         'address',
         'lat',
         'lng',
+        'image_path',
     ];
 
     protected $hidden = [

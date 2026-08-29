@@ -8,6 +8,7 @@ import { useDeliveryLocation } from '@pos/web/commerce/deliveryLocation'
 import { categoryIcon } from './categories'
 import CartDrawer from './CartDrawer.vue'
 import AddressDialog from './AddressDialog.vue'
+import SignupBanner from './SignupBanner.vue'
 
 // The site chrome — dark green utility bar with the search dominant, then the
 // category nav. Shared by the landing page and the about page so the two can't
@@ -29,9 +30,13 @@ import AddressDialog from './AddressDialog.vue'
 // counting. It opens CartDrawer now, so the badge leads somewhere, and it does
 // so from the header rather than the landing page so that the about and
 // account pages get the same working cart.
+//
+// `accountBanner` is on everywhere the chrome appears except the account
+// portal itself, where inviting someone to create an account directly above
+// the form that creates one is noise.
 const props = withDefaults(
-  defineProps<{ shopHref?: string; activeCategory?: string }>(),
-  { shopHref: '#shop', activeCategory: '' },
+  defineProps<{ shopHref?: string; activeCategory?: string; accountBanner?: boolean }>(),
+  { shopHref: '#shop', activeCategory: '', accountBanner: true },
 )
 
 const emit = defineEmits<{ search: [term: string]; category: [categoryId: string] }>()
@@ -80,6 +85,11 @@ defineExpose({ clear: () => (searchTerm.value = '') })
 </script>
 
 <template>
+  <!-- Two roots: the banner scrolls away with the page while `.fd-head` stays
+       sticky on its own. Nesting it inside would pin the strip to the top for
+       the whole scroll of a long shelf. -->
+  <SignupBanner v-if="props.accountBanner" />
+
   <div class="fd-head">
     <header class="fd-bar">
       <a href="/" class="fd-brand" aria-label="Omaykan — home">

@@ -1,0 +1,21 @@
+# Gradle
+.gradle/
+build/
+local.properties
+
+# Signing — the keystore and its passwords never enter git.
+keystore.properties
+*.jks
+*.keystore
+
+# IDE
+.idea/
+*.iml
+captures/
+
+# Output
+*.apk
+*.aab
+
+# Kotlin compile daemon session files.
+.kotlin/

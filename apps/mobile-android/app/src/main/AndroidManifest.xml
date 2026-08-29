@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:name=".OmaykanApp"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Omaykan.Starting">
+
+        <!--
+          singleTask because of the App Link below: a reset link tapped while
+          the app is already open must reach the nav host that is running, not
+          stack a second copy of the market behind it. MainActivity forwards
+          the new intent to the nav controller — see onNewIntent there.
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.Omaykan.Starting"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+              The password-reset link from the email.
+
+              An Android App Link rather than a custom scheme: the mail points
+              at the real https URL the web portal honours, so one template
+              serves both clients and the link still works on a phone with no
+              app installed. autoVerify makes it open here silently instead of
+              asking, which needs /.well-known/assetlinks.json on the domain to
+              list this package and its signing fingerprint — served by Laravel,
+              see AssetLinksController. Without that file the link still works;
+              Android just asks which app should open it.
+
+              The path is /account and cannot be narrower — intent filters
+              cannot match a query string, and the token lives in one. A visit
+              with no token matches no route in the graph, so the app opens at
+              the market.
+            -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="omaykan.com" android:path="/account" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          Where Google's OAuth redirect lands, and the only exported thing here
+          besides the launcher.
+
+          Its own activity, not a filter on MainActivity: a custom-scheme filter
+          is a public entry point that anything on the phone can fire an intent
+          at, and none of that should be able to walk in through the shop's
+          front door. Nothing arriving here is believed until GoogleAuthFlow has
+          matched the `state` it issued.
+
+          The scheme is ${applicationId}, which AGP substitutes per variant — so
+          the debug build (.debug) redirects somewhere the release build does
+          not, matching the two separate OAuth clients the Google console
+          requires for two differently-signed packages.
+
+          singleTask is what dismisses the Custom Tab: the tab was launched into
+          this app's task, and bringing this activity forward clears it rather
+          than leaving the shopper looking at a browser page.
+        -->
+        <activity
+            android:name=".core.auth.GoogleAuthRedirectActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <!--
+                  No android:host, and lint is right that there is none: the
+                  redirect URI is `com.omaykan.storefront:/oauth2redirect`, a
+                  private-use scheme with no authority component (RFC 8252),
+                  which is the form Google's console derives for an Android
+                  OAuth client. Adding a host would change the URI and break
+                  the registration.
+
+                  The consequence, stated because it is easy to misread the
+                  line below: **Android ignores android:path when there is no
+                  host**, so this filter matches any URI on the scheme, not
+                  just /oauth2redirect. The path here is documentation. What
+                  actually stops a hostile intent is the `state` comparison in
+                  GoogleAuthFlow.readRedirect, which runs before anything in
+                  the URI is believed.
+                -->
+                <data
+                    android:scheme="${applicationId}"
+                    android:path="/oauth2redirect"
+                    tools:ignore="AppLinkUrlError" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

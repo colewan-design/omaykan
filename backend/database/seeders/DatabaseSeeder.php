@@ -188,11 +188,21 @@ class DatabaseSeeder extends Seeder
         );
 
         // DemoSellerSeeder fills this shop out to its full shelf and adds a
-        // seller for each of the other business modes. It is deliberately NOT
-        // called from here: the tests seed through this class and assert
-        // against exactly the one category and one product above, so chaining
-        // it in turns a fixture into 550 products. Run it by name instead:
+        // seller for each of the other business modes.
         //
-        //   php artisan db:seed --class=DemoSellerSeeder
+        // It is chained only on `local`, never on `testing`: the tests seed
+        // through this class and assert against exactly the one category and
+        // one product above, so chaining it unconditionally turns a fixture
+        // into 550 products. Production is excluded for the obvious reason —
+        // a live install must not grow four demo shops.
+        //
+        // The gate exists because the two-step version kept costing a rebuilt
+        // local database its catalog: `db:seed` alone leaves a one-product
+        // shop, the storefront then looks broken rather than empty, and the
+        // second command is the one nobody remembers. Both seeders are
+        // firstOrCreate throughout, so this stays safe to re-run.
+        if (app()->environment('local')) {
+            $this->call(DemoSellerSeeder::class);
+        }
     }
 }

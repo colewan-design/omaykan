@@ -17,6 +17,12 @@ use Illuminate\Validation\ValidationException;
  * Name, phone and preferences change freely. Email and password are the
  * credentials, so both require the current password — an unattended laptop is
  * otherwise one click away from becoming somebody else's account.
+ *
+ * With one exception, and it is the whole reason `hasPassword()` exists: an
+ * account created by pressing the Google button has no password to ask for.
+ * Demanding one there would lock the shopper out of their own profile forever,
+ * so `updatePassword` becomes "set a password" for them and `updateEmail`
+ * refuses outright rather than pretending to check something.
  */
 class CustomerAccountController extends Controller
 {
@@ -56,12 +62,27 @@ class CustomerAccountController extends Controller
     /**
      * Changing the address a reset link would be sent to is as good as owning
      * the account, so this asks for the password even though the caller is
-     * already signed in.
+     * already signed in — and refuses outright when Google holds the address.
      */
     public function updateEmail(Request $request): JsonResponse
     {
         /** @var CustomerAccount $account */
         $account = $request->user();
+
+        // Refused before the payload is even looked at. A Google-only account
+        // has no password to put in `currentPassword`, so validating that field
+        // first would answer "the current password field is required" — a
+        // demand the shopper cannot meet and which explains nothing.
+        //
+        // The address is also not ours to move: Google's own copy is what the
+        // next sign-in arrives with, so a change made here is either undone or
+        // — worse — stops matching and mints a second account. Google is where
+        // that change belongs, or a password here first.
+        if (! $account->hasPassword() && $account->usesGoogle()) {
+            throw ValidationException::withMessages([
+                'email' => 'This account signs in with Google, so its email is managed there. Set a password here first if you want to change it.',
+            ]);
+        }
 
         $data = $request->validate([
             'email' => ['required', 'email', 'max:190'],
@@ -89,12 +110,18 @@ class CustomerAccountController extends Controller
         /** @var CustomerAccount $account */
         $account = $request->user();
 
+        // The current one is required only when there is one. A Google-only
+        // shopper adding a password is not changing a credential, they are
+        // creating their first — and the session they are doing it from is
+        // itself the proof of who they are.
         $data = $request->validate([
-            'currentPassword' => ['required', 'string'],
+            'currentPassword' => [$account->hasPassword() ? 'required' : 'nullable', 'string'],
             'password' => ['required', 'confirmed', PasswordRule::min(8)],
         ]);
 
-        $this->assertPassword($account, $data['currentPassword']);
+        if ($account->hasPassword()) {
+            $this->assertPassword($account, $data['currentPassword']);
+        }
 
         $account->password = $data['password'];
         $account->save();
@@ -107,9 +134,10 @@ class CustomerAccountController extends Controller
         return response()->json(['account' => $account->fresh()->toStorefrontArray()]);
     }
 
+    /** Only ever called once `hasPassword()` has said there is one to check. */
     private function assertPassword(CustomerAccount $account, string $password): void
     {
-        if (! Hash::check($password, $account->password)) {
+        if (! $account->hasPassword() || ! Hash::check($password, $account->password)) {
             throw ValidationException::withMessages([
                 'currentPassword' => 'That password is not right.',
             ]);

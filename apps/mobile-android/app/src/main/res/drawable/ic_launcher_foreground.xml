@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The brand mark, white, on the green background in colors.xml.
+
+  Inset rather than dropped straight in: an adaptive icon is a 108dp canvas of
+  which only the middle 66dp is guaranteed to survive the launcher's mask, so a
+  full-bleed bitmap loses its rim to whatever shape the phone crops to.
+-->
+<inset
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/logo_mark_light"
+    android:inset="21%" />

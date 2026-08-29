@@ -109,6 +109,38 @@ class Order extends Model
     }
 
     /**
+     * The delivery stages during which a rider is physically holding the order
+     * and the customer is about to meet them.
+     *
+     * `pending` never has rider contact to begin with — releasing a delivery
+     * nulls both columns (RiderDeliveryController::release) — so this is really
+     * about everything after `delivered`.
+     */
+    private const RIDER_CONTACTABLE_STAGES = ['assigned', 'picked_up'];
+
+    /**
+     * The rider's phone number, but only while the delivery is in flight.
+     *
+     * The number exists so the customer can reach the person walking up to
+     * their door. That need ends when the order is handed over; the exposure
+     * does not, because the tracking view is public by UUID and that link is
+     * *meant* to be forwarded — to a flatmate, to whoever is actually home. A
+     * number that stays readable forever afterwards is a real person's mobile
+     * handed to everyone who ever saw the link, and the rider never agreed to
+     * that.
+     *
+     * So it is served during `assigned` and `picked_up` and withheld after.
+     * The name is left alone: far weaker on its own, and the customer's order
+     * history reasonably says who brought it.
+     */
+    public function riderPhoneForCustomer(): ?string
+    {
+        return in_array($this->delivery_stage, self::RIDER_CONTACTABLE_STAGES, true)
+            ? $this->rider_phone
+            : null;
+    }
+
+    /**
      * The customer's own view of an order: enough to track it, nothing that
      * would matter if the link were forwarded.
      *
@@ -140,7 +172,7 @@ class Order extends Model
             'deliveryAddress' => $this->delivery_address,
             'deliveryStage' => $this->delivery_stage,
             'riderName' => $this->rider_name,
-            'riderPhone' => $this->rider_phone,
+            'riderPhone' => $this->riderPhoneForCustomer(),
             'placedAt' => $this->created_at?->toIso8601String(),
             'items' => $this->items->map(fn ($item) => [
                 'productId' => $item->product_id ?? '',

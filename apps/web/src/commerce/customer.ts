@@ -11,6 +11,7 @@ import {
   registerCustomer,
   requestPasswordReset,
   resetCustomerPassword,
+  signInWithGoogle,
   updateCustomerAccount,
   updateCustomerAddress,
   updateCustomerEmail,
@@ -23,6 +24,7 @@ import {
   type SubstitutionPreference,
 } from '@pos/web/commerce/api'
 import { customerToken, setCustomerToken } from '@pos/web/commerce/session'
+import { forgetGoogleSession } from '@pos/web/commerce/google'
 
 /*
  * The signed-in shopper.
@@ -173,6 +175,18 @@ export function useCustomerAccount() {
     return adopt(await loginCustomer(email, password))
   }
 
+  /**
+   * The Google button's half of sign-in.
+   *
+   * Takes the ID token the button produced and ends where `signIn` ends: one
+   * session, one account object, no trace downstream of which door was used.
+   * Whether this made an account or found one is the server's business — a
+   * shopper pressing "Continue with Google" does not care which it was.
+   */
+  async function signInWithGoogleCredential(credential: string) {
+    return adopt(await signInWithGoogle(credential))
+  }
+
   async function sendPasswordReset(email: string) {
     return requestPasswordReset(email)
   }
@@ -194,6 +208,9 @@ export function useCustomerAccount() {
     }
     setCustomerToken(null)
     state.account = null
+    // Otherwise GIS re-signs them in without asking on the next visit, which
+    // makes "sign out" look broken to anyone signing out to hand over a laptop.
+    forgetGoogleSession()
   }
 
   // -- Profile -------------------------------------------------------------
@@ -298,6 +315,7 @@ export function useCustomerAccount() {
     hydrating,
     register,
     signIn,
+    signInWithGoogle: signInWithGoogleCredential,
     signOut,
     sendPasswordReset,
     resetPassword,

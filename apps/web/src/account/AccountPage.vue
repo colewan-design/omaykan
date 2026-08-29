@@ -77,6 +77,38 @@ function readSection(): string {
 const activeId = ref(readSection())
 const active = computed(() => sections.find((section) => section.id === activeId.value) ?? null)
 
+/*
+ * Where to go once they're signed in.
+ *
+ * Checkout sends a signed-out shopper here with ?next= pointing back at the
+ * page they were shopping on, because the cart lives in the site header and
+ * landing them on the portal afterwards would mean walking back and reopening
+ * it. Nothing depends on this — the cart is in localStorage either way — it
+ * just stops the sign-in feeling like a detour.
+ *
+ * Only a same-origin path is honoured. Anything else is an open redirect, and
+ * this URL is one a shopper could be handed by somebody else.
+ */
+function safeNext(): string {
+  try {
+    const raw = new URLSearchParams(window.location.search).get('next') ?? ''
+    // A single leading slash and no scheme: "/cart" yes, "//evil.com" and
+    // "https://evil.com" no.
+    return /^\/(?!\/)[^\s]*$/.test(raw) ? raw : ''
+  } catch {
+    return ''
+  }
+}
+
+watch(
+  () => account.signedIn.value,
+  (signedIn) => {
+    const next = safeNext()
+    if (signedIn && next) window.location.replace(next)
+  },
+  { immediate: true },
+)
+
 function openSection(id: string) {
   activeId.value = id
   window.history.pushState({}, '', `${window.location.pathname}?section=${id}`)
@@ -134,7 +166,8 @@ function search(term: string) {
 
 <template>
   <div class="landing fd acct">
-    <FdHeader :shop-href="SHOP_HREF" @search="search" />
+    <!-- No account banner here: the card below already is the invitation. -->
+    <FdHeader :shop-href="SHOP_HREF" :account-banner="false" @search="search" />
 
     <main class="acct-main">
       <!-- A stored token is being traded for the account it belongs to. Showing

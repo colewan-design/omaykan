@@ -16,6 +16,8 @@ Delivery aggregators take 20–30% from the merchant, squeeze the rider's per-dr
 |---|---|
 | [positioning.md](documentation/positioning.md) | What this is, who it's for, the price-parity covenant, business model, beachhead, risks. **Start here.** |
 | [plan.md](documentation/plan.md) | The phased build sequence. Stale in places — see feature-audit.md §6 |
+| [mobile-plan.md](documentation/mobile-plan.md) | The native Android customer app (Kotlin) — API contract, realtime, phases. Re-verified against `main` 2026-08-28 |
+| [google-sign-in.md](documentation/google-sign-in.md) | Sign in with Google — the Google Cloud console setup, the three OAuth clients, account linking, and the Android PKCE flow |
 | [feature-audit.md](documentation/feature-audit.md) | What is missing, unfinished, or inert. Audited against the code and the live database |
 | [e2e-findings.md](documentation/e2e-findings.md) | A ten-run pass of seller → customer → rider → completion, what failed, and what to improve |
 | [deployment.md](documentation/deployment.md) | The VPS, the deploy procedure, rollback, and why production's schema differs from `main` |
@@ -42,7 +44,8 @@ The marketing site is not a separate app — it is `apps/web/src/landing`, built
 
 There is no mobile app in the tree. The two Capacitor shells were deleted — neither
 built, and both reached for the Firebase SDK that the Laravel migration removed. A
-native Kotlin app replaces them and has not landed yet.
+native Kotlin app replaces them and has not landed yet — see
+[mobile-plan.md](documentation/mobile-plan.md).
 
 ## Running
 

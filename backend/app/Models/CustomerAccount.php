@@ -31,7 +31,9 @@ class CustomerAccount extends Authenticatable implements MustVerifyEmail
     protected $fillable = [
         'name',
         'email',
+        'google_sub',
         'phone',
+        'avatar_url',
         'password',
         'preferences',
     ];
@@ -39,6 +41,9 @@ class CustomerAccount extends Authenticatable implements MustVerifyEmail
     protected $hidden = [
         'password',
         'remember_token',
+        // Google's subject id. Not a secret, but it is a stable cross-service
+        // identifier for a person and the storefront has no use for it.
+        'google_sub',
     ];
 
     protected function casts(): array
@@ -59,6 +64,36 @@ class CustomerAccount extends Authenticatable implements MustVerifyEmail
     public static function findByEmail(string $email): ?self
     {
         return static::query()->where('email', strtolower(trim($email)))->first();
+    }
+
+    /**
+     * The account behind a Google identity, matched on Google's subject id
+     * rather than the email.
+     *
+     * Deliberately not the email: Google lets someone change the address on
+     * their account, and matching on it would eventually hand one shopper's
+     * order history to whoever inherits their old address.
+     */
+    public static function findByGoogleSub(string $sub): ?self
+    {
+        return static::query()->where('google_sub', $sub)->first();
+    }
+
+    /**
+     * False for someone who has only ever pressed the Google button.
+     *
+     * The column is nullable now, so every caller that was reaching for
+     * `$account->password` has to ask this first — `Hash::check()` against null
+     * is a TypeError, and against a random hash it is a silent lie.
+     */
+    public function hasPassword(): bool
+    {
+        return $this->password !== null && $this->password !== '';
+    }
+
+    public function usesGoogle(): bool
+    {
+        return $this->google_sub !== null;
     }
 
     public function addresses(): HasMany
@@ -112,6 +147,13 @@ class CustomerAccount extends Authenticatable implements MustVerifyEmail
             'name' => $this->name,
             'email' => $this->email,
             'phone' => $this->phone ?? '',
+            'avatarUrl' => $this->avatar_url ?? '',
+            // What the portal needs to decide which credential controls to
+            // show. A Google-only account has no current password to ask for,
+            // so "change password" has to become "set one" — see
+            // CustomerAccountController.
+            'googleLinked' => $this->usesGoogle(),
+            'hasPassword' => $this->hasPassword(),
             'preferences' => $this->resolvedPreferences(),
             // Oldest first, then the default lifted to the top. In that order:
             // PHP's sort is stable, so the last sort applied is the primary

@@ -53,6 +53,19 @@ class OrderDeliveryUpdated implements ShouldBroadcast
      * meeting this person at the door, and the storefront's tracking view
      * already has fields for both. Nothing else about the rider is sent.
      *
+     * The number is gated by Order::riderPhoneForCustomer(): live while the
+     * delivery is, withheld once it is done. This payload rides the *public*
+     * `order.{uuid}` channel as well as the store's private one, and that UUID
+     * is the forwardable tracking link — so a number left in here after the
+     * handover is a rider's mobile readable by anyone who ever held the link.
+     * The same gate is on the tracking endpoint, because either one alone
+     * would just be theatre while the other still served it.
+     *
+     * The store channel is gated identically rather than being split into its
+     * own event: the merchant needs to phone the rider *during* a delivery,
+     * which this still allows, and their own register holds the rider details
+     * they entered anyway.
+     *
      * @return array<string, mixed>
      */
     public function broadcastWith(): array
@@ -63,7 +76,7 @@ class OrderDeliveryUpdated implements ShouldBroadcast
             'deliveryStage' => $this->order->delivery_stage,
             'previousStage' => $this->previousStage,
             'riderName' => $this->order->rider_name,
-            'riderPhone' => $this->order->rider_phone,
+            'riderPhone' => $this->order->riderPhoneForCustomer(),
             'updatedAt' => $this->order->updated_at?->toIso8601String(),
         ];
     }

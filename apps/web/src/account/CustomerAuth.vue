@@ -1,7 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Eye, EyeOff } from '@lucide/vue'
 import { messageFor, useCustomerAccount } from '@pos/web/commerce/customer'
+import {
+  googleSignInAvailable,
+  releaseGoogleButton,
+  renderGoogleButton,
+} from '@pos/web/commerce/google'
 
 /*
  * The storefront's sign-in card.
@@ -19,6 +24,12 @@ import { messageFor, useCustomerAccount } from '@pos/web/commerce/customer'
  *
  * There is no emit: `useCustomerAccount` is module-level, so a successful
  * sign-in flips `signedIn` for the header and the portal at the same time.
+ *
+ * Google sits above the form on the two cards where it means anything, because
+ * for most shoppers it is the whole interaction and the form beneath it is the
+ * fallback. It is absent entirely when the build has no client id, and it
+ * removes itself if the script will not load — a content blocker eating it must
+ * leave a working sign-in card behind, not a dead button.
  */
 
 const account = useCustomerAccount()
@@ -34,10 +45,61 @@ const notice = ref('')
 const form = ref({ name: '', email: '', phone: '', password: '' })
 const showPassword = ref(false)
 
+// -- Google ------------------------------------------------------------------
+
+/**
+ * Only where it is an answer to the question on screen. On 'forgot' and 'reset'
+ * the shopper is midway through recovering a password, and a Google button
+ * there would be a second, unrelated way in offered at the worst moment.
+ */
+const googleOffered = computed(() => mode.value === 'signin' || mode.value === 'register')
+
+const googleSlot = ref<HTMLElement | null>(null)
+/** Flipped off for good if the script is blocked, so the gap closes up. */
+const googleUsable = ref(googleSignInAvailable())
+
+async function onGoogleCredential(credential: string) {
+  if (pending.value) return
+
+  error.value = ''
+  notice.value = ''
+  pending.value = true
+
+  try {
+    await account.signInWithGoogle(credential)
+  } catch (caught) {
+    error.value = messageFor(caught)
+  } finally {
+    pending.value = false
+  }
+}
+
+async function mountGoogleButton() {
+  if (!googleUsable.value || !googleOffered.value || googleSlot.value === null) return
+
+  try {
+    await renderGoogleButton(googleSlot.value, onGoogleCredential)
+  } catch {
+    // Blocked, offline, or Google having a bad day. Not an error to show: the
+    // form underneath does the same job, and a red line about a button the
+    // shopper never pressed only makes the page look broken.
+    googleUsable.value = false
+  }
+}
+
+onBeforeUnmount(() => releaseGoogleButton(onGoogleCredential))
+
 // Held from the URL rather than shown: the customer proves ownership of the
 // address by having received the link, so re-typing either value would only be
 // a chance to get it wrong.
 const resetToken = ref('')
+
+// The slot only exists on two of the four modes, so the button is drawn when
+// the switch puts it in the DOM rather than once on mount. `flush: 'post'` is
+// what makes the element there to draw into; the template ref filling in during
+// mount is itself one of the changes this fires on, so there is no separate
+// onMounted call and no double render.
+watch([googleOffered, googleSlot], () => void mountGoogleButton(), { flush: 'post' })
 
 onMounted(() => {
   try {
@@ -49,6 +111,17 @@ onMounted(() => {
       resetToken.value = token
       form.value.email = email
       mode.value = 'reset'
+      return
+    }
+
+    // The second exception to "nothing here is a route": ?mode=register opens
+    // the create-account card directly, so the header's account banner lands
+    // on the form it advertises instead of on the sign-in card. Left in the
+    // URL rather than stripped — unlike a reset token it is not spent, and a
+    // refresh should stay where the shopper was put. Only this one value is
+    // honoured; anything else falls through to sign-in.
+    if (params.get('mode') === 'register') {
+      mode.value = 'register'
     }
   } catch {
     // A URL we can't parse just means the ordinary sign-in card.
@@ -185,6 +258,13 @@ async function submit() {
     <p class="acct-gate__sub">{{ copy.sub }}</p>
 
     <form class="acct-card acct-gate__form" novalidate @submit.prevent="submit">
+      <!-- Google's own button renders into this slot; it is an iframe, which is
+           why it is a bare div and not styled from here. -->
+      <template v-if="googleUsable && googleOffered">
+        <div ref="googleSlot" class="auth-google" :class="{ 'auth-google--busy': pending }" />
+        <p class="auth-or"><span>or</span></p>
+      </template>
+
       <label v-if="mode === 'register'" class="acct-field">
         <span class="acct-field__label">Your name</span>
         <input
@@ -279,6 +359,11 @@ async function submit() {
       </template>
     </p>
 
+    <p v-if="googleUsable && googleOffered" class="acct-gate__note">
+      Continuing with Google signs you in with the email on your Google account. We never see your
+      Google password, and we only ask for your name, email address and picture.
+    </p>
+
     <p class="acct-gate__note">
       You don't need an account to order — checkout works without one. Signing in is what keeps
       your addresses and your order history together across your phone and your laptop.
@@ -287,6 +372,38 @@ async function submit() {
 </template>
 
 <style scoped>
+/* Google's button is an iframe and brings its own everything. All this does is
+   centre it and stop a double-press while a sign-in is already in flight. */
+.auth-google {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+}
+
+.auth-google--busy {
+  pointer-events: none;
+  opacity: 0.55;
+}
+
+/* A rule with the word sitting in a gap in it, rather than three elements
+   pretending to be one. */
+.auth-or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0 4px;
+  font-size: 13px;
+  color: var(--acct-faint);
+}
+
+.auth-or::before,
+.auth-or::after {
+  flex: 1;
+  height: 1px;
+  background: var(--acct-rule);
+  content: '';
+}
+
 /* The peek button sits inside the field, so the input needs room for it and
    the wrapper has to be the positioning context rather than the label. */
 .auth-secret {

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- bg-base token, light. The dark answer is in values-night. -->
+    <color name="window_background">#FFFFFF</color>
+    <!-- The brand green the mark sits on. Same accent as tokens.css. -->
+    <color name="ic_launcher_background">#1A6B3C</color>
+</resources>

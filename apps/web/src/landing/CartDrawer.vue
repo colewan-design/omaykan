@@ -85,6 +85,38 @@ const placed = ref<CreateOnlineOrderResult | null>(null)
 // finishes the order.
 const needsSignIn = ref(false)
 
+/*
+ * Checkout is for account holders.
+ *
+ * A product decision, not a technical one: POST /api/online-orders still takes
+ * a guest order and must keep doing so — the Android app offers checkout with
+ * no account at all, and the backend reads the token as optional. This gate is
+ * the web storefront's own policy, applied at the one door the web storefront
+ * owns.
+ *
+ * `hydrating` is held apart from "signed out". A stored token is traded for the
+ * account after first paint, so treating that gap as signed out would show a
+ * returning shopper a sign-in wall for a moment and then snatch it away.
+ */
+const checkoutGated = computed(() => !account.hydrating.value && !account.signedIn.value)
+
+/**
+ * Where to send someone to sign in, and how to get them back.
+ *
+ * The cart lives in the header on every page, so signing in has to return to
+ * the page they were shopping on rather than dumping them on the storefront
+ * root having lost their aisle. The cart itself survives regardless — it is in
+ * localStorage — so nothing is riding on this beyond not being annoying.
+ */
+const signInHref = computed(() => {
+  try {
+    const here = window.location.pathname + window.location.search
+    return `/account?next=${encodeURIComponent(here)}`
+  } catch {
+    return '/account'
+  }
+})
+
 const savedAddresses = computed<CustomerAddress[]>(() => account.account.value?.addresses ?? [])
 
 function addressLineFor(address: CustomerAddress): string {
@@ -187,6 +219,10 @@ function useMyLocation() {
 const canSubmit = computed(
   () =>
     canOrderOnline.value &&
+    // Belt and braces: the cart step already refuses to open checkout for a
+    // signed-out shopper, but a session can end in another tab while this
+    // panel is open.
+    !checkoutGated.value &&
     cart.cartLines.value.length > 0 &&
     name.value.trim().length > 0 &&
     (phone.value.trim().length > 0 || email.value.trim().length > 0) &&
@@ -375,7 +411,28 @@ const heading = computed(() => {
               This store doesn't take online orders yet.
             </p>
 
+            <!-- Still trading the stored token for an account. Neither door is
+                 the right one to show yet, so the button waits rather than
+                 flashing a sign-in wall at someone who is signed in. -->
             <button
+              v-if="account.hydrating.value"
+              type="button"
+              class="cartd__cta"
+              disabled
+            >
+              One moment…
+            </button>
+
+            <a
+              v-else-if="checkoutGated"
+              :href="signInHref"
+              class="cartd__cta cartd__cta--link"
+            >
+              Sign in to check out
+            </a>
+
+            <button
+              v-else
               type="button"
               class="cartd__cta"
               :disabled="!canOrderOnline"
@@ -383,7 +440,12 @@ const heading = computed(() => {
             >
               Checkout — {{ formatCurrency(cart.totalCents.value) }}
             </button>
-            <p class="cartd__fineprint">Delivery is added at checkout.</p>
+
+            <p v-if="checkoutGated" class="cartd__fineprint">
+              Orders are placed from an account, so your addresses and your order history stay with
+              you. Your cart is kept while you sign in — it takes a minute, and you only do it once.
+            </p>
+            <p v-else class="cartd__fineprint">Delivery is added at checkout.</p>
           </footer>
         </template>
 
@@ -525,7 +587,11 @@ const heading = computed(() => {
 
             <p v-if="error" class="cartd__error">{{ error }}</p>
 
-            <a v-if="needsSignIn" href="/account" class="cartd__cta cartd__cta--link">
+            <a
+              v-if="needsSignIn || checkoutGated"
+              :href="signInHref"
+              class="cartd__cta cartd__cta--link"
+            >
               Sign in to finish
             </a>
 
@@ -539,7 +605,7 @@ const heading = computed(() => {
               {{ submitting ? 'Placing your order…' : `Place order — ${formatCurrency(grandTotalCents)}` }}
             </button>
 
-            <p v-if="needsSignIn" class="cartd__fineprint">
+            <p v-if="needsSignIn || checkoutGated" class="cartd__fineprint">
               Your cart is kept — come back here once you're signed in.
             </p>
             <p v-else class="cartd__fineprint">

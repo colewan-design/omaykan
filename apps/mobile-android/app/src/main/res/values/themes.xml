@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      The window theme that shows before the first frame of Compose. Its only
+      job is to paint the same ground the Compose theme will, so launch does
+      not flash white on a dark phone. Everything else is Compose's.
+    -->
+    <style name="Theme.Omaykan.Starting" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>

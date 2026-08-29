@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api;
 
+use App\Events\OrderDeliveryUpdated;
 use App\Events\OrderPlaced;
 use App\Models\InventoryLevel;
 use App\Models\Order;
@@ -314,6 +315,67 @@ class OnlineOrderApiTest extends TestCase
         // The link is the capability; forwarding it must not hand over PII.
         $this->assertStringNotContainsString('09171234567', $body);
         $this->assertStringNotContainsString('Maria Santos', $body);
+    }
+
+    public function test_tracking_serves_the_riders_number_only_while_the_delivery_is_live(): void
+    {
+        $this->seed();
+        Event::fake([OrderPlaced::class]);
+
+        $placed = $this->postJson('/api/online-orders', $this->payload())->assertCreated()->json();
+        $order = Order::query()->findOrFail($placed['orderId']);
+
+        // A rider has it and the customer is about to meet them at the door.
+        foreach (['assigned', 'picked_up'] as $stage) {
+            $order->forceFill([
+                'rider_name' => 'Ramon Cruz',
+                'rider_phone' => '09181234567',
+                'delivery_stage' => $stage,
+            ])->save();
+
+            $this->getJson("/api/online-orders/{$order->id}")
+                ->assertOk()
+                ->assertJsonPath('riderName', 'Ramon Cruz')
+                ->assertJsonPath('riderPhone', '09181234567');
+        }
+
+        // Handed over. The tracking link outlives the delivery and is meant to
+        // be forwarded, so the rider's mobile stops being served with it.
+        $order->forceFill(['delivery_stage' => 'delivered'])->save();
+
+        $body = $this->getJson("/api/online-orders/{$order->id}")
+            ->assertOk()
+            ->assertJsonPath('riderName', 'Ramon Cruz')
+            ->assertJsonPath('riderPhone', null)
+            ->getContent();
+
+        $this->assertStringNotContainsString('09181234567', $body);
+    }
+
+    public function test_the_public_delivery_broadcast_drops_the_riders_number_after_handover(): void
+    {
+        $this->seed();
+        Event::fake([OrderPlaced::class]);
+
+        $placed = $this->postJson('/api/online-orders', $this->payload())->assertCreated()->json();
+        $order = Order::query()->findOrFail($placed['orderId']);
+
+        $order->forceFill([
+            'rider_name' => 'Ramon Cruz',
+            'rider_phone' => '09181234567',
+            'delivery_stage' => 'picked_up',
+        ])->save();
+
+        // This payload rides the public order.{uuid} channel, not just the
+        // store's private one — see OrderDeliveryUpdated::broadcastOn().
+        $live = (new OrderDeliveryUpdated($order, 'assigned'))->broadcastWith();
+        $this->assertSame('09181234567', $live['riderPhone']);
+
+        $order->forceFill(['delivery_stage' => 'delivered'])->save();
+
+        $done = (new OrderDeliveryUpdated($order, 'picked_up'))->broadcastWith();
+        $this->assertNull($done['riderPhone']);
+        $this->assertSame('Ramon Cruz', $done['riderName']);
     }
 
     public function test_tracking_an_unknown_order_is_a_404(): void

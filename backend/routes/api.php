@@ -3,6 +3,7 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\AppReleaseController;
 use App\Http\Controllers\Api\CustomerAccountController;
 use App\Http\Controllers\Api\CustomerAddressController;
 use App\Http\Controllers\Api\CustomerAuthController;
@@ -66,6 +67,12 @@ Route::get('/stores', [StoreDirectoryController::class, 'index'])
 // these — one request each, all at once.
 Route::get('/stores/{store}/image', [StoreImageController::class, 'show'])
     ->middleware('throttle:240,1');
+
+// The update check for sideloaded apps. Public because the Android app asks it
+// on launch, before a shopper has done anything at all. A 404 means "nothing
+// published", which is a real answer and not an error — see the controller.
+Route::get('/app-releases/{slug}', [AppReleaseController::class, 'show'])
+    ->middleware('throttle:60,1');
 
 Route::post('/store-codes/resolve', [StoreCodeController::class, 'resolve'])
     ->middleware('throttle:10,1');
@@ -135,6 +142,17 @@ Route::middleware(['auth:platform', 'platform.active', 'throttle:60,1'])->group(
 Route::post('/customer/register', [CustomerAuthController::class, 'register'])
     ->middleware('throttle:5,1');
 Route::post('/customer/login', [CustomerAuthController::class, 'login'])
+    ->middleware('throttle:10,1');
+/*
+ * Sign in with Google, from the storefront button and from the Android app.
+ * Both post one field, `credential`: a Google ID token.
+ *
+ * Throttled like login rather than like register, even though it can create an
+ * account. It is not a password oracle and it is not a way to send mail at
+ * somebody, and the thing an attacker would need to abuse it — a validly signed
+ * token addressed to our client id — is the one thing they cannot forge.
+ */
+Route::post('/customer/auth/google', [CustomerAuthController::class, 'google'])
     ->middleware('throttle:10,1');
 Route::post('/customer/forgot-password', [CustomerAuthController::class, 'forgotPassword'])
     ->middleware('throttle:5,1');

@@ -397,6 +397,15 @@ export interface CustomerAccount {
   name: string
   email: string
   phone: string
+  /** Google's portrait, when they signed in with it. Empty otherwise. */
+  avatarUrl: string
+  googleLinked: boolean
+  /**
+   * False for someone who has only ever pressed the Google button. The portal
+   * asks such an account to *set* a password rather than to change one, and
+   * the API agrees — see CustomerAccountController.
+   */
+  hasPassword: boolean
   preferences: CustomerPreferences
   addresses: CustomerAddress[]
   paymentMethods: CustomerPaymentMethod[]
@@ -438,6 +447,23 @@ export function registerCustomer(input: {
 
 export function loginCustomer(email: string, password: string): Promise<SessionEnvelope> {
   return postJson<SessionEnvelope>('/api/customer/login', { email, password }, 'Could not sign you in.')
+}
+
+/**
+ * Trades an ID token from the Google button for a session of ours.
+ *
+ * The credential is not a session and is not trusted by anything on this side
+ * of the wire: the API checks Google's signature on it, that it was issued for
+ * our client id, and that it has not expired, before it will say who anyone is.
+ * The reply is the same envelope `loginCustomer` returns, so nothing after this
+ * point can tell the two roads apart.
+ */
+export function signInWithGoogle(credential: string): Promise<SessionEnvelope> {
+  return postJson<SessionEnvelope>(
+    '/api/customer/auth/google',
+    { credential },
+    'Could not sign you in with Google.',
+  )
 }
 
 export function logoutCustomer(): Promise<{ signedOut: boolean }> {

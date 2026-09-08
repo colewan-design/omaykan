@@ -17,9 +17,6 @@ import kotlinx.serialization.Serializable
 @Serializable
 object HomeRoute
 
-@Serializable
-object PairingRoute
-
 /**
  * One shop's shelf. With [categoryId] set it opens as that aisle, which is what
  * a category chip on the front page navigates to — the web page does the same

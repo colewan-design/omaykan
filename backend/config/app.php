@@ -87,6 +87,13 @@ return [
     'customer_account_url' => env('CUSTOMER_ACCOUNT_URL', rtrim((string) env('APP_URL', 'http://localhost'), '/').'/account'),
 
     /*
+     * Where a rider's password-reset link lands. Its own page, not /account:
+     * a rider is a different guard with a different token, and a reset link
+     * opened in the shopper portal would be a token that page cannot spend.
+     */
+    'rider_portal_url' => env('RIDER_PORTAL_URL', rtrim((string) env('APP_URL', 'http://localhost'), '/').'/rider'),
+
+    /*
     |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------

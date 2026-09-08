@@ -33,9 +33,6 @@ use Illuminate\Validation\ValidationException;
  */
 class OnlineOrderController extends Controller
 {
-    /** Only these modes sell online; a salon has nothing to put in a cart. */
-    private const ONLINE_MODES = ['coffee-shop', 'grocery', 'restaurant'];
-
     public function __construct(private readonly DeliveryQuoter $quoter)
     {
     }
@@ -67,7 +64,7 @@ class OnlineOrderController extends Controller
         $data = $request->validate([
             'orgSlug' => ['required', 'string'],
             'storeCode' => ['required', 'string'],
-            'businessMode' => ['required', Rule::in(self::ONLINE_MODES)],
+            'businessMode' => ['required', Rule::in(Store::ONLINE_MODES)],
 
             'items' => ['required', 'array', 'min:1'],
             // Shape-checked, not existence-checked — priceLines still has to

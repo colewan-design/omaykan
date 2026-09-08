@@ -103,7 +103,6 @@ fun AccountScreen(
     onOpenSecurity: (() -> Unit)? = null,
     onOpenSaved: (() -> Unit)? = null,
     onOpenOrders: ((OrderStage?) -> Unit)? = null,
-    onOpenShopCode: (() -> Unit)? = null,
     onTrackOrder: ((String) -> Unit)? = null,
     viewModel: AccountViewModel = hiltViewModel(),
 ) {
@@ -165,7 +164,6 @@ fun AccountScreen(
                 savedCount = state.summary.saved,
                 onOpenSaved = onOpenSaved,
                 onOpenOrders = onOpenOrders?.let { open -> { open(null) } },
-                onOpenShopCode = onOpenShopCode,
                 onOpenAbout = { context.openInBrowser(ABOUT_URL) },
             )
 
@@ -180,7 +178,6 @@ fun AccountScreen(
                 onOpenSecurity = onOpenSecurity,
                 onOpenSaved = onOpenSaved,
                 onOpenOrders = onOpenOrders,
-                onOpenShopCode = onOpenShopCode,
                 // Nothing to configure and nothing to sign in for: the public
                 // page the web serves, opened in a tab over this one.
                 onOpenAbout = { context.openInBrowser(ABOUT_URL) },
@@ -233,7 +230,6 @@ private fun SignedOut(
     savedCount: Int = 0,
     onOpenSaved: (() -> Unit)? = null,
     onOpenOrders: (() -> Unit)? = null,
-    onOpenShopCode: (() -> Unit)? = null,
     onOpenAbout: (() -> Unit)? = null,
 ) {
     val copy = copyFor(state.mode)
@@ -513,7 +509,6 @@ private fun SignedOut(
             savedCount = savedCount,
             onOpenSaved = onOpenSaved,
             onOpenOrders = onOpenOrders,
-            onOpenShopCode = onOpenShopCode,
             onOpenAbout = onOpenAbout,
             modifier = Modifier.padding(top = 20.dp),
         )

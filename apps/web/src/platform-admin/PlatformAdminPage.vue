@@ -17,7 +17,7 @@ interface OrgRow {
   organizationSlug: string
   organizationName: string
   suspended: boolean
-  store: { name: string; businessMode: string; businessTypeLabel?: string; pairingCode: string } | null
+  store: { name: string; businessMode: string; businessTypeLabel?: string; storeCode: string } | null
   subscription: {
     status: string
     plan: string

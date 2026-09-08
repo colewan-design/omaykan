@@ -19,9 +19,9 @@ private val Context.pairingDataStore: DataStore<Preferences> by preferencesDataS
 /**
  * Which shop this phone is currently in.
  *
- * Plain DataStore Preferences, not EncryptedSharedPreferences: a store code is
- * printed on a tarpaulin outside the shop. When the Sanctum token arrives in
- * Phase 2 it does not belong here — a bearer token is not a setting.
+ * Plain DataStore Preferences, not EncryptedSharedPreferences: it holds a shop's
+ * public handle and its name, both of which are on the shop's own signage. A
+ * bearer token would not belong here — that is not a setting.
  */
 @Singleton
 class PairedStoreStore @Inject constructor(

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { RefreshCw, Search } from '@lucide/vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { Phone, RefreshCw, Search } from '@lucide/vue'
 import {
   deliveryStageLabel,
   formatCompactDate,
@@ -9,7 +9,14 @@ import {
   type DeliveryStage,
   type OrderStatus,
 } from '@pos/shared/index'
-import { ApiRequestError, fetchOrder, type TrackedOrder } from '@pos/web/commerce/api'
+import LiveDeliveryMap from '@pos/core/components/LiveDeliveryMap.vue'
+import { realtimeAvailable, subscribeToOrder } from '@pos/core/realtime/publicOrderChannel'
+import {
+  ApiRequestError,
+  fetchOrder,
+  type RiderPosition,
+  type TrackedOrder,
+} from '@pos/web/commerce/api'
 import { useStorefrontOrderHistory } from '@pos/web/commerce/orderHistory'
 
 // Past orders, and where the current ones have got to.
@@ -90,6 +97,129 @@ function statusLine(order: TrackedOrder): string {
 function isDone(order: TrackedOrder): boolean {
   return order.deliveryStage === 'delivered' || order.status === 'served'
 }
+
+// ── Watching an order move ──────────────────────────────────────────────────
+//
+// Until now this page fetched each order once on mount and then sat still,
+// which is fine for a receipt and useless for a delivery: the interesting part
+// of a delivery all happens in the twenty minutes after you open the page.
+//
+// So orders still on the road get watched. Reverb where the build has it — the
+// backend has always broadcast to the public `order.{uuid}` channel and nothing
+// on the web ever listened — and a poll where it does not, because a storefront
+// served without a websocket should still show a moving rider, just less often.
+
+/** Delivery orders that have not yet been handed over. */
+const liveOrders = computed(() =>
+  Object.values(orders.value).filter(
+    (order): order is TrackedOrder =>
+      !!order && order.fulfillmentMethod === 'delivery' && order.deliveryStage !== 'delivered',
+  ),
+)
+
+/** How near the rider is to the door, for a map worth drawing. */
+function mapWorthShowing(order: TrackedOrder): boolean {
+  if (order.fulfillmentMethod !== 'delivery') return false
+  // A delivered order's map is a picture of somewhere the rider no longer is.
+  if (order.deliveryStage === 'delivered') return false
+  return !!order.riderPosition || !!order.route?.dropoff?.lat || !!order.route?.pickup?.lat
+}
+
+const subscriptions = new Map<string, () => void>()
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+/**
+ * A position ping patches the one field it carries.
+ *
+ * Refetching the whole order ten times a minute would be a request per rider
+ * per customer for two floats, and would make the card flicker as items and
+ * totals were replaced with identical copies of themselves.
+ */
+function applyPosition(orderId: string, payload: unknown) {
+  const order = orders.value[orderId]
+  if (!order) return
+
+  const fix = payload as Partial<RiderPosition> & { deliveryStage?: string }
+  if (typeof fix?.lat !== 'number' || typeof fix?.lng !== 'number') return
+
+  orders.value[orderId] = {
+    ...order,
+    deliveryStage: fix.deliveryStage ?? order.deliveryStage,
+    riderPosition: {
+      lat: fix.lat,
+      lng: fix.lng,
+      headingDeg: fix.headingDeg ?? null,
+      speedKph: fix.speedKph ?? null,
+      accuracyM: fix.accuracyM ?? null,
+      at: fix.at ?? new Date().toISOString(),
+      ageSeconds: fix.ageSeconds ?? 0,
+      stale: fix.stale ?? false,
+    },
+  }
+}
+
+async function refetch(orderId: string) {
+  try {
+    orders.value[orderId] = await fetchOrder(orderId)
+  } catch {
+    // Leave the last good copy on screen rather than blanking the card.
+  }
+}
+
+function syncSubscriptions() {
+  const wanted = new Set(liveOrders.value.map((order) => order.orderId))
+
+  for (const [orderId, stop] of subscriptions) {
+    // Delivered, or removed from this browser's list. Stop paying for it.
+    if (!wanted.has(orderId)) {
+      stop()
+      subscriptions.delete(orderId)
+    }
+  }
+
+  if (!realtimeAvailable()) return
+
+  for (const orderId of wanted) {
+    if (subscriptions.has(orderId)) continue
+    subscriptions.set(
+      orderId,
+      subscribeToOrder({
+        orderId,
+        onEvent: (event, payload) => {
+          if (event === 'rider.position') {
+            applyPosition(orderId, payload)
+            return
+          }
+          // A stage change moves more than one field — the rider's name and
+          // number appear and disappear with it — so this one is worth a fetch.
+          void refetch(orderId)
+        },
+      }),
+    )
+  }
+}
+
+watch(liveOrders, syncSubscriptions, { deep: false })
+
+onMounted(() => {
+  // The fallback for a build with no websocket. Twelve seconds is slower than
+  // the rider's ping and fast enough that the marker still reads as moving.
+  if (!realtimeAvailable()) {
+    pollTimer = setInterval(() => {
+      for (const order of liveOrders.value) void refetch(order.orderId)
+    }, 12_000)
+  }
+})
+
+onBeforeUnmount(() => {
+  for (const stop of subscriptions.values()) stop()
+  subscriptions.clear()
+  if (pollTimer) clearInterval(pollTimer)
+})
+
+function telHref(phone: string): string {
+  return `tel:${phone.replace(/[^\d+]/g, '')}`
+}
 </script>
 
 <template>
@@ -160,6 +290,32 @@ function isDone(order: TrackedOrder): boolean {
           Status unavailable right now
         </p>
 
+        <!--
+          The map, for a delivery still on the road. It is under the status
+          line rather than above it because the words are the answer and the
+          map is the detail — and because a customer on a slow connection sees
+          the answer before the tiles arrive.
+        -->
+        <template v-if="orders[entry.orderId] && mapWorthShowing(orders[entry.orderId]!)">
+          <LiveDeliveryMap
+            class="acct-order__map"
+            :pickup="orders[entry.orderId]!.route?.pickup ?? null"
+            :dropoff="orders[entry.orderId]!.route?.dropoff ?? null"
+            :rider="orders[entry.orderId]!.riderPosition"
+            :rider-name="orders[entry.orderId]!.riderName"
+            :stage="orders[entry.orderId]!.deliveryStage"
+            height="240px"
+          />
+          <a
+            v-if="orders[entry.orderId]!.riderPhone"
+            class="acct-btn acct-order__call"
+            :href="telHref(orders[entry.orderId]!.riderPhone!)"
+          >
+            <Phone :size="15" :stroke-width="2" />
+            Call {{ orders[entry.orderId]!.riderName || 'the rider' }}
+          </a>
+        </template>
+
         <ul v-if="orders[entry.orderId]?.items.length" class="acct-order__items">
           <li v-for="item in orders[entry.orderId]!.items" :key="item.productId">
             <span>{{ item.quantity }} × {{ item.name }}</span>
@@ -182,6 +338,18 @@ function isDone(order: TrackedOrder): boolean {
 </template>
 
 <style scoped>
+.acct-order__map {
+  margin-top: 14px;
+}
+
+.acct-order__call {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  text-decoration: none;
+}
+
 .acct-lookup {
   display: flex;
   flex-wrap: wrap;

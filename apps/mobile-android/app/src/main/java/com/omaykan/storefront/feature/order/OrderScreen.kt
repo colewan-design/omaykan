@@ -39,9 +39,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -51,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImage
 import com.omaykan.storefront.core.designsystem.LoadingState
 import com.omaykan.storefront.core.designsystem.MessageState
 import com.omaykan.storefront.core.designsystem.OmaykanTheme
@@ -58,6 +61,7 @@ import com.omaykan.storefront.core.designsystem.Refreshable
 import com.omaykan.storefront.core.designsystem.RefreshableFill
 import com.omaykan.storefront.core.designsystem.RemoteImage
 import com.omaykan.storefront.core.model.Money
+import com.omaykan.storefront.core.map.StaticMap
 import com.omaykan.storefront.core.model.TrackedOrder
 import com.omaykan.storefront.core.model.TrackedOrderItem
 import com.omaykan.storefront.feature.cart.CartTopBar
@@ -244,6 +248,58 @@ private fun TrackCard(order: TrackedOrder) {
                 modifier = Modifier.padding(top = 14.dp),
             )
             RiderRow(name = rider, phone = order.riderPhone?.takeIf { it.isNotBlank() })
+        }
+
+        // Under the timeline, not above it. The words are the answer — "on the
+        // way" is what somebody opened this screen for — and the map is the
+        // detail. It also means a slow connection shows the answer before the
+        // tiles arrive rather than a grey rectangle where the answer should be.
+        if (!order.cancelled) DeliveryMapImage(order)
+    }
+}
+
+/**
+ * Where the order is, as one picture.
+ *
+ * Shows nothing at all — rather than an error or an empty frame — when there is
+ * no token compiled in, no coordinates on the order, or no rider reporting.
+ * All three are ordinary: a rider the shop rang personally has no app to report
+ * from, and the timeline above is exactly what this screen showed before there
+ * was a map. See core/map/StaticMap.kt.
+ */
+@Composable
+private fun DeliveryMapImage(order: TrackedOrder) {
+    val url = remember(order.riderPosition, order.route) {
+        StaticMap.url(
+            rider = order.riderPosition,
+            pickup = order.route?.pickup,
+            dropoff = order.route?.dropoff,
+        )
+    } ?: return
+
+    Column(Modifier.padding(top = 14.dp)) {
+        AsyncImage(
+            model = url,
+            contentDescription = "Where your order is",
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(170.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(OmaykanTheme.colors.fill),
+            contentScale = ContentScale.Crop,
+        )
+
+        order.riderPosition?.let { position ->
+            Text(
+                text = if (position.stale) {
+                    "Last seen ${position.ageLabel}."
+                } else {
+                    "${order.riderName ?: "Your rider"} was here ${position.ageLabel}."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = OmaykanTheme.colors.textSecondary,
+                modifier = Modifier.padding(top = 8.dp),
+            )
         }
     }
 }

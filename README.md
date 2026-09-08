@@ -17,6 +17,9 @@ Delivery aggregators take 20–30% from the merchant, squeeze the rider's per-dr
 | [positioning.md](documentation/positioning.md) | What this is, who it's for, the price-parity covenant, business model, beachhead, risks. **Start here.** |
 | [plan.md](documentation/plan.md) | The phased build sequence. Stale in places — see feature-audit.md §6 |
 | [mobile-plan.md](documentation/mobile-plan.md) | The native Android customer app (Kotlin) — API contract, realtime, phases. Re-verified against `main` 2026-08-28 |
+| [seller/README.md](apps/mobile-android/seller/README.md) | The native Android **seller** app — why it pairs as a device, why it polls rather than using the Reverb channel, and what is deliberately left out |
+| [rider/README.md](apps/mobile-android/rider/README.md) | The native Android **rider** app — why it signs in a person rather than a device, why the approval gate is three screens, and why there is no location in it yet |
+| [live-delivery-tracking.md](documentation/live-delivery-tracking.md) | The live rider map and the shop's own riders — the privacy model, the Mapbox setup, and why a shop is never forced onto the open board |
 | [google-sign-in.md](documentation/google-sign-in.md) | Sign in with Google — the Google Cloud console setup, the three OAuth clients, account linking, and the Android PKCE flow |
 | [feature-audit.md](documentation/feature-audit.md) | What is missing, unfinished, or inert. Audited against the code and the live database |
 | [e2e-findings.md](documentation/e2e-findings.md) | A ten-run pass of seller → customer → rider → completion, what failed, and what to improve |
@@ -36,16 +39,42 @@ Delivery aggregators take 20–30% from the merchant, squeeze the rider's per-dr
                    # syncing to the Laravel API over /api/sync/*
 /apps
   /web             # PWA: merchant till + customer storefront + rider + platform admin
+  /mobile-android  # Three native Kotlin apps in one Gradle build:
+                   #   :app     com.omaykan.storefront — the shopper's storefront
+                   #   :seller  com.omaykan.seller     — the merchant's order phone
+                   #   :rider   com.omaykan.rider      — the rider's job board
 /backend           # Laravel 12 + PostgreSQL + Reverb — the backend
 ```
 
 The marketing site is not a separate app — it is `apps/web/src/landing`, built into
 `landing.html`.
 
-There is no mobile app in the tree. The two Capacitor shells were deleted — neither
-built, and both reached for the Firebase SDK that the Laravel migration removed. A
-native Kotlin app replaces them and has not landed yet — see
-[mobile-plan.md](documentation/mobile-plan.md).
+The two Capacitor shells that used to be here were deleted — neither built, and both
+reached for the Firebase SDK that the Laravel migration removed. Native Kotlin
+replaced them: the shopper's app (`:app`, see
+[mobile-plan.md](documentation/mobile-plan.md)), the merchant's order phone
+(`:seller`, see
+[apps/mobile-android/seller/README.md](apps/mobile-android/seller/README.md)) and the
+rider's job board (`:rider`, see
+[apps/mobile-android/rider/README.md](apps/mobile-android/rider/README.md)).
+
+The seller app is deliberately not a register. It shows storefront orders, advances
+them, assigns riders and settles payments — the till stays a PWA. It signs in a
+**person** — a username or email and a password, or the Google button — and then asks
+which shop, for somebody who works at more than one.
+
+Every merchant client signs in that way now. Until 2026-09, all of them *paired*
+instead: one code, printed on the shop's own paperwork, that both found the shop and
+let a till join it. That was a good sign-in for a counter and it is gone for the reason
+it was good — a secret everybody at the shop shares cannot put a name on a settled
+payment, and removing one leaver meant rotating it and re-pairing every device. See
+`StaffAuthController` and the seller app's `SessionRepository` for the whole of that
+trade.
+
+The rider app works the same way, and always has: every rider route resolves a `Rider`
+on its own Laravel guard, because a rider works across every shop rather than for one. It carries no location permission — the API has
+nowhere to put a coordinate yet — and hands navigation to whichever map app the phone
+already has.
 
 ## Running
 
@@ -68,8 +97,7 @@ php artisan storage:link           # rider licence and plate photos
 
 `db:seed` is `firstOrCreate` throughout, so it is safe to re-run. On its own it
 leaves the minimum the test suite asserts against: org `demo-coffee` with store
-`main`, pairing code **123456**, one product, and an owner signing in as
-`admin` / `password`.
+`main`, one product, and an owner signing in as `admin` / `password`.
 
 For something you can actually browse, follow it with the demo sellers — one
 per business mode, each with store `main`, an owner whose password is
@@ -79,16 +107,18 @@ per business mode, each with store `main`, an owner whose password is
 php artisan db:seed --class=DemoSellerSeeder
 ```
 
-| Organization | Mode | Pairing code | Sign in as | Products |
-| --- | --- | --- | --- | --- |
-| `demo-coffee` | coffee-shop | **123456** | `admin` | 32 |
-| `baguio-fresh-market` | grocery | **234567** | `grocery` | 475 |
-| `session-road-grill` | restaurant | **345678** | `restaurant` | 24 |
-| `polished-nail-lounge` | nail-salon | **456789** | `salon` | 21 |
+| Organization | Mode | Sign in as | Products |
+| --- | --- | --- | --- |
+| `demo-coffee` | coffee-shop | `admin` | 32 |
+| `baguio-fresh-market` | grocery | `grocery` | 475 |
+| `session-road-grill` | restaurant | `restaurant` | 24 |
+| `polished-nail-lounge` | nail-salon | `salon` | 21 |
 
-Staff sign-in takes the **username**, not the email — see
-`POST /api/staff-sessions`. The salon answers `store-codes/resolve` with a 409
-by design: `ONLINE_MODES` keeps appointment businesses out of the cart.
+Every one of those signs in with the password `password`, at
+`POST /api/staff/sign-in`, which takes a **username or an email** — accounts created
+from a username alone still exist, and still have to get in. The salon signs in like
+the rest and is deliberately absent from the shop directory: `Store::ONLINE_MODES`
+keeps appointment businesses out of the cart, not out of the register.
 
 The catalog is not written into the seeder. It is read from
 `backend/database/seeders/data/demo-catalog.json`, which is projected out of
@@ -204,7 +234,7 @@ needs these rewrites (nginx `try_files`, or equivalent):
 
 ## Status
 
-Working: merchant POS (17 pages, four business modes, shifts with cash reconciliation, full-order voids, inventory), the customer storefront on web, store pairing by code, signup, and the platform admin dashboard.
+Working: merchant POS (17 pages, four business modes, shifts with cash reconciliation, full-order voids, inventory), the customer storefront on web, staff sign-in by password or Google, signup, and the platform admin dashboard.
 
 The rider side is now built too: riders apply at `/rider` with their licence and
 plate — number and photo of each — and can do nothing until an operator has

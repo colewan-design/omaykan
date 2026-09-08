@@ -31,6 +31,8 @@ import {
   type ReorderMark,
   type RestaurantTable,
   type RoleDefinition,
+  type SavedRider,
+  type SavedRiderDirectory,
   type ShiftSummary,
   type Supplier,
   type UserAccount,
@@ -60,10 +62,36 @@ export interface PosRepository {
    * the offline outbox, so unlike a register sale these need the network.
    */
   updateOnlineOrderStatus(orderId: string, status: OrderStatus): Promise<OrderSummary>
+  /**
+   * Name the rider carrying an online order.
+   *
+   * Three shapes, matching the three ways a shop dispatches — `savedRiderId`
+   * picks someone off the shop's list (and reaches their app when that row is
+   * a platform account), `riderName`/`riderPhone` types one in, and
+   * `saveRider` remembers a typed-in one for next time. Sending neither a
+   * saved id nor a name is a 422 from the API, not a silent no-op.
+   */
   assignOrderRider(
     orderId: string,
-    input: { riderName: string; riderPhone?: string | null },
+    input: {
+      savedRiderId?: string | null
+      riderName?: string
+      riderPhone?: string | null
+      saveRider?: boolean
+      saveNote?: string | null
+    },
   ): Promise<OrderSummary>
+  /** Put the order back on the platform board, with nobody assigned. */
+  unassignOrderRider(orderId: string): Promise<OrderSummary>
+  /** The shop's own riders, plus the ones who have delivered for it before. */
+  loadSavedRiders(): Promise<SavedRiderDirectory>
+  saveRider(input: {
+    riderId?: string | null
+    name: string
+    phone?: string | null
+    note?: string | null
+  }): Promise<SavedRider>
+  deleteSavedRider(id: string): Promise<void>
   updateOrderDeliveryStage(orderId: string, stage: DeliveryStage): Promise<OrderSummary>
   saveCustomer(input: CreateCustomerInput): Promise<Customer>
   updateCustomer(customer: Customer): Promise<Customer>
@@ -151,18 +179,23 @@ interface SyncConfig {
   apiBaseUrl: string
   organizationSlug: string
   storeCode: string
-  // Optional at construction: staff sign-in (POST /api/staff-sessions) needs
-  // only the org/store, while device pairing reads the code from persisted
-  // settings (seeded by onboarding). See ensureRemoteSession.
-  pairingCode?: string
   deviceName: string
   platform: string
   appVersion: string
 }
 
+/**
+ * The token every backend call rides on.
+ *
+ * It used to be a *device* session: the till paired once with the shop's code
+ * and held a token that belonged to the shop rather than to anyone in it. It is
+ * a staff session now — minted by signing in and choosing a store — which is
+ * why there is no `deviceId` here and why `ensureRemoteSession` can no longer
+ * conjure one. Nothing syncs until somebody signs in.
+ */
 interface SyncSession {
   token: string
-  deviceId: string
+  userId: string
   storeId: string
   storeName: string
   organizationId: string
@@ -474,7 +507,6 @@ function normalizeSyncConfig(input?: Partial<SyncConfig>): SyncConfig | null {
     apiBaseUrl: cfg.apiBaseUrl.replace(/\/+$/, ''),
     organizationSlug: cfg.organizationSlug,
     storeCode: cfg.storeCode,
-    pairingCode: cfg.pairingCode?.trim() || '',
     deviceName: cfg.deviceName?.trim() || defaultDeviceName(),
     platform: cfg.platform?.trim() || 'web',
     appVersion: cfg.appVersion?.trim() || '0.1.0',
@@ -1245,63 +1277,133 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     }
   }
 
+  /**
+   * The session this till is running on, or null.
+   *
+   * This used to *create* one on demand by pairing with the shop's code, which
+   * is why sync could run before anyone had signed in. It cannot now: the token
+   * belongs to a person, and only `loginUser` can mint one. A null here is not
+   * an error — it is "nobody has signed in yet", and every caller already
+   * treats it as "stay offline for the moment".
+   */
   async function ensureRemoteSession(): Promise<SyncSession | null> {
     if (!syncConfig) {
       return null
     }
 
-    let session = await readSyncSession()
-    if (session) {
-      return session
+    return readSyncSession()
+  }
+
+  /**
+   * Sign in, choose this till's store, and keep the token for both jobs.
+   *
+   * Two calls, because proving who you are does not say which shop you are
+   * standing in. The store is picked by the code this build is configured for,
+   * so a till stays pinned to its own branch and a manager who covers three
+   * does not have to choose on every shift; if that store is not among the ones
+   * the account reaches, the sign-in fails rather than quietly opening another.
+   *
+   * The token it ends with is the same one `ensureRemoteSession` hands to every
+   * backend call. There is no longer a second, device-shaped session alongside
+   * the person's — the till acts as whoever is signed in, and that is what puts
+   * a name on a settled payment and a closed drawer.
+   */
+  async function signInRemotely(
+    credentials: { identifier: string; password: string } | { googleCredential: string },
+  ): Promise<{ user: UserAccount; session: AuthSession } | null> {
+    const base = syncConfig?.apiBaseUrl
+    if (!base) {
+      return null
     }
 
-    // Onboarding persists the store's pairing code into settings; prefer that
-    // over any build-time config so a paired device can open a device session.
-    const settings = await store.read<Partial<AppSettings>>(storageKeys.settings, defaultSettings)
-    const pairingCode = (syncConfig.pairingCode ?? '') || (settings.pairingCode ?? '')
+    const endpoint = 'googleCredential' in credentials
+      ? '/api/staff/auth/google'
+      : '/api/staff/sign-in'
 
-    const payload = {
-      organizationSlug: syncConfig.organizationSlug,
-      storeCode: syncConfig.storeCode,
-      pairingCode,
-      deviceName: syncConfig.deviceName,
-      platform: syncConfig.platform,
-      appVersion: syncConfig.appVersion,
-    }
-
-    const response = await fetch(`${syncConfig.apiBaseUrl}/api/device-sessions`, {
+    const response = await fetch(`${base}${endpoint}`, {
       method: 'POST',
       headers: {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(
+        'googleCredential' in credentials
+          ? { credential: credentials.googleCredential }
+          : credentials,
+      ),
     })
 
+    // 403 is the door saying why it is shut — an unverified address, a disabled
+    // account, no membership anywhere — and each of those is worth repeating to
+    // the person rather than falling back to the local user list, which would
+    // let a sacked cashier in on a stale cached account.
+    if (response.status === 403) {
+      throw new RemoteAuthError(await responseMessage(response, 'This account cannot sign in here.'))
+    }
+
     if (!response.ok) {
-      const text = await response.text()
-      throw new Error(text || `Device pairing failed: ${response.status}`)
+      return null
     }
 
-    const body = await response.json() as {
+    const signIn = await response.json() as {
       token: string
-      device: { id: string }
-      store: { id: string; name: string }
-      organization: { id: string; slug: string }
+      user: { id: string; fullName: string; username: string | null; email: string | null }
+      stores: Array<{ id: string; code: string; name: string; organizationSlug: string; role: string }>
     }
 
-    session = {
+    const wanted = syncConfig?.storeCode
+    const store_ = signIn.stores.find((entry) => entry.code === wanted) ?? null
+
+    if (!store_) {
+      throw new RemoteAuthError(
+        "This account doesn't have access to this store. Ask an admin to add you in Staff.",
+      )
+    }
+
+    const chosen = await fetch(`${base}/api/staff/session-store`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${signIn.token}`,
+      },
+      body: JSON.stringify({ storeId: store_.id }),
+    })
+
+    if (!chosen.ok) {
+      throw new RemoteAuthError(await responseMessage(chosen, 'Could not open that store.'))
+    }
+
+    const body = await chosen.json() as {
+      token: string
+      user: UserAccount
+      store: { id: string; name: string; organizationId: string; organizationSlug: string }
+    }
+
+    const session: AuthSession = {
+      userId: body.user.id,
+      signedInAt: new Date().toISOString(),
+      authToken: body.token,
+      authSource: 'remote',
+    }
+
+    const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
+    await store.write(storageKeys.users, [
+      body.user,
+      ...existingUsers.filter((entry) => entry.id !== body.user.id),
+    ])
+    await store.write(storageKeys.session, session)
+
+    await writeSyncSession({
       token: body.token,
-      deviceId: body.device.id,
+      userId: body.user.id,
       storeId: body.store.id,
       storeName: body.store.name,
-      organizationId: body.organization.id,
-      organizationSlug: body.organization.slug,
-    }
+      organizationId: body.store.organizationId,
+      organizationSlug: body.store.organizationSlug,
+    })
 
-    await writeSyncSession(session)
-    await store.write(storageKeys.deviceId, body.device.id)
-    return session
+    return { user: body.user, session }
   }
 
   async function syncCatalogFromBootstrap() {
@@ -1912,6 +2014,36 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       return normalizeOrder(payload.order)
     },
 
+    async unassignOrderRider(orderId) {
+      const payload = await backendFetch<{ order: OrderSummary }>(
+        `/api/seller/online-orders/${encodeURIComponent(orderId)}/rider`,
+        { method: 'DELETE' },
+      )
+      return normalizeOrder(payload.order)
+    },
+
+    // Not cached and not mirrored into IndexedDB, unlike the catalog. A saved
+    // rider's `status` and `online` are only true at the moment they are read —
+    // a stale copy would offer a suspended rider as available, which is worse
+    // than a spinner.
+    async loadSavedRiders() {
+      return backendFetch<SavedRiderDirectory>('/api/seller/riders')
+    },
+
+    async saveRider(input) {
+      const payload = await backendFetch<{ savedRider: SavedRider }>('/api/seller/riders', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      })
+      return payload.savedRider
+    },
+
+    async deleteSavedRider(id) {
+      await backendFetch<{ deleted: boolean }>(`/api/seller/riders/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      })
+    },
+
     async updateOrderDeliveryStage(orderId, stage) {
       const payload = await backendFetch<{ order: OrderSummary }>(
         `/api/seller/online-orders/${encodeURIComponent(orderId)}/delivery-stage`,
@@ -2295,38 +2427,9 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     async loginUser(username, password) {
       if (await isOnlineSyncEnabled()) {
         try {
-          const response = await fetch(`${syncConfig?.apiBaseUrl}/api/staff-sessions`, {
-            method: 'POST',
-            headers: {
-              'Accept': 'application/json',
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              organizationSlug: syncConfig?.organizationSlug,
-              storeCode: syncConfig?.storeCode,
-              username,
-              password,
-            }),
-          })
-
-          if (response.ok) {
-            const body = await response.json() as {
-              user: UserAccount
-              session: AuthSession
-            }
-            const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
-            await store.write(storageKeys.users, [
-              body.user,
-              ...existingUsers.filter((entry) => entry.id !== body.user.id),
-            ])
-            await store.write(storageKeys.session, body.session)
-            return body
-          }
-
-          if (response.status === 403) {
-            throw new RemoteAuthError(
-              await responseMessage(response, 'Please verify your email first.'),
-            )
+          const remote = await signInRemotely({ identifier: username, password })
+          if (remote) {
+            return remote
           }
         } catch (error) {
           if (error instanceof RemoteAuthError) {

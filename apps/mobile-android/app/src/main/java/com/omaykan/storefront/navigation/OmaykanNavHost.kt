@@ -27,7 +27,6 @@ import com.omaykan.storefront.feature.checkout.CheckoutScreen
 import com.omaykan.storefront.feature.checkout.OrderReviewScreen
 import com.omaykan.storefront.feature.home.MainShell
 import com.omaykan.storefront.feature.order.OrderScreen
-import com.omaykan.storefront.feature.pairing.PairingScreen
 
 /**
  * The market front page is always the root.
@@ -71,24 +70,10 @@ fun OmaykanNavHost(
                     navController.navigate(CartRoute(ref.orgSlug, ref.storeCode))
                 },
                 onOpenOrder = { orderId -> navController.navigate(OrderRoute(orderId)) },
-                onEnterCode = { navController.navigate(PairingRoute) },
                 onOpenProfile = { navController.navigate(ProfileRoute) },
                 onOpenAddresses = { navController.navigate(AddressesRoute) },
                 onOpenPayment = { navController.navigate(PaymentMethodsRoute) },
                 onOpenSecurity = { navController.navigate(SecurityRoute) },
-            )
-        }
-
-        composable<PairingRoute> {
-            PairingScreen(
-                onResolved = { ref ->
-                    navController.navigate(CatalogRoute(ref.orgSlug, ref.storeCode)) {
-                        // The code screen has done its job; coming back to it
-                        // from the shelf would be a dead end.
-                        popUpTo(PairingRoute) { inclusive = true }
-                    }
-                },
-                onBack = navController::navigateUp,
             )
         }
 

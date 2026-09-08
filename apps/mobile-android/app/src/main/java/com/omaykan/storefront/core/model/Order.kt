@@ -69,6 +69,10 @@ data class TrackedOrder(
     val deliveryStage: String?,
     val riderName: String?,
     val riderPhone: String?,
+    /** Null unless a platform rider is carrying this right now. */
+    val riderPosition: RiderPosition? = null,
+    /** Shop and door. Either half may be missing coordinates and often is. */
+    val route: DeliveryRoute? = null,
     val placedAt: String?,
     val items: List<TrackedOrderItem>,
 ) {
@@ -131,3 +135,29 @@ enum class OrderStage(val label: String) {
     OnTheWay("On the way"),
     Completed("Completed"),
 }
+
+/** Where the rider was, the last time their phone said. */
+data class RiderPosition(
+    val lat: Double,
+    val lng: Double,
+    val headingDeg: Double?,
+    val ageSeconds: Int,
+    /** True once the fix is too old to draw as a live position. */
+    val stale: Boolean,
+) {
+    /** "2 minutes ago", for the line under the map. */
+    val ageLabel: String
+        get() = when {
+            ageSeconds < 45 -> "just now"
+            ageSeconds < 90 -> "a minute ago"
+            ageSeconds < 3600 -> "${ageSeconds / 60} minutes ago"
+            else -> "over an hour ago"
+        }
+}
+
+/** A point on the map that is not the rider. */
+data class RoutePoint(val name: String?, val address: String?, val lat: Double?, val lng: Double?) {
+    val placed: Boolean get() = lat != null && lng != null && !(lat == 0.0 && lng == 0.0)
+}
+
+data class DeliveryRoute(val pickup: RoutePoint, val dropoff: RoutePoint)

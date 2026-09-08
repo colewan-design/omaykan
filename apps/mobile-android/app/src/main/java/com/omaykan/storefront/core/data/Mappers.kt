@@ -5,7 +5,6 @@ import com.omaykan.storefront.core.database.CachedProductEntity
 import com.omaykan.storefront.core.database.CachedShopEntity
 import com.omaykan.storefront.core.model.BusinessMode
 import com.omaykan.storefront.core.model.Category
-import com.omaykan.storefront.core.model.PairedStore
 import com.omaykan.storefront.core.model.Product
 import com.omaykan.storefront.core.model.ProductKind
 import com.omaykan.storefront.core.model.Shop
@@ -14,7 +13,6 @@ import com.omaykan.storefront.core.model.StoreRef
 import com.omaykan.storefront.core.network.dto.CatalogCategoryDto
 import com.omaykan.storefront.core.network.dto.CatalogDto
 import com.omaykan.storefront.core.network.dto.CatalogProductDto
-import com.omaykan.storefront.core.network.dto.ResolveStoreCodeDto
 import com.omaykan.storefront.core.network.dto.StoreDirectoryEntryDto
 
 /**
@@ -40,15 +38,6 @@ internal fun absoluteUrl(baseUrl: String, raw: String?): String? {
     }
     return baseUrl.trimEnd('/') + "/" + value.trimStart('/')
 }
-
-internal fun ResolveStoreCodeDto.toModel(): PairedStore = PairedStore(
-    ref = StoreRef(orgSlug, storeCode),
-    businessMode = BusinessMode.fromWire(businessMode),
-    name = storeName.orEmpty().ifBlank { storeCode },
-    address = storeAddress,
-    lat = storeLat,
-    lng = storeLng,
-)
 
 /**
  * A directory row without an orgSlug or storeCode cannot be opened, so it is

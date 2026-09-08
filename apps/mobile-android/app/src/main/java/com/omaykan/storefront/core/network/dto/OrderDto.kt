@@ -81,6 +81,16 @@ data class TrackedOrderDto(
     val deliveryStage: String? = null,
     val riderName: String? = null,
     val riderPhone: String? = null,
+    /**
+     * Where the rider is, but only while they are carrying this order.
+     *
+     * The server withholds it after handover, and it is null altogether for a
+     * rider the shop typed in at the counter — that person has no account to
+     * report from. Both of those are normal, and the screen falls back to the
+     * stage in words. See Order::riderPositionForCustomer.
+     */
+    val riderPosition: RiderPositionDto? = null,
+    val route: RouteDto? = null,
     val placedAt: String? = null,
     val items: List<TrackedOrderItemDto> = emptyList(),
 )
@@ -92,4 +102,32 @@ data class TrackedOrderItemDto(
     val quantity: Double = 0.0,
     val unitPriceCents: Long = 0,
     val lineTotalCents: Long = 0,
+)
+
+/** A rider's last known fix, as the tracking endpoint serves it. */
+@Serializable
+data class RiderPositionDto(
+    val lat: Double,
+    val lng: Double,
+    val headingDeg: Double? = null,
+    val speedKph: Double? = null,
+    val at: String? = null,
+    val ageSeconds: Int = 0,
+    /** Computed server-side, so a phone with the wrong clock cannot disagree. */
+    val stale: Boolean = false,
+)
+
+/** The two fixed ends of the trip: the shop, and the door. */
+@Serializable
+data class RouteDto(
+    val pickup: RoutePointDto = RoutePointDto(),
+    val dropoff: RoutePointDto = RoutePointDto(),
+)
+
+@Serializable
+data class RoutePointDto(
+    val name: String? = null,
+    val address: String? = null,
+    val lat: Double? = null,
+    val lng: Double? = null,
 )

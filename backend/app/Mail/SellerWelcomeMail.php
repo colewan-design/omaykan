@@ -11,12 +11,10 @@ use Illuminate\Mail\Mailables\Envelope;
 /**
  * Sent to a merchant the moment their store exists, from the info@ mailbox.
  *
- * Deliberately does not carry the store's code. At signup that value is both
- * the code customers type to find the shop *and* the secret a till pairs with
- * (Store::setPairingCode writes one to public_store_code and hashes the other),
- * and email is a durable, forwardable, frequently-breached channel. The owner
- * has already been shown it on the confirmation step, and it stays readable in
- * Settings > Online Store, so the mail points there instead.
+ * Carries no credential of any kind. It was written that way when signup
+ * issued a shop-wide pairing code — email is a durable, forwardable,
+ * frequently-breached channel — and there is nothing left to leak now that
+ * staff sign in as themselves. It points at /app, where they do.
  */
 class SellerWelcomeMail extends OmaykanMailable
 {

@@ -45,6 +45,28 @@ object NetworkModule {
         // First in the chain, so the header is on the request the logging
         // interceptor and the cache both see.
         .addInterceptor(auth)
+        /*
+         * Say we want JSON, on every request.
+         *
+         * Retrofit's converter never sends this, and Laravel's behaviour when a
+         * request does not ask for JSON is to *redirect* an unauthenticated
+         * caller to `route('login')`. This API has no such route, so a dead
+         * token came back as a 500 — an error the app can only show as "The
+         * server had a problem" — rather than the 401 that clears the token and
+         * moves the screen to sign-in. A rider sat on that banner forever,
+         * re-polling with a credential the server had already refused.
+         *
+         * Fixed on the server as well — bootstrap/app.php renders every error
+         * under the api prefix as JSON regardless — and still stated here: this
+         * is what the client actually accepts, and it costs one header.
+         */
+        .addInterceptor { chain ->
+            chain.proceed(
+                chain.request().newBuilder()
+                    .header("Accept", "application/json")
+                    .build(),
+            )
+        }
         // A shopper on a jeepney is the normal case, not the edge one. Long
         // enough to survive a handover between cells, short enough that a dead
         // connection surfaces as "no connection" while they still care.

@@ -1,4 +1,4 @@
-import type { BusinessMode, Category, Product } from '@pos/shared/index'
+import type { Category, Product } from '@pos/shared/index'
 import { BUSINESS_MODE, ORG_SLUG, STORE_CODE } from '@pos/web/commerce/context'
 import { customerToken } from '@pos/web/commerce/session'
 
@@ -245,26 +245,6 @@ export async function fetchCatalog(): Promise<StorefrontCatalog> {
   }
 }
 
-// -- Store discovery -------------------------------------------------------
-
-export interface ResolveStoreCodeResult {
-  orgSlug: string
-  storeCode: string
-  businessMode: BusinessMode
-  storeName: string
-  storeAddress: string
-  storeLat?: number | null
-  storeLng?: number | null
-}
-
-export function resolveStoreCode(code: string): Promise<ResolveStoreCodeResult> {
-  return postJson<ResolveStoreCodeResult>(
-    '/api/store-codes/resolve',
-    { code },
-    "We couldn't find a store with that code.",
-  )
-}
-
 // -- Placing an order ------------------------------------------------------
 
 export interface CreateOnlineOrderItem {
@@ -329,6 +309,26 @@ export interface TrackedOrderItem {
   lineTotalCents: number
 }
 
+/** The last fix from the rider's phone, as the API gates it. */
+export interface RiderPosition {
+  lat: number
+  lng: number
+  headingDeg: number | null
+  speedKph: number | null
+  accuracyM: number | null
+  /** ISO timestamp of the fix itself, not of the response. */
+  at: string
+  ageSeconds: number
+  /** True once the fix is too old to draw as a live position. */
+  stale: boolean
+}
+
+/** The two fixed ends of a delivery: the shop, and the door. */
+export interface OrderRoute {
+  pickup: { name: string | null; address: string | null; lat: number | null; lng: number | null }
+  dropoff: { address: string | null; lat: number | null; lng: number | null }
+}
+
 export interface TrackedOrder {
   orderId: string
   ticketNumber: string
@@ -344,6 +344,13 @@ export interface TrackedOrder {
   deliveryStage: string | null
   riderName: string | null
   riderPhone: string | null
+  /**
+   * Null unless a *platform* rider is carrying this right now. A rider the shop
+   * typed in has no account to report from, and any rider's position is
+   * withheld once the order is handed over — see Order::riderPositionForCustomer.
+   */
+  riderPosition: RiderPosition | null
+  route: OrderRoute | null
   placedAt: string | null
   items: TrackedOrderItem[]
 }

@@ -47,28 +47,28 @@ class ApiCallerTest {
     }
 
     @Test
-    fun `409 is a shop that cannot sell online, not a bad code`() = runTest {
+    fun `409 becomes Conflict, carrying the server's own sentence`() = runTest {
         server.enqueue(
             MockResponse()
                 .setResponseCode(409)
                 .setBody("""{"message":"This store is not set up for online ordering."}"""),
         )
 
-        val failure = runCatching { caller.call { api.resolveStoreCode("ABC123") } }.exceptionOrNull()
+        val failure = runCatching { caller.call { api.stores() } }.exceptionOrNull()
 
         assertTrue(failure is ApiException.Conflict)
         assertEquals("This store is not set up for online ordering.", failure?.message)
     }
 
     @Test
-    fun `404 keeps the server's deliberately vague wording`() = runTest {
+    fun `404 becomes NotFound`() = runTest {
         server.enqueue(
             MockResponse()
                 .setResponseCode(404)
                 .setBody("""{"message":"We couldn't find a store with that code."}"""),
         )
 
-        val failure = runCatching { caller.call { api.resolveStoreCode("NOPE") } }.exceptionOrNull()
+        val failure = runCatching { caller.call { api.stores() } }.exceptionOrNull()
 
         assertTrue(failure is ApiException.NotFound)
     }
@@ -86,7 +86,7 @@ class ApiCallerTest {
                 ),
         )
 
-        val failure = runCatching { caller.call { api.resolveStoreCode("ABC123") } }.exceptionOrNull()
+        val failure = runCatching { caller.call { api.stores() } }.exceptionOrNull()
 
         assertTrue(failure is ApiException.Validation)
         assertEquals(
@@ -104,7 +104,7 @@ class ApiCallerTest {
                 .setBody("""{"message":"Too Many Attempts."}"""),
         )
 
-        val failure = runCatching { caller.call { api.resolveStoreCode("ABC123") } }.exceptionOrNull()
+        val failure = runCatching { caller.call { api.stores() } }.exceptionOrNull()
 
         assertTrue(failure is ApiException.RateLimited)
         assertEquals(37L, (failure as ApiException.RateLimited).retryAfterSeconds)

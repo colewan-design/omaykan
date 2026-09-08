@@ -105,7 +105,6 @@ fun MainShell(
     onOpenAisle: (StoreRef, String) -> Unit,
     onOpenCart: (StoreRef) -> Unit,
     onOpenOrder: (String) -> Unit,
-    onEnterCode: () -> Unit,
     onOpenProfile: () -> Unit,
     onOpenAddresses: () -> Unit,
     onOpenPayment: () -> Unit,
@@ -232,7 +231,6 @@ fun MainShell(
                 onOpenShop = onOpenShop,
                 onOpenAisle = onOpenAisle,
                 onOpenCart = onOpenCart,
-                onEnterCode = onEnterCode,
                 contentPadding = padding,
                 viewModel = viewModel,
             )
@@ -280,7 +278,6 @@ fun MainShell(
                         ?: OrderFilter.All
                     tab = MarketTab.Orders
                 },
-                onOpenShopCode = onEnterCode,
                 onTrackOrder = onOpenOrder,
             )
         }

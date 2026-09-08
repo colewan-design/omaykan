@@ -148,7 +148,7 @@ class PlatformAdminApiTest extends TestCase
             ->assertJsonPath('organizations.0.suspended', false)
             ->assertJsonPath('organizations.0.store.businessMode', 'coffee-shop')
             ->assertJsonPath('organizations.0.store.businessTypeLabel', 'Coffee shop')
-            ->assertJsonPath('organizations.0.store.pairingCode', $created['pairingCode'])
+            ->assertJsonPath('organizations.0.store.storeCode', 'main')
             ->assertJsonPath('organizations.0.subscription.status', Subscription::STATUS_PENDING)
             ->assertJsonPath('organizations.0.subscription.gcashReference', 'GC-99881')
             ->assertJsonPath('organizations.0.admins.0.username', 'anareyes')
@@ -211,10 +211,8 @@ class PlatformAdminApiTest extends TestCase
         $owner->forceFill(['email_verified_at' => now()])->save();
 
         // An existing session, which must not survive the reset.
-        $this->postJson('/api/staff-sessions', [
-            'organizationSlug' => $slug,
-            'storeCode' => 'main',
-            'username' => 'anareyes',
+        $this->postJson('/api/staff/sign-in', [
+            'identifier' => 'anareyes',
             'password' => 'secret123',
         ])->assertOk();
         $this->assertSame(1, $owner->tokens()->count());
@@ -228,17 +226,13 @@ class PlatformAdminApiTest extends TestCase
         $this->assertSame(12, strlen($password));
         $this->assertSame(0, $owner->tokens()->count());
 
-        $this->postJson('/api/staff-sessions', [
-            'organizationSlug' => $slug,
-            'storeCode' => 'main',
-            'username' => 'anareyes',
+        $this->postJson('/api/staff/sign-in', [
+            'identifier' => 'anareyes',
             'password' => 'secret123',
         ])->assertStatus(422);
 
-        $this->postJson('/api/staff-sessions', [
-            'organizationSlug' => $slug,
-            'storeCode' => 'main',
-            'username' => 'anareyes',
+        $this->postJson('/api/staff/sign-in', [
+            'identifier' => 'anareyes',
             'password' => $password,
         ])->assertOk();
     }

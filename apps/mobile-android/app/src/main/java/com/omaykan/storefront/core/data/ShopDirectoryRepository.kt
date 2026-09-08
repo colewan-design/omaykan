@@ -48,10 +48,8 @@ class ShopDirectoryRepository @Inject constructor(
      * One shop, by reference.
      *
      * The directory is the only public endpoint that reports a shop's business
-     * mode — the catalog returns a name and an address but not the mode, and
-     * store-code resolution takes the pairing code a shopper is holding, not
-     * the store code the app addresses by. Checkout needs the mode, so this is
-     * where it comes from.
+     * mode — the catalog returns a name and an address but not the mode.
+     * Checkout needs the mode, so this is where it comes from.
      */
     suspend fun shop(ref: StoreRef): ShopSummary? = shops().firstOrNull { it.ref == ref }
 }

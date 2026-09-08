@@ -14,7 +14,6 @@ import com.omaykan.storefront.core.network.dto.RegistrationDto
 import com.omaykan.storefront.core.network.dto.PlaceOrderRequestDto
 import com.omaykan.storefront.core.network.dto.PlaceOrderResponseDto
 import com.omaykan.storefront.core.network.dto.ResetPasswordRequestDto
-import com.omaykan.storefront.core.network.dto.ResolveStoreCodeDto
 import com.omaykan.storefront.core.network.dto.SavedAddressRequestDto
 import com.omaykan.storefront.core.network.dto.SavedPaymentMethodRequestDto
 import com.omaykan.storefront.core.network.dto.SessionDto
@@ -41,11 +40,6 @@ import retrofit2.http.Query
  * 60/min inside a minute of typing. Debounce; never retry-storm.
  */
 interface OmaykanApi {
-
-    /** 10/min. 404 for an unknown or archived code; 409 for a shop that cannot sell online. */
-    @FormUrlEncoded
-    @POST("api/store-codes/resolve")
-    suspend fun resolveStoreCode(@Field("code") code: String): ResolveStoreCodeDto
 
     /** 60/min. lat and lng are all-or-nothing, and only reorder the list. */
     @GET("api/stores")

@@ -94,11 +94,10 @@ class SignupMailTest extends TestCase
             return true;
         });
 
-        // At signup the store code is also the secret a till pairs with, and
-        // email is a durable, forwardable channel. The owner is pointed at
-        // Settings > Online Store instead. See SellerWelcomeMail.
-        $this->assertNotEmpty($created['pairingCode']);
-        $this->assertStringNotContainsString($created['pairingCode'], (string) $body);
+        // Email is a durable, forwardable, frequently-breached channel, so
+        // this mail carries no credential at all — there is no shop-wide code
+        // left to leak, and it must not start carrying a personal one either.
+        $this->assertStringNotContainsString('password', strtolower((string) $body));
 
         // It is still a useful mail, though.
         $this->assertStringContainsString('Hill Station Cafe', (string) $body);

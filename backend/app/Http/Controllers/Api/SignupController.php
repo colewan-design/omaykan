@@ -11,6 +11,9 @@ use App\Models\Store;
 use App\Models\StoreMembership;
 use App\Models\Subscription;
 use App\Models\User;
+use App\Services\GoogleIdentity;
+use App\Services\GoogleIdentityException;
+use App\Services\GoogleIdentityVerifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -43,20 +46,23 @@ class SignupController extends Controller
 
     private const BUSINESS_MODES = ['coffee-shop', 'grocery', 'restaurant', 'nail-salon'];
 
-    /** No 0/O or 1/I/L: the owner reads this back to customers out loud. */
-    private const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-
-    public function store(Request $request): JsonResponse
+    public function store(Request $request, GoogleIdentityVerifier $verifier): JsonResponse
     {
+        // Two doors into the same signup. With `googleCredential` the owner's
+        // name and address come from Google and there is no password to choose;
+        // without it they type all four. The rules below are the intersection,
+        // and the conditional half is checked after the credential is verified,
+        // because what is required depends on what Google said.
         $validated = $request->validate([
             'businessName' => ['required', 'string', 'max:120'],
-            'ownerFullName' => ['required', 'string', 'max:120'],
-            // Required, not optional: it is the only way to reach an owner
-            // after signup — for the welcome mail, and for anything to do with
-            // the account they can no longer sign into.
-            'email' => ['required', 'email', 'max:190'],
-            'username' => ['required', 'string', 'max:60'],
-            'password' => ['required', 'string', 'min:6'],
+            'ownerFullName' => ['nullable', 'string', 'max:120'],
+            // Required unless Google supplies it: it is the only way to reach
+            // an owner after signup — for the welcome mail, and for anything to
+            // do with the account they can no longer sign into.
+            'email' => ['nullable', 'email', 'max:190'],
+            'username' => ['nullable', 'string', 'max:60'],
+            'password' => ['nullable', 'string', 'min:6'],
+            'googleCredential' => ['nullable', 'string'],
             'businessTypeLabel' => ['required', 'string', 'max:120'],
             'businessMode' => ['required', Rule::in(self::BUSINESS_MODES)],
             // Optional: the signup form stopped collecting payment when early
@@ -65,8 +71,27 @@ class SignupController extends Controller
             'gcashReference' => ['nullable', 'string', 'max:80'],
         ]);
 
-        $username = strtolower(trim($validated['username']));
-        $email = strtolower(trim($validated['email']));
+        $identity = isset($validated['googleCredential']) && $validated['googleCredential'] !== ''
+            ? $this->verifiedIdentity($verifier, $validated['googleCredential'])
+            : null;
+
+        if ($identity === null) {
+            // Only meaningful on the typed path — a Google signup has proved an
+            // address and chosen no password, and asking for either would be
+            // asking twice.
+            $request->validate([
+                'ownerFullName' => ['required', 'string', 'max:120'],
+                'email' => ['required', 'email', 'max:190'],
+                'username' => ['required', 'string', 'max:60'],
+                'password' => ['required', 'string', 'min:6'],
+            ]);
+        }
+
+        $username = isset($validated['username']) && $validated['username'] !== ''
+            ? strtolower(trim($validated['username']))
+            : null;
+        $email = strtolower(trim($identity->email ?? $validated['email']));
+        $ownerName = trim($identity->name ?? $validated['ownerFullName']);
         $businessTypeLabel = trim($validated['businessTypeLabel']);
 
         if ($businessTypeLabel === '') {
@@ -75,7 +100,7 @@ class SignupController extends Controller
             ]);
         }
 
-        if (User::query()->where('username', $username)->exists()) {
+        if ($username !== null && User::query()->where('username', $username)->exists()) {
             throw ValidationException::withMessages([
                 'username' => 'That username is already taken — try a different one.',
             ]);
@@ -89,7 +114,7 @@ class SignupController extends Controller
             ]);
         }
 
-        $result = DB::transaction(function () use ($validated, $username, $email, $businessTypeLabel) {
+        $result = DB::transaction(function () use ($validated, $username, $email, $ownerName, $identity, $businessTypeLabel) {
             $businessName = trim($validated['businessName']);
 
             $organization = Organization::query()->create([
@@ -98,8 +123,6 @@ class SignupController extends Controller
                 'slug' => $this->uniqueSlug($businessName),
                 'status' => 'active',
             ]);
-
-            $storeCode = $this->uniqueStoreCode();
 
             $store = new Store([
                 'id' => (string) str()->uuid(),
@@ -114,16 +137,28 @@ class SignupController extends Controller
                 'currency_code' => 'PHP',
                 'status' => 'active',
             ]);
-            $store->setPairingCode($storeCode);
             $store->save();
 
             $owner = User::query()->create([
-                'name' => trim($validated['ownerFullName']),
+                'name' => $ownerName,
                 'username' => $username,
                 'email' => $email,
-                'password' => $validated['password'],
+                'google_sub' => $identity?->sub,
+                'avatar_url' => $identity?->picture,
+                // Null, not a random hash, for a Google owner. There is no
+                // password on this account and the column says so, which is
+                // what lets `hasPassword()` tell the sign-in screen the truth.
+                'password' => ($validated['password'] ?? '') !== '' ? $validated['password'] : null,
                 'status' => 'active',
             ]);
+
+            if ($identity !== null) {
+                // Google has already proved they hold the mailbox. Sending them
+                // to click a link in an address Google just vouched for would be
+                // ceremony, not security — the same call CustomerAuthController
+                // makes.
+                $owner->forceFill(['email_verified_at' => now()])->save();
+            }
 
             OrganizationMembership::query()->create([
                 'organization_id' => $organization->id,
@@ -155,19 +190,23 @@ class SignupController extends Controller
             // queue is the database, a worker could pick the job up before the
             // rows it describes are visible. Matches the OrderPlaced broadcast.
             DB::afterCommit(fn () => $this->announce($owner, $organization, $store));
-            DB::afterCommit(fn () => $this->sendVerificationLink($owner));
 
-            return compact('organization', 'store');
+            if ($identity === null) {
+                DB::afterCommit(fn () => $this->sendVerificationLink($owner));
+            }
+
+            return compact('organization', 'store', 'owner');
         });
+
+        $needsVerification = ! $result['owner']->hasVerifiedEmail();
 
         return response()->json([
             'organizationSlug' => $result['organization']->slug,
             'storeCode' => $result['store']->code,
-            // The code the owner hands to customers. Returned once here
-            // and also readable later from Settings > Online Store.
-            'pairingCode' => $result['store']->public_store_code,
-            'verificationRequired' => true,
-            'message' => 'Check your email for a verification link before signing in.',
+            'verificationRequired' => $needsVerification,
+            'message' => $needsVerification
+                ? 'Check your email for a verification link before signing in.'
+                : 'Your store is ready — sign in with Google to open it.',
         ], 201);
     }
 
@@ -227,19 +266,32 @@ class SignupController extends Controller
         ]);
     }
 
-    private function uniqueStoreCode(): string
+    /**
+     * The Google identity behind a signup, or a validation error.
+     *
+     * An address Google will not call verified is refused: a Workspace domain
+     * that never completed verification would otherwise be a way to found an
+     * organization on a mailbox nobody has proved they can read.
+     */
+    private function verifiedIdentity(GoogleIdentityVerifier $verifier, string $credential): GoogleIdentity
     {
-        for ($attempt = 0; $attempt < 20; $attempt++) {
-            $code = '';
-            for ($i = 0; $i < 6; $i++) {
-                $code .= self::CODE_ALPHABET[random_int(0, strlen(self::CODE_ALPHABET) - 1)];
-            }
+        try {
+            $identity = $verifier->verify($credential);
+        } catch (GoogleIdentityException $e) {
+            // Reported so a misconfigured client id or an unreachable Google
+            // shows up in the log as itself rather than as a wave of merchants
+            // saying signup is broken.
+            report($e);
 
-            if (! Store::query()->where('public_store_code', $code)->exists()) {
-                return $code;
-            }
+            throw ValidationException::withMessages(['googleCredential' => $e->getMessage()]);
         }
 
-        abort(500, 'Could not generate a unique store code — please try again.');
+        if (! $identity->emailVerified) {
+            throw ValidationException::withMessages([
+                'googleCredential' => 'That Google account has an unverified email address. Verify it with Google first.',
+            ]);
+        }
+
+        return $identity;
     }
 }

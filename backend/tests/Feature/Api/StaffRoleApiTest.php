@@ -6,30 +6,17 @@ use App\Models\Organization;
 use App\Models\Store;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\SignsInStaff;
 use Tests\TestCase;
 
 class StaffRoleApiTest extends TestCase
 {
-    use RefreshDatabase;
-
-    private function pairDevice(): string
-    {
-        $response = $this->postJson('/api/device-sessions', [
-            'organizationSlug' => 'demo-coffee',
-            'storeCode' => 'main',
-            'pairingCode' => '123456',
-            'deviceName' => 'Counter 1',
-            'platform' => 'web',
-            'appVersion' => '0.1.0',
-        ])->assertOk();
-
-        return $response->json('token');
-    }
+    use SignsInStaff, RefreshDatabase;
 
     public function test_authenticated_device_can_list_roles(): void
     {
         $this->seed();
-        $token = $this->pairDevice();
+        $token = $this->staffToken();
 
         $this->withHeader('Authorization', "Bearer {$token}")
             ->getJson('/api/staff-roles')
@@ -40,7 +27,7 @@ class StaffRoleApiTest extends TestCase
     public function test_authenticated_device_can_sync_custom_roles(): void
     {
         $this->seed();
-        $token = $this->pairDevice();
+        $token = $this->staffToken();
 
         $payload = [
             'roles' => [
@@ -103,7 +90,7 @@ class StaffRoleApiTest extends TestCase
     public function test_custom_role_can_be_assigned_to_a_user(): void
     {
         $this->seed();
-        $token = $this->pairDevice();
+        $token = $this->staffToken();
 
         $this->withHeader('Authorization', "Bearer {$token}")
             ->putJson('/api/staff-roles', [
@@ -147,13 +134,13 @@ class StaffRoleApiTest extends TestCase
                 ],
             ])->assertOk();
 
-        $this->postJson('/api/staff-register', [
-            'organizationSlug' => 'demo-coffee',
-            'storeCode' => 'main',
-            'fullName' => 'Barista User',
-            'username' => 'barista1',
-            'password' => 'secret',
-        ])->assertOk();
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/staff-users', [
+                'fullName' => 'Barista User',
+                'username' => 'barista1',
+                'password' => 'secret',
+                'roleId' => 'barista',
+            ])->assertCreated();
 
         $user = User::query()->where('username', 'barista1')->firstOrFail();
         $organization = Organization::query()->where('slug', 'demo-coffee')->firstOrFail();

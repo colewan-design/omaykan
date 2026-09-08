@@ -54,15 +54,30 @@ const themeOptions = [
 
 const businessNameDraft = ref('')
 const businessImageError = ref('')
-const pairingCodeCopied = ref(false)
+const storefrontLinkCopied = ref(false)
 
-async function copyPairingCode() {
+/**
+ * The shop's public link.
+ *
+ * This panel used to show a six-character code customers typed into the app to
+ * find the shop. The code is gone — it was also the secret a till paired with,
+ * which is why it could not stay — and a link is the better artefact anyway:
+ * it goes in a bio, a tarpaulin QR or a message, and nobody has to spell it
+ * out over a counter.
+ */
+const storefrontUrl = computed(() =>
+  store.settings.storefrontSlug
+    ? `${window.location.origin}/?shop=${store.settings.storefrontSlug}`
+    : '',
+)
+
+async function copyStorefrontLink() {
   try {
-    await navigator.clipboard.writeText(store.settings.pairingCode)
-    pairingCodeCopied.value = true
-    setTimeout(() => { pairingCodeCopied.value = false }, 2000)
+    await navigator.clipboard.writeText(storefrontUrl.value)
+    storefrontLinkCopied.value = true
+    setTimeout(() => { storefrontLinkCopied.value = false }, 2000)
   } catch {
-    // Clipboard permission denied — the code is still shown on screen to copy manually.
+    // Clipboard permission denied — the link is still on screen to copy by hand.
   }
 }
 
@@ -220,18 +235,18 @@ function handleBusinessImageChange(event: Event) {
 
         <div class="settings-columns__side">
           <SettingsGroup
-            v-if="store.settings.pairingCode"
+            v-if="storefrontUrl"
             id="online-store"
             label="Online Store"
-            description="Customers enter this code in the Omaykan app to find and order from your store."
+            description="Your shop's page on Omaykan. Post this link anywhere you'd put a phone number."
           >
             <div class="settings-row settings-row--stack">
               <div class="settings-profile__actions">
-                <span class="settings-code-value">{{ store.settings.pairingCode }}</span>
-                <button class="settings-upload-button" type="button" @click="copyPairingCode">
-                  <Check v-if="pairingCodeCopied" :size="16" />
+                <span class="settings-code-value">{{ storefrontUrl }}</span>
+                <button class="settings-upload-button" type="button" @click="copyStorefrontLink">
+                  <Check v-if="storefrontLinkCopied" :size="16" />
                   <Copy v-else :size="16" />
-                  <span>{{ pairingCodeCopied ? 'Copied' : 'Copy code' }}</span>
+                  <span>{{ storefrontLinkCopied ? 'Copied' : 'Copy link' }}</span>
                 </button>
               </div>
             </div>

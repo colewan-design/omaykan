@@ -21,6 +21,28 @@ val keystoreProperties = Properties().apply {
     if (file.exists()) file.inputStream().use { load(it) }
 }
 
+/*
+ * A build-time value that is not in the repository: the Mapbox runtime token,
+ * the Google client ids, an API base URL for a laptop on the same LAN.
+ *
+ * The environment first, because that is what CI sets and what a one-off
+ * `FOO=bar ./gradlew ...` expects to win. Then `~/.gradle/gradle.properties`,
+ * which is the half that was missing: an environment variable lives exactly as
+ * long as the shell that exported it, so every one of these had to be
+ * remembered and re-exported before every build, and a forgotten one is not an
+ * error — it is a silently degraded APK. Blank stays a supported build; the
+ * point is only that it should be a decision rather than an accident.
+ *
+ * Home directory, never this project's `gradle.properties`: that file is
+ * tracked, and a token in it is a token in the history.
+ */
+fun buildSecret(name: String, default: String = ""): String {
+    val fromEnvironment = providers.environmentVariable(name).getOrElse("").trim()
+    val fromProperties = providers.gradleProperty(name).getOrElse("").trim()
+
+    return fromEnvironment.ifBlank { fromProperties }.ifBlank { default }
+}
+
 android {
     namespace = "com.omaykan.storefront"
     compileSdk = 36
@@ -76,7 +98,7 @@ android {
         buildConfigField(
             "String",
             "GOOGLE_OAUTH_CLIENT_ID",
-            "\"${providers.environmentVariable("OMAYKAN_GOOGLE_ANDROID_CLIENT_ID").getOrElse("")}\"",
+            "\"${buildSecret("OMAYKAN_GOOGLE_ANDROID_CLIENT_ID")}\"",
         )
     }
 
@@ -105,7 +127,37 @@ android {
             buildConfigField(
                 "String",
                 "API_BASE_URL",
-                "\"${providers.environmentVariable("OMAYKAN_API_BASE_URL").getOrElse("https://omaykan.com")}\"",
+                "\"${buildSecret("OMAYKAN_API_BASE_URL", default = "https://omaykan.com")}\"",
+            )
+            buildConfigField(
+                "String",
+                "MAPBOX_TOKEN",
+                "\"${buildSecret("OMAYKAN_MAPBOX_TOKEN")}\"",
+            )
+            /*
+             * Its own Google client, and this override is the whole reason the
+             * debug build could never sign anybody in.
+             *
+             * `applicationIdSuffix = ".debug"` plus the debug keystore make this
+             * a different app as far as Google is concerned, so it needs the
+             * second Android client — which documentation/google-sign-in.md has
+             * always said to set as OMAYKAN_GOOGLE_ANDROID_CLIENT_ID_DEBUG, and
+             * which nothing here ever read. The release id was compiled into
+             * both builds, and Google refused the debug one's token as issued
+             * for a different app.
+             *
+             * Falls back to the release id when unset, which is the old
+             * behaviour and is right for a debug build of a release-signed app.
+             */
+            buildConfigField(
+                "String",
+                "GOOGLE_OAUTH_CLIENT_ID",
+                "\"${
+                    buildSecret(
+                        "OMAYKAN_GOOGLE_ANDROID_CLIENT_ID_DEBUG",
+                        default = buildSecret("OMAYKAN_GOOGLE_ANDROID_CLIENT_ID"),
+                    )
+                }\"",
             )
         }
         release {
@@ -113,6 +165,11 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             buildConfigField("String", "API_BASE_URL", "\"https://omaykan.com\"")
+            buildConfigField(
+                "String",
+                "MAPBOX_TOKEN",
+                "\"${buildSecret("OMAYKAN_MAPBOX_TOKEN")}\"",
+            )
             signingConfig = signingConfigs.findByName("release")
         }
     }

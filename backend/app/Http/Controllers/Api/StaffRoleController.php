@@ -3,18 +3,20 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Device;
+use App\Http\Controllers\Concerns\ActsForAStore;
 use App\Models\PosRole;
 use Illuminate\Http\Request;
 
 class StaffRoleController extends Controller
 {
+    use ActsForAStore;
+
     public function index(Request $request)
     {
-        $device = $this->deviceFromRequest($request);
+        $context = $this->storeContext($request);
 
         $roles = PosRole::query()
-            ->where('organization_id', $device->organization_id)
+            ->where('organization_id', $context->organizationId())
             ->whereNull('deleted_at')
             ->orderBy('name')
             ->get()
@@ -31,7 +33,12 @@ class StaffRoleController extends Controller
 
     public function sync(Request $request)
     {
-        $device = $this->deviceFromRequest($request);
+        $context = $this->storeContext($request);
+
+        // Roles decide what everyone else in the shop may do, so this is not a
+        // thing a cashier changes. The device era could not draw this line at
+        // all — a paired till had no person behind it to have a role.
+        abort_unless($context->isManager(), 403, 'Only an admin or manager can change roles.');
 
         $validated = $request->validate([
             'roles' => ['required', 'array', 'min:1'],
@@ -47,7 +54,7 @@ class StaffRoleController extends Controller
 
             PosRole::query()->updateOrCreate(
                 [
-                    'organization_id' => $device->organization_id,
+                    'organization_id' => $context->organizationId(),
                     'role_key' => $roleData['id'],
                 ],
                 [
@@ -59,7 +66,7 @@ class StaffRoleController extends Controller
         }
 
         PosRole::query()
-            ->where('organization_id', $device->organization_id)
+            ->where('organization_id', $context->organizationId())
             ->whereNotIn('role_key', $incomingRoleKeys)
             ->whereNotIn('role_key', ['admin', 'guest'])
             ->whereNull('deleted_at')
@@ -69,13 +76,5 @@ class StaffRoleController extends Controller
             ]);
 
         return $this->index($request);
-    }
-
-    private function deviceFromRequest(Request $request): Device
-    {
-        $device = $request->user();
-        abort_unless($device instanceof Device, 403, 'Authenticated device required.');
-
-        return $device;
     }
 }

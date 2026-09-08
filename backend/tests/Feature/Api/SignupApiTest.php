@@ -40,12 +40,15 @@ class SignupApiTest extends TestCase
     {
         $response = $this->postJson('/api/signup', $this->payload())->assertCreated();
 
-        $response->assertJsonStructure(['organizationSlug', 'storeCode', 'pairingCode']);
+        $response->assertJsonStructure(['organizationSlug', 'storeCode']);
+        // Signup used to hand back a shop-wide code that was both the
+        // customer's way in and the till's pairing secret. There is no such
+        // value any more, and the reply must not grow one back.
+        $response->assertJsonMissingPath('pairingCode');
         $response->assertJsonPath('verificationRequired', true);
         $response->assertJsonPath('message', 'Check your email for a verification link before signing in.');
         $this->assertSame('hill-station-cafe', $response->json('organizationSlug'));
         $this->assertSame('main', $response->json('storeCode'));
-        $this->assertSame(6, strlen($response->json('pairingCode')));
 
         $organization = Organization::query()->where('slug', 'hill-station-cafe')->firstOrFail();
         $store = Store::query()->where('organization_id', $organization->id)->firstOrFail();
@@ -74,7 +77,7 @@ class SignupApiTest extends TestCase
         $this->assertNull($subscription->verified_at);
     }
 
-    public function test_the_new_owner_must_verify_email_before_signing_in_and_the_store_is_discoverable(): void
+    public function test_the_new_owner_must_verify_email_before_signing_in(): void
     {
         Notification::fake();
         config([
@@ -84,15 +87,17 @@ class SignupApiTest extends TestCase
 
         $created = $this->postJson('/api/signup', $this->payload())->assertCreated()->json();
 
-        $this->postJson('/api/store-codes/resolve', ['code' => $created['pairingCode']])
-            ->assertOk()
-            ->assertJsonPath('orgSlug', $created['organizationSlug'])
-            ->assertJsonPath('storeName', 'Hill Station Cafe');
+        // Not yet in the shop directory, and rightly so: it has nothing on the
+        // shelf, and StoreDirectoryController leaves an empty shop out rather
+        // than listing a dead click. That rule has its own test.
+        $this->assertDatabaseHas('stores', [
+            'name' => 'Hill Station Cafe',
+            'code' => 'main',
+            'status' => 'active',
+        ]);
 
-        $this->postJson('/api/staff-sessions', [
-            'organizationSlug' => $created['organizationSlug'],
-            'storeCode' => 'main',
-            'username' => 'anareyes',
+        $this->postJson('/api/staff/sign-in', [
+            'identifier' => 'anareyes',
             'password' => 'secret123',
         ])->assertForbidden()->assertJsonPath(
             'message',
@@ -116,26 +121,37 @@ class SignupApiTest extends TestCase
 
         $this->assertNotNull($owner->fresh()->email_verified_at);
 
-        $this->postJson('/api/staff-sessions', [
-            'organizationSlug' => $created['organizationSlug'],
-            'storeCode' => 'main',
-            'username' => 'anareyes',
+        $this->postJson('/api/staff/sign-in', [
+            'identifier' => 'anareyes',
             'password' => 'secret123',
-        ])->assertOk()->assertJsonPath('user.roleId', 'admin');
+        ])->assertOk()->assertJsonPath('stores.0.role', 'admin');
     }
 
-    public function test_a_till_can_pair_with_the_issued_code(): void
+    /**
+     * Signup issues no code of any kind now — the owner's own account is the
+     * way in, and it reaches exactly the one store the signup created.
+     */
+    public function test_the_new_owner_can_open_their_store_with_their_own_account(): void
     {
         $created = $this->postJson('/api/signup', $this->payload())->assertCreated()->json();
 
-        $this->postJson('/api/device-sessions', [
-            'organizationSlug' => $created['organizationSlug'],
-            'storeCode' => 'main',
-            'pairingCode' => $created['pairingCode'],
-            'deviceName' => 'Counter 1',
-            'platform' => 'web',
-            'appVersion' => '0.1.0',
+        $owner = User::query()->where('username', 'anareyes')->firstOrFail();
+        $owner->forceFill(['email_verified_at' => now()])->save();
+
+        $signIn = $this->postJson('/api/staff/sign-in', [
+            'identifier' => 'anareyes',
+            'password' => 'secret123',
         ])->assertOk();
+
+        $this->assertCount(1, $signIn->json('stores'));
+
+        $token = $this->withToken($signIn->json('token'))
+            ->postJson('/api/staff/session-store', ['storeId' => $signIn->json('stores.0.id')])
+            ->assertOk()
+            ->assertJsonPath('store.organizationSlug', $created['organizationSlug'])
+            ->json('token');
+
+        $this->withToken($token)->getJson('/api/seller/online-orders')->assertOk();
     }
 
     public function test_duplicate_business_names_get_distinct_slugs(): void
@@ -146,7 +162,6 @@ class SignupApiTest extends TestCase
 
         $this->assertSame('hill-station-cafe', $first['organizationSlug']);
         $this->assertSame('hill-station-cafe-2', $second['organizationSlug']);
-        $this->assertNotSame($first['pairingCode'], $second['pairingCode']);
     }
 
     public function test_a_custom_business_type_label_can_differ_from_the_starter_setup(): void
@@ -217,15 +232,23 @@ class SignupApiTest extends TestCase
         $this->assertDatabaseCount('subscriptions', 0);
     }
 
-    public function test_a_nail_salon_can_sign_up_but_is_not_discoverable_by_customers(): void
+    public function test_a_nail_salon_can_sign_up_but_is_not_listed_for_customers(): void
     {
-        $created = $this->postJson('/api/signup', $this->payload(['businessMode' => 'nail-salon']))
-            ->assertCreated()->json();
+        $this->postJson('/api/signup', $this->payload(['businessMode' => 'nail-salon']))
+            ->assertCreated();
 
-        $this->postJson('/api/store-codes/resolve-staff', ['code' => $created['pairingCode']])
-            ->assertOk();
+        // Its owner still gets in — the sign-in door has no business-mode gate,
+        // deliberately.
+        $owner = User::query()->where('username', 'anareyes')->firstOrFail();
+        $owner->forceFill(['email_verified_at' => now()])->save();
 
-        $this->postJson('/api/store-codes/resolve', ['code' => $created['pairingCode']])
-            ->assertStatus(409);
+        $this->postJson('/api/staff/sign-in', [
+            'identifier' => 'anareyes',
+            'password' => 'secret123',
+        ])->assertOk();
+
+        // The shop is not somewhere a customer can order from, so it is not in
+        // the list of places to order from.
+        $this->getJson('/api/stores')->assertOk()->assertJsonCount(0, 'stores');
     }
 }

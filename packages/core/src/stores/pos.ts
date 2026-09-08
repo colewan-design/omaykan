@@ -23,6 +23,7 @@ import {
   type Product,
   type ReorderMark,
   type RestaurantTable,
+  type RiderPosition,
   type ShiftSummary,
   type Supplier,
 } from '@pos/shared/index'
@@ -695,9 +696,69 @@ export const usePosStore = defineStore('pos', () => {
     return replaceOnlineOrder(await repository.updateOnlineOrderStatus(orderId, status))
   }
 
-  /** Records who is carrying the order; the API moves it to 'assigned'. */
-  async function notifyRider(orderId: string, rider: { riderName: string; riderPhone?: string | null }) {
+  /**
+   * Records who is carrying the order; the API moves it to 'assigned'.
+   *
+   * Takes the whole assignment shape rather than a name and a number, because
+   * a shop has three ways to answer the question and only one of them is
+   * typing: `savedRiderId` picks from the shop's list, `saveRider` remembers a
+   * typed-in one. See SellerOrderController::assignRider.
+   */
+  async function notifyRider(
+    orderId: string,
+    rider: {
+      savedRiderId?: string | null
+      riderName?: string
+      riderPhone?: string | null
+      saveRider?: boolean
+      saveNote?: string | null
+    },
+  ) {
     return replaceOnlineOrder(await repository.assignOrderRider(orderId, rider))
+  }
+
+  /** Takes the rider off and puts the order back on the platform board. */
+  async function returnToBoard(orderId: string) {
+    return replaceOnlineOrder(await repository.unassignOrderRider(orderId))
+  }
+
+  /**
+   * The shop's own riders, and the ones who have delivered for it.
+   *
+   * Read fresh every time rather than cached in the store: a saved rider's
+   * `online` flag is only true for the ten seconds it describes, and offering a
+   * stale one as available sends an order to a phone that is switched off.
+   */
+  async function loadSavedRiders() {
+    return repository.loadSavedRiders()
+  }
+
+  async function saveRider(input: {
+    riderId?: string | null
+    name: string
+    phone?: string | null
+    note?: string | null
+  }) {
+    return repository.saveRider(input)
+  }
+
+  async function deleteSavedRider(id: string) {
+    return repository.deleteSavedRider(id)
+  }
+
+  /**
+   * A position ping, applied to the order it belongs to.
+   *
+   * Kept out of `replaceOnlineOrder` deliberately: that one swaps the whole
+   * order, and a ping every ten seconds per delivery would rebuild the list —
+   * and every card's identity with it — six times a minute. This touches one
+   * field on one order and leaves the rest of the object alone.
+   */
+  function applyRiderPosition(orderId: string, position: RiderPosition | null) {
+    const index = onlineOrders.value.findIndex((order) => order.id === orderId)
+    if (index === -1) return
+    const order = onlineOrders.value[index]!
+    onlineOrders.value[index] = { ...order, riderPosition: position }
   }
 
   async function advanceDelivery(orderId: string, stage: DeliveryStage) {
@@ -826,6 +887,11 @@ export const usePosStore = defineStore('pos', () => {
     settleOnlineOrderPayment,
     updateOnlineOrderStatus,
     notifyRider,
+    returnToBoard,
+    applyRiderPosition,
+    loadSavedRiders,
+    saveRider,
+    deleteSavedRider,
     advanceDelivery,
     clearLowStockAlert,
     restockProduct,

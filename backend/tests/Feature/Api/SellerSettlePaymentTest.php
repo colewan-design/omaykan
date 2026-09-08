@@ -7,6 +7,7 @@ use App\Models\Payment;
 use App\Models\Shift;
 use App\Models\Store;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\SignsInStaff;
 use Tests\TestCase;
 
 /**
@@ -22,18 +23,12 @@ use Tests\TestCase;
  */
 class SellerSettlePaymentTest extends TestCase
 {
-    use RefreshDatabase;
+    use SignsInStaff, RefreshDatabase;
 
     /** @return array{token: string, orderId: string, totalCents: int} */
     private function placedOrder(): array
     {
-        $token = $this->postJson('/api/device-sessions', [
-            'organizationSlug' => 'demo-coffee',
-            'storeCode' => 'main',
-            'pairingCode' => '123456',
-            'deviceName' => 'Counter 1',
-            'platform' => 'web',
-        ])->json('token');
+        $token = $this->staffToken();
 
         $product = $this->getJson('/api/storefront/catalog?orgSlug=demo-coffee&storeCode=main')
             ->json('products.0');

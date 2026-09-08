@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\Store;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
+use Tests\Concerns\SignsInStaff;
 use Tests\TestCase;
 
 /**
@@ -21,18 +22,7 @@ use Tests\TestCase;
  */
 class SyncProductVisibilityTest extends TestCase
 {
-    use RefreshDatabase;
-
-    private function deviceToken(): string
-    {
-        return $this->postJson('/api/device-sessions', [
-            'organizationSlug' => 'demo-coffee',
-            'storeCode' => 'main',
-            'pairingCode' => '123456',
-            'deviceName' => 'Counter 1',
-            'platform' => 'web',
-        ])->json('token');
-    }
+    use SignsInStaff, RefreshDatabase;
 
     /** @param array<string, mixed> $payload */
     private function pushProduct(string $token, string $productId, array $payload): TestResponse
@@ -58,7 +48,7 @@ class SyncProductVisibilityTest extends TestCase
         $this->seed();
         $id = (string) str()->uuid();
 
-        $this->pushProduct($this->deviceToken(), $id, [
+        $this->pushProduct($this->staffToken(), $id, [
             'sku' => 'TILL-1',
             'name' => 'Listed at the counter',
             'priceCents' => 15000,
@@ -74,7 +64,7 @@ class SyncProductVisibilityTest extends TestCase
         $this->seed();
         $id = (string) str()->uuid();
 
-        $this->pushProduct($this->deviceToken(), $id, [
+        $this->pushProduct($this->staffToken(), $id, [
             'sku' => 'TILL-2',
             'name' => 'Sellable online',
             'priceCents' => 15000,
@@ -94,7 +84,7 @@ class SyncProductVisibilityTest extends TestCase
         $this->seed();
         $id = (string) str()->uuid();
 
-        $this->pushProduct($this->deviceToken(), $id, [
+        $this->pushProduct($this->staffToken(), $id, [
             'sku' => 'TILL-3',
             'name' => 'Orderable',
             'priceCents' => 15000,
@@ -118,7 +108,7 @@ class SyncProductVisibilityTest extends TestCase
         $this->seed();
         $id = (string) str()->uuid();
 
-        $this->pushProduct($this->deviceToken(), $id, [
+        $this->pushProduct($this->staffToken(), $id, [
             'sku' => 'TILL-4',
             'name' => 'Multi-mode',
             'priceCents' => 15000,
@@ -132,7 +122,7 @@ class SyncProductVisibilityTest extends TestCase
     {
         $this->seed();
         $id = (string) str()->uuid();
-        $token = $this->deviceToken();
+        $token = $this->staffToken();
 
         $this->pushProduct($token, $id, [
             'sku' => 'TILL-5',
@@ -169,7 +159,7 @@ class SyncProductVisibilityTest extends TestCase
         $this->seed();
         $id = (string) str()->uuid();
 
-        $this->pushProduct($this->deviceToken(), $id, [
+        $this->pushProduct($this->staffToken(), $id, [
             'sku' => 'NO-CAT',
             'name' => 'Filed under nothing',
             'priceCents' => 15000,

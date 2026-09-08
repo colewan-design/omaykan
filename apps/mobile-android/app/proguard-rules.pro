@@ -14,3 +14,10 @@
 -keep,allowobfuscation,allowshrinking interface retrofit2.Call
 -keep,allowobfuscation,allowshrinking class retrofit2.Response
 -keep,allowobfuscation,allowshrinking class kotlin.coroutines.Continuation
+
+# Tink, which backs EncryptedSharedPreferences, is compiled against Error Prone's
+# annotations and does not ship them — they are compile-only, and R8 refuses the
+# build over four it cannot find. Annotations are erased at runtime and nothing
+# here reads them, so warning about their absence is the only thing to suppress.
+# Without this, `assembleRelease` fails outright.
+-dontwarn com.google.errorprone.annotations.**

@@ -175,6 +175,71 @@ export interface OrderItemSummary {
   lineTotalCents: number
 }
 
+/**
+ * A rider one shop keeps on file.
+ *
+ * `onPlatform` is the distinction that matters everywhere this is shown. False
+ * means a name and a number: assigning them records who is carrying the order
+ * and the shop rings them, which is how deliveries worked before there was a
+ * rider app and is still how most of them work. True means a real account —
+ * the order lands in that person's app, they can hand it back to the board,
+ * and their position feeds the live map.
+ */
+export interface SavedRider {
+  id: string
+  riderId: string | null
+  name: string
+  phone: string | null
+  note: string | null
+  onPlatform: boolean
+  timesUsed: number
+  lastUsedAt: string | null
+  /** The account's status, or null for an off-platform rider. */
+  status: string | null
+  /** Whether that account is reporting a position right now. */
+  online: boolean
+}
+
+/** A rider who has delivered for this shop but is not on its list yet. */
+export interface RecentRider {
+  riderId: string
+  name: string
+  phone: string | null
+  onPlatform: true
+  status: string
+  online: boolean
+}
+
+/** What the assign-a-rider picker is built from. */
+export interface SavedRiderDirectory {
+  saved: SavedRider[]
+  recent: RecentRider[]
+}
+
+/**
+ * A rider's last reported position, exactly as the API serves it.
+ *
+ * `stale` and `ageSeconds` are computed server-side rather than from the
+ * client's clock: a phone with the wrong time would otherwise declare a live
+ * rider missing, or a missing one live.
+ */
+export interface RiderPosition {
+  lat: number
+  lng: number
+  headingDeg: number | null
+  speedKph: number | null
+  accuracyM: number | null
+  at: string
+  ageSeconds: number
+  stale: boolean
+}
+
+/** Where a delivery starts and where it ends. */
+export interface OrderRoute {
+  pickup: { name: string | null; address: string | null; lat: number | null; lng: number | null }
+  dropoff: { address: string | null; lat: number | null; lng: number | null }
+}
+
 export interface OrderSummary {
   id: string
   ticketNumber: string
@@ -207,6 +272,16 @@ export interface OrderSummary {
   deliveryStage?: DeliveryStage | null
   riderName?: string | null
   riderPhone?: string | null
+  /**
+   * Set only when the rider is a platform account rather than a name the shop
+   * typed in. It is what separates "our nephew on a tricycle", who has no app
+   * and no map, from a rider whose position the dashboard can draw.
+   */
+  riderId?: string | null
+  /** The rider's last known fix. Null when nobody is reporting one. */
+  riderPosition?: RiderPosition | null
+  /** The two fixed ends of the trip, for the delivery map. */
+  route?: OrderRoute | null
   /** Quoted by the API from the drop-off distance; 0 for pickup. */
   deliveryFeeCents?: number
   // Absent/null on every non-voided order. A void reverses the whole order —
@@ -253,10 +328,11 @@ export interface AppSettings {
   businessMode: BusinessMode
   businessName: string
   businessImageUrl: string
-  // Customer-facing code for the shared storefront app to find this store.
-  // Only populated for self-serve signups (apps/web/src/onboarding) — blank
-  // on single-tenant deployments that never went through that flow.
-  pairingCode: string
+  // The shop's own handle in its storefront link, `/?shop=<slug>`. This
+  // replaced `pairingCode`, the code a customer used to type to find the shop
+  // — which was also the secret a till paired with, and is gone with pairing.
+  // Blank on single-tenant deployments that never went through signup.
+  storefrontSlug: string
   syncMode: 'local-only' | 'online-sync'
   appearance: Appearance
   theme: Theme
@@ -350,7 +426,7 @@ export const defaultSettings: AppSettings = {
   businessMode: 'coffee-shop',
   businessName: '',
   businessImageUrl: '',
-  pairingCode: '',
+  storefrontSlug: '',
   syncMode: 'local-only',
   appearance: 'system',
   theme: 'default',

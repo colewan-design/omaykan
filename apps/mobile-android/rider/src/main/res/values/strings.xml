@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      "Omaykan Rider", not "Omaykan". Three apps in this family can sit on one
+      phone, and three identical labels in the launcher is somebody opening the
+      wrong one while a bike is running.
+    -->
+    <string name="app_name">Omaykan Rider</string>
+
+    <!--
+      The location-sharing notification.
+
+      Worded as what it is rather than what it enables. "Sharing your location"
+      is the sentence a rider needs to be able to read at a glance from a
+      lock screen; "Live delivery tracking" would be marketing standing in
+      front of a disclosure.
+    -->
+    <string name="channel_sharing">Location sharing</string>
+    <string name="channel_sharing_description">Shown while you are sharing your location with the shops and customers whose orders you are carrying.</string>
+    <string name="sharing_title">Sharing your location</string>
+    <string name="sharing_body">Only the shops and customers whose orders you are carrying can see it.</string>
+    <string name="sharing_stop">Stop</string>
+</resources>

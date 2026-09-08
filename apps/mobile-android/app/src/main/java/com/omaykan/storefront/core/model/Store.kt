@@ -59,19 +59,6 @@ data class ShopSummary(
 )
 
 /**
- * A shop resolved from the short code on a receipt or a tarpaulin.
- * `POST /api/store-codes/resolve`.
- */
-data class PairedStore(
-    val ref: StoreRef,
-    val businessMode: BusinessMode,
-    val name: String,
-    val address: String,
-    val lat: Double?,
-    val lng: Double?,
-)
-
-/**
  * Who the shopper is buying from, as the catalog names them.
  *
  * The shop is named on the goods rather than only in the footer on purpose:

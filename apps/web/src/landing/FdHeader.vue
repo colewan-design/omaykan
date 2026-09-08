@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ShoppingBasket } from '@lucide/vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import BrandLogo from '@pos/core/components/BrandLogo.vue'
 import { useStorefrontCart } from '@pos/web/commerce/cart'
 import { useStockedCategories } from '@pos/web/commerce/catalog'
 import { useCustomerAccount } from '@pos/web/commerce/customer'
 import { useDeliveryLocation } from '@pos/web/commerce/deliveryLocation'
-import { categoryIcon } from './categories'
+import { categoryIcon } from '@pos/core/utils/categoryIcons'
 import CartDrawer from './CartDrawer.vue'
 import AddressDialog from './AddressDialog.vue'
 import SignupBanner from './SignupBanner.vue'
@@ -58,6 +59,13 @@ function categoryHref(categoryId: string): string {
   return `${props.shopHref}?category=${encodeURIComponent(categoryId)}`
 }
 
+// A category the catalog invented rather than one we seeded still gets a nav
+// item — it just wears the generic basket. An unknown aisle costs an icon,
+// never a place in the nav.
+function navIcon(categoryName: string) {
+  return categoryIcon(categoryName) ?? ShoppingBasket
+}
+
 function selectCategory(categoryId: string, event: MouseEvent) {
   // Off the landing page the anchor is a real navigation home; leave it alone.
   if (!handlesCategoryInPage.value) return
@@ -81,7 +89,93 @@ function submitSearch() {
   emit('search', searchTerm.value.trim())
 }
 
-defineExpose({ clear: () => (searchTerm.value = '') })
+// ── The category panel folds away while you read ────────────────────────
+// Both header rows stick, which costs ~160px of a phone screen for a rail you
+// only need when you're changing aisle. Scrolling down folds the categories
+// away and leaves the search bar; scrolling back up brings them out again,
+// so the rail is there the moment you go looking for it.
+const navHidden = ref(false)
+
+/** Above this the rail is always out — a nudge off the top shouldn't fold it. */
+const REVEAL_ABOVE = 96
+/** Ignore the sub-pixel jitter of a trackpad settling or a rubber-band. */
+const DIRECTION_DELTA = 6
+/** How long a programmatic scroll (see revealNav) holds the rail open. */
+const PIN_MS = 900
+/** …and how long after its last scroll event that hold lets go. */
+const PIN_SETTLE_MS = 200
+/**
+ * How long to disbelieve the scroll position after the rail moves. Folding it
+ * away takes ~160px off the document, and the browser's scroll anchoring
+ * scrolls the page back up by as much to hold the content still — a scroll
+ * event, upward, that reads exactly like the shopper reaching for the rail.
+ * Left alone the two chase each other and the rail flickers half open the
+ * whole way down the page. Comfortably past the fold's own 240ms.
+ */
+const FOLD_SETTLE_MS = 340
+
+let lastY = 0
+let pinnedUntil = 0
+let settledAt = 0
+
+function setNavHidden(hidden: boolean) {
+  if (navHidden.value === hidden) return
+  navHidden.value = hidden
+  settledAt = Date.now() + FOLD_SETTLE_MS
+}
+
+function onScroll() {
+  // Clamped: iOS rubber-banding reports negative offsets at the top, which
+  // would otherwise read as a scroll up and then a scroll down.
+  const y = Math.max(window.scrollY, 0)
+  const now = Date.now()
+
+  if (now < pinnedUntil) {
+    setNavHidden(false)
+    lastY = y
+    pinnedUntil = now + PIN_SETTLE_MS
+    return
+  }
+
+  // Checked before the settle window, not after: a flick to the top has to
+  // land with the rail out even when it arrives mid-fold.
+  if (y <= REVEAL_ABOVE) {
+    setNavHidden(false)
+    lastY = y
+    return
+  }
+
+  // Follow the page while it settles, but don't read anything into it.
+  if (now < settledAt) {
+    lastY = y
+    return
+  }
+
+  const delta = y - lastY
+  if (Math.abs(delta) < DIRECTION_DELTA) return
+  setNavHidden(delta > 0)
+  lastY = y
+}
+
+onMounted(() => {
+  lastY = Math.max(window.scrollY, 0)
+  window.addEventListener('scroll', onScroll, { passive: true })
+})
+onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
+
+/**
+ * Holds the rail open through a scroll the page made itself. Picking a
+ * category scrolls you down to the shelves, and folding the rail away on that
+ * travel would take the lit-up aisle off screen at the exact moment it
+ * started meaning something.
+ */
+function revealNav() {
+  navHidden.value = false
+  lastY = Math.max(window.scrollY, 0)
+  pinnedUntil = Date.now() + PIN_MS
+}
+
+defineExpose({ clear: () => (searchTerm.value = ''), revealNav })
 </script>
 
 <template>
@@ -152,20 +246,29 @@ defineExpose({ clear: () => (searchTerm.value = '') })
       </button>
     </header>
 
-    <nav class="fd-nav" aria-label="Shop by category">
-      <div class="fd-nav__row">
-        <a
-          v-for="cat in categories"
-          :key="cat.id"
-          :href="categoryHref(cat.id)"
-          class="fd-navcat"
-          :class="{ 'fd-navcat--on': cat.id === props.activeCategory }"
-          :aria-current="cat.id === props.activeCategory ? 'true' : undefined"
-          @click="selectCategory(cat.id, $event)"
-        >
-          <component :is="categoryIcon(cat.id)" :size="28" :stroke-width="1.5" />
-          <span>{{ cat.name }}</span>
-        </a>
+    <!-- inert while folded away: a rail you can't see shouldn't be a stop on
+         the way to the shelves for anyone tabbing through. -->
+    <nav
+      class="fd-nav"
+      :class="{ 'fd-nav--away': navHidden }"
+      :inert="navHidden"
+      aria-label="Shop by category"
+    >
+      <div class="fd-nav__clip">
+        <div class="fd-nav__row">
+          <a
+            v-for="cat in categories"
+            :key="cat.id"
+            :href="categoryHref(cat.id)"
+            class="fd-navcat"
+            :class="{ 'fd-navcat--on': cat.id === props.activeCategory }"
+            :aria-current="cat.id === props.activeCategory ? 'true' : undefined"
+            @click="selectCategory(cat.id, $event)"
+          >
+            <component :is="navIcon(cat.name)" :size="28" :stroke-width="1.5" />
+            <span>{{ cat.name }}</span>
+          </a>
+        </div>
       </div>
     </nav>
 
@@ -176,7 +279,8 @@ defineExpose({ clear: () => (searchTerm.value = '') })
 
 <style scoped>
 /* Both header rows stick as one block, so the category nav stays reachable
-   the whole way down the page. */
+   the whole way down the page — folded away while you read down it, back out
+   the moment you scroll up. */
 .fd-head {
   position: sticky;
   top: 0;
@@ -193,20 +297,51 @@ defineExpose({ clear: () => (searchTerm.value = '') })
   color: #fff;
 }
 
+/* Folded away by collapsing its own row rather than by sliding: the page below
+   has to close the gap, or the bar would leave a green void behind it. 0fr
+   measures the row out of existence while `.fd-nav__clip` crops what no longer
+   fits, which animates without anyone having to know the rail's height —
+   it changes with the breakpoint and with how the category labels wrap. */
 .fd-nav {
+  display: grid;
+  grid-template-rows: 1fr;
   background: #1a6b3c;
-  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  transition: grid-template-rows 240ms ease;
+}
+
+.fd-nav--away {
+  grid-template-rows: 0fr;
+}
+
+.fd-nav__clip {
+  min-height: 0;
+  overflow: hidden;
+  transition: opacity 160ms ease;
+}
+
+.fd-nav--away .fd-nav__clip {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fd-nav,
+  .fd-nav__clip {
+    transition: none;
+  }
 }
 
 /* Even slots so the categories span the bar; min-width tips the row into
    sideways scrolling on narrow screens rather than wrapping the header.
    min-height holds the bar open while the catalog is still loading, so the
-   page doesn't jolt down when the categories arrive. */
+   page doesn't jolt down when the categories arrive. The rule off the bar
+   rides on the row rather than on .fd-nav, so that it folds away with the
+   rail instead of leaving a hairline under a collapsed header. */
 .fd-nav__row {
   display: flex;
   align-items: stretch;
   min-height: 66px;
   padding: 0 var(--fd-gutter);
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
   overflow-x: auto;
   scrollbar-width: none;
 }

@@ -161,6 +161,15 @@ return [
             'expire' => 60,
             'throttle' => 60,
         ],
+
+        // And a third, for the same reason. A rider who also shops, or who
+        // owns the shop they ride for, is an ordinary case here.
+        'riders' => [
+            'provider' => 'riders',
+            'table' => 'rider_password_reset_tokens',
+            'expire' => 60,
+            'throttle' => 60,
+        ],
     ],
 
     /*

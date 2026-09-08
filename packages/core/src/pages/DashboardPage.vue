@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { ChevronRight, MessageSquare, Phone, RefreshCw } from '@lucide/vue'
+import { ChevronRight, MapPin, MessageSquare, Phone, RefreshCw, Undo2 } from '@lucide/vue'
 import {
   deliveryStageLabel,
   formatCurrency,
@@ -9,6 +9,9 @@ import {
   nextOrderStatus,
   orderStatusLabel,
   type OrderSummary,
+  type RecentRider,
+  type RiderPosition,
+  type SavedRider,
 } from '@pos/shared/index'
 import { usePosStore } from '@pos/core/stores/pos'
 import { useAuthStore } from '@pos/core/stores/auth'
@@ -18,6 +21,7 @@ import MetricCard from '@pos/core/components/MetricCard.vue'
 import ChartCard from '@pos/core/components/ChartCard.vue'
 import RangeSelector, { type Range } from '@pos/core/components/RangeSelector.vue'
 import SettleOnlinePaymentSheet from '@pos/core/components/SettleOnlinePaymentSheet.vue'
+import LiveDeliveryMap from '@pos/core/components/LiveDeliveryMap.vue'
 
 const store = usePosStore()
 const auth = useAuthStore()
@@ -47,6 +51,7 @@ onMounted(async () => {
   // fresh set on entry rather than trusting whatever initialize() cached.
   void refreshOrders()
   void startOrderFeed()
+  void loadRiders()
 
   syncDarkMode()
   if (typeof window !== 'undefined') {
@@ -79,7 +84,28 @@ async function startOrderFeed() {
       apiBaseUrl: apiBase,
       storeId,
       token,
-      onOrderEvent: () => { void refreshOrders() },
+      onOrderEvent: (payload, event) => {
+        // Ten seconds per delivery in flight. Reloading every order on each of
+        // those would mean a full list fetch six times a minute per rider, and
+        // would rebuild every card while the merchant was reading one.
+        if (event === 'rider.position') {
+          const fix = payload as (Partial<RiderPosition> & { orderId?: string }) | null
+          if (fix?.orderId && typeof fix.lat === 'number' && typeof fix.lng === 'number') {
+            store.applyRiderPosition(fix.orderId, {
+              lat: fix.lat,
+              lng: fix.lng,
+              headingDeg: fix.headingDeg ?? null,
+              speedKph: fix.speedKph ?? null,
+              accuracyM: fix.accuracyM ?? null,
+              at: fix.at ?? new Date().toISOString(),
+              ageSeconds: fix.ageSeconds ?? 0,
+              stale: fix.stale ?? false,
+            })
+          }
+          return
+        }
+        void refreshOrders()
+      },
     })
   } catch {
     // No live feed is fine — the page still refreshes on entry and on demand.
@@ -98,13 +124,98 @@ const refreshing = ref(false)
 const settlingOrder = ref<OrderSummary | null>(null)
 
 /** Per-order rider drafts, keyed by order id so two cards can't share a name. */
-const riderDrafts = reactive<Record<string, { name: string; phone: string }>>({})
+const riderDrafts = reactive<Record<string, { name: string; phone: string; save: boolean }>>({})
 
 function riderDraft(orderId: string) {
   if (!riderDrafts[orderId]) {
-    riderDrafts[orderId] = { name: '', phone: '' }
+    // `save` defaults on. A shop typing a name into this box almost always has
+    // a rider they will use again, and the cost of a wrong guess is one row
+    // they can delete — against retyping the same number four times a day.
+    riderDrafts[orderId] = { name: '', phone: '', save: true }
   }
   return riderDrafts[orderId]
+}
+
+// ── The shop's own riders ───────────────────────────────────────────────────
+//
+// Loaded once when the dashboard opens, and again after anything changes the
+// list. Not part of the pos store's cached state: an `online` flag is true for
+// the ten seconds it describes, and a cached one would offer a rider whose
+// phone is off.
+
+const savedRiders = ref<SavedRider[]>([])
+const recentRiders = ref<RecentRider[]>([])
+const ridersLoaded = ref(false)
+
+async function loadRiders() {
+  try {
+    const directory = await store.loadSavedRiders()
+    savedRiders.value = directory.saved
+    recentRiders.value = directory.recent
+  } catch {
+    // A local-only till has no backend to ask. The typed-in form below is the
+    // whole feature for them and still works.
+    savedRiders.value = []
+    recentRiders.value = []
+  } finally {
+    ridersLoaded.value = true
+  }
+}
+
+/** Whether a saved rider can actually be handed an order right now. */
+function riderAssignable(rider: SavedRider): boolean {
+  return !rider.onPlatform || rider.status === 'approved'
+}
+
+function assignSavedRider(order: OrderSummary, rider: SavedRider) {
+  return runOrderAction(order.id, async () => {
+    await store.notifyRider(order.id, { savedRiderId: rider.id })
+    // The picker is ordered by use, and this was one.
+    void loadRiders()
+  })
+}
+
+function keepRecentRider(rider: RecentRider) {
+  return runOrderAction(rider.riderId, async () => {
+    await store.saveRider({ riderId: rider.riderId, name: rider.name, phone: rider.phone })
+    await loadRiders()
+  })
+}
+
+function forgetRider(rider: SavedRider) {
+  return runOrderAction(rider.id, async () => {
+    await store.deleteSavedRider(rider.id)
+    await loadRiders()
+  })
+}
+
+function returnToBoard(order: OrderSummary) {
+  return runOrderAction(order.id, () => store.returnToBoard(order.id))
+}
+
+// ── The delivery map ────────────────────────────────────────────────────────
+
+/**
+ * Which rows have their map open.
+ *
+ * A dashboard with six deliveries out cannot show six maps at 260px each and
+ * still be a dashboard, so each row has a toggle. The default is open exactly
+ * when there is a live rider to watch — which is the row the merchant opened
+ * this screen to look at.
+ */
+const openMaps = reactive<Record<string, boolean>>({})
+
+function mapOpen(order: OrderSummary): boolean {
+  return openMaps[order.id] ?? (!!order.riderPosition && !order.riderPosition.stale)
+}
+
+function toggleMap(order: OrderSummary) {
+  openMaps[order.id] = !mapOpen(order)
+}
+
+/** Nothing to draw at all — no rider, no shop pin, no door pin. */
+function mappable(order: OrderSummary): boolean {
+  return !!order.riderPosition || !!order.route?.pickup?.lat || !!order.route?.dropoff?.lat
 }
 
 function isOnlineOrder(order: OrderSummary) {
@@ -154,7 +265,7 @@ const stockAlerts = computed(() =>
 
 const storeFacts = computed(() => [
   { label: 'Business', value: store.settings.businessName || 'Unnamed store' },
-  { label: 'Store code', value: store.settings.pairingCode || 'Not issued' },
+  { label: 'Shop link', value: storefrontHandle.value },
   { label: 'Sync', value: store.settings.syncMode === 'online-sync' ? 'Online' : 'Local only' },
   {
     label: 'Shift',
@@ -208,8 +319,15 @@ function notifyRider(order: OrderSummary) {
   }
 
   return runOrderAction(order.id, async () => {
-    await store.notifyRider(order.id, { riderName: name, riderPhone: draft.phone.trim() || null })
+    await store.notifyRider(order.id, {
+      riderName: name,
+      riderPhone: draft.phone.trim() || null,
+      saveRider: draft.save,
+    })
     delete riderDrafts[order.id]
+    // A number typed here may have matched a rider account, which changes what
+    // the picker offers next time. Cheaper to re-read than to guess.
+    if (draft.save) void loadRiders()
   })
 }
 
@@ -386,7 +504,16 @@ const previousRangeCaption = computed(() => {
 })
 
 const storeName = computed(() => store.settings.businessName || 'Unnamed store')
-const storeCode = computed(() => store.settings.pairingCode || 'Not issued')
+/**
+  * The shop's public handle, as it appears in its storefront link.
+  *
+  * Was the store code customers typed to find the shop, which is gone with the
+  * pairing it doubled as. The full link lives in Settings > Online Store; this
+  * strip only has room for the handle, and that is the part worth recognising.
+  */
+const storefrontHandle = computed(() =>
+  store.settings.storefrontSlug ? `/?shop=${store.settings.storefrontSlug}` : 'Not published',
+)
 const syncSummary = computed(() => store.settings.syncMode === 'online-sync' ? 'Online' : 'Local only')
 const shiftSummary = computed(() =>
   store.activeShift ? `Open - ${formatCurrency(store.activeShift.expectedCashCents)} expected` : 'Closed',
@@ -550,8 +677,8 @@ const recentOrders = computed(() =>
 
         <div class="dashboard-facts" aria-label="Store status">
           <span class="dashboard-fact">
-            <strong>Store code</strong>
-            {{ storeCode }}
+            <strong>Shop link</strong>
+            {{ storefrontHandle }}
           </span>
           <span class="dashboard-fact">
             <strong>Sync</strong>
@@ -670,28 +797,65 @@ const recentOrders = computed(() =>
             </div>
             <p class="ops-row__meta">{{ order.deliveryAddress || 'No address on the order' }}</p>
 
-            <!-- No rider yet: name whoever is taking it. There are no rider
-                 accounts, so this is the seller writing down who left with the
-                 bag — which is what the customer's tracking page then shows. -->
-            <form v-if="!order.riderName" class="ops-rider" @submit.prevent="notifyRider(order)">
-              <input
-                v-model="riderDraft(order.id).name"
-                class="ops-input"
-                type="text"
-                placeholder="Rider name"
-                autocomplete="off"
-              >
-              <input
-                v-model="riderDraft(order.id).phone"
-                class="ops-input"
-                type="tel"
-                placeholder="Mobile number"
-                autocomplete="off"
-              >
-              <button class="ops-action ops-action--primary" type="submit" :disabled="busyOrderId === order.id">
-                {{ busyOrderId === order.id ? 'Sending…' : 'Notify rider' }}
-              </button>
-            </form>
+            <!-- No rider yet. Three ways out of this state and all of them
+                 are fine: leave it on the platform board for whoever taps
+                 first, pick one of the shop's own riders, or type a name.
+                 Nothing here forces a shop onto the board, which is the whole
+                 point — a carinderia with a nephew on a tricycle is not
+                 looking for a stranger. -->
+            <template v-if="!order.riderName">
+              <div v-if="savedRiders.length" class="ops-riders">
+                <span class="ops-riders__label">Your riders</span>
+                <button
+                  v-for="rider in savedRiders"
+                  :key="rider.id"
+                  type="button"
+                  class="ops-rider-chip"
+                  :class="{ 'ops-rider-chip--off': !riderAssignable(rider) }"
+                  :disabled="busyOrderId === order.id || !riderAssignable(rider)"
+                  :title="riderAssignable(rider) ? (rider.note || rider.phone || '') : 'Their rider account is ' + rider.status"
+                  @click="assignSavedRider(order, rider)"
+                >
+                  <!-- A filled dot means the app is reporting a position, so
+                       assigning reaches a phone rather than a phone call. -->
+                  <span
+                    v-if="rider.onPlatform"
+                    class="ops-rider-chip__dot"
+                    :class="{ 'ops-rider-chip__dot--live': rider.online }"
+                    aria-hidden="true"
+                  />
+                  <span>{{ rider.name }}</span>
+                </button>
+              </div>
+
+              <form class="ops-rider" @submit.prevent="notifyRider(order)">
+                <input
+                  v-model="riderDraft(order.id).name"
+                  class="ops-input"
+                  type="text"
+                  placeholder="Rider name"
+                  autocomplete="off"
+                >
+                <input
+                  v-model="riderDraft(order.id).phone"
+                  class="ops-input"
+                  type="tel"
+                  placeholder="Mobile number"
+                  autocomplete="off"
+                >
+                <label class="ops-rider__save">
+                  <input v-model="riderDraft(order.id).save" type="checkbox">
+                  <span>Save for next time</span>
+                </label>
+                <button class="ops-action ops-action--primary" type="submit" :disabled="busyOrderId === order.id">
+                  {{ busyOrderId === order.id ? 'Sending…' : 'Notify rider' }}
+                </button>
+              </form>
+
+              <p class="ops-rider__hint">
+                Or leave it — any approved rider on the platform can pick this up from the board.
+              </p>
+            </template>
 
             <div v-else class="ops-rider ops-rider--assigned">
               <span class="ops-rider__name">{{ order.riderName }}</span>
@@ -706,6 +870,27 @@ const recentOrders = computed(() =>
                 </a>
               </template>
               <button
+                v-if="mappable(order)"
+                class="ops-action"
+                type="button"
+                @click="toggleMap(order)"
+              >
+                <MapPin :size="14" />
+                <span>{{ mapOpen(order) ? 'Hide map' : 'Track' }}</span>
+              </button>
+              <!-- Only before pickup. Once the food is in the bag, handing the
+                   order back is a phone call, and the API refuses this. -->
+              <button
+                v-if="(order.deliveryStage ?? 'pending') === 'assigned'"
+                class="ops-action"
+                type="button"
+                :disabled="busyOrderId === order.id"
+                @click="returnToBoard(order)"
+              >
+                <Undo2 :size="14" />
+                <span>Back to board</span>
+              </button>
+              <button
                 v-if="nextDeliveryStage(order.deliveryStage ?? 'pending')"
                 class="ops-action ops-action--primary"
                 type="button"
@@ -715,8 +900,51 @@ const recentOrders = computed(() =>
                 {{ deliveryStageLabel(nextDeliveryStage(order.deliveryStage ?? 'pending')!) }}
               </button>
             </div>
+
+            <LiveDeliveryMap
+              v-if="mappable(order) && mapOpen(order)"
+              class="ops-map"
+              :pickup="order.route?.pickup ?? null"
+              :dropoff="order.route?.dropoff ?? null"
+              :rider="order.riderPosition ?? null"
+              :rider-name="order.riderName"
+              :stage="order.deliveryStage ?? 'pending'"
+              :dark="darkModeEnabled"
+              height="220px"
+            />
           </li>
         </ul>
+
+        <!-- Riders who have delivered here but are not on the shop's list. The
+             shop already has their name and number off those orders; this is
+             just the one tap that stops it being retyped. -->
+        <div v-if="ridersLoaded && recentRiders.length" class="ops-riders ops-riders--recent">
+          <span class="ops-riders__label">Delivered for you before</span>
+          <button
+            v-for="rider in recentRiders"
+            :key="rider.riderId"
+            type="button"
+            class="ops-rider-chip ops-rider-chip--add"
+            :disabled="busyOrderId === rider.riderId"
+            @click="keepRecentRider(rider)"
+          >
+            + {{ rider.name }}
+          </button>
+        </div>
+
+        <div v-if="savedRiders.length" class="ops-riders ops-riders--manage">
+          <span class="ops-riders__label">Saved</span>
+          <span v-for="rider in savedRiders" :key="rider.id" class="ops-rider-saved">
+            {{ rider.name }}
+            <button
+              type="button"
+              class="ops-rider-saved__x"
+              :disabled="busyOrderId === rider.id"
+              :aria-label="'Remove ' + rider.name + ' from your riders'"
+              @click="forgetRider(rider)"
+            >&times;</button>
+          </span>
+        </div>
       </ChartCard>
     </section>
 
@@ -1259,6 +1487,115 @@ const recentOrders = computed(() =>
 .ops-rider__name {
   font: var(--type-subhead);
   font-weight: 700;
+}
+
+/* The shop's own riders, as a row of tappable chips above the typing box.
+   Assigning is one tap, which is the entire point of saving them. */
+.ops-riders {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.ops-riders__label {
+  font: var(--type-caption);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ops-riders--recent,
+.ops-riders--manage {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--separator);
+}
+
+.ops-rider-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--separator);
+  border-radius: 999px;
+  background: var(--dashboard-input-bg);
+  color: var(--text-primary);
+  font: var(--type-footnote);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ops-rider-chip:hover:not(:disabled) {
+  border-color: var(--tint);
+}
+
+/* A rider whose account is suspended still shows — the shop needs to see why
+   their usual person is not available, rather than find them silently gone. */
+.ops-rider-chip--off {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ops-rider-chip--add {
+  border-style: dashed;
+}
+
+/* Hollow: has an account but is not reporting. Filled: reporting right now,
+   so assigning them reaches a phone rather than starting a phone call. */
+.ops-rider-chip__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-secondary);
+}
+
+.ops-rider-chip__dot--live {
+  border-color: #10b981;
+  background: #10b981;
+}
+
+.ops-rider__save {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: var(--type-footnote);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.ops-rider__hint {
+  margin: 6px 0 0;
+  font: var(--type-caption);
+  color: var(--text-secondary);
+}
+
+.ops-rider-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: var(--type-footnote);
+  color: var(--text-secondary);
+}
+
+.ops-rider-saved__x {
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.ops-rider-saved__x:hover {
+  color: var(--danger, #dc2626);
+}
+
+.ops-map {
+  margin-top: 12px;
 }
 
 .ops-input {

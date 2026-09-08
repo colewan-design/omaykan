@@ -14,17 +14,6 @@ import kotlinx.serialization.Serializable
  */
 
 @Serializable
-data class ResolveStoreCodeDto(
-    val orgSlug: String,
-    val storeCode: String,
-    val businessMode: String? = null,
-    val storeName: String? = null,
-    val storeAddress: String = "",
-    val storeLat: Double? = null,
-    val storeLng: Double? = null,
-)
-
-@Serializable
 data class StoreDirectoryDto(
     val stores: List<StoreDirectoryEntryDto> = emptyList(),
 )

@@ -112,13 +112,21 @@ Web — `apps/web/.env.production` (and `.env` for local):
 VITE_GOOGLE_CLIENT_ID=<client 1, the same Web client id>
 ```
 
-Android — environment variables read at build time by
-`apps/mobile-android/app/build.gradle.kts`:
+Android — read at build time by `apps/mobile-android/app/build.gradle.kts`, from
+the environment or from `~/.gradle/gradle.properties`, whichever has it (the
+environment wins):
 
 ```bash
 OMAYKAN_GOOGLE_ANDROID_CLIENT_ID=<client 2>          # release
 OMAYKAN_GOOGLE_ANDROID_CLIENT_ID_DEBUG=<client 3>    # debug
 ```
+
+**The debug variable was documented here from the start and never read.** Until
+2026-09-08 `build.gradle.kts` set `GOOGLE_OAUTH_CLIENT_ID` once, in
+`defaultConfig`, from the release variable alone — so the debug APK carried the
+release client id and Google refused its token as issued for a different app.
+The debug build type now overrides it, falling back to the release id when the
+debug one is unset.
 
 **Every one of these may be left blank, and blank is a supported state.** The
 backend endpoint then refuses everything, the storefront ships no Google script

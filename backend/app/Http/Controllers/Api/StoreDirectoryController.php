@@ -12,16 +12,16 @@ use Illuminate\Support\Collection;
 /**
  * The public list of shops a customer can order from.
  *
- * Until now the storefront could only be reached by knowing a store code:
- * StoreCodeController resolves one code to one store, which is the flow for a
- * shopper holding a receipt or a tarpaulin. It gives a first-time visitor
- * nothing to browse, so the landing page was pinned to a single tenant at
- * build time. This is the other half — "which shops are there?" — and it is
- * what lets the landing page be a market rather than one stall.
+ * The storefront used to be reachable only by typing the code a shop handed
+ * out, which is a fine flow for a shopper holding a receipt or looking at a
+ * tarpaulin and nothing at all for a first-time visitor — the landing page was
+ * pinned to a single tenant at build time because of it. This is the other
+ * half, "which shops are there?", and since the codes were retired it is the
+ * whole of how a customer finds a shop.
  *
  * Deliberately not enumerable in the way store codes are: this returns only
  * what a shop already publishes to its own customers (name, address, pin), and
- * never the pairing code, so there is nothing here worth harvesting.
+ * and no credential of any kind, so there is nothing here worth harvesting.
  */
 class StoreDirectoryController extends Controller
 {
@@ -96,10 +96,9 @@ class StoreDirectoryController extends Controller
         return Store::query()
             ->with('organization')
             ->where('status', 'active')
-            // Only modes that can put something in a cart — the same gate
-            // StoreCodeController applies when resolving a code, so a salon
-            // does not appear in a list of places to order from.
-            ->whereIn('business_mode', StoreCodeController::ONLINE_MODES)
+            // Only modes that can put something in a cart, so a salon does not
+            // appear in a list of places to order from.
+            ->whereIn('business_mode', Store::ONLINE_MODES)
             ->whereHas('organization', function ($query) {
                 $query->where('status', 'active')
                     ->where(fn ($inner) => $inner->where('suspended', false)->orWhereNull('suspended'));

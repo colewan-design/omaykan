@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\Rider;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Support\Facades\Event;
+use Tests\Concerns\SignsInStaff;
 use Tests\TestCase;
 
 /**
@@ -19,7 +20,7 @@ use Tests\TestCase;
  */
 class RiderDeliveryApiTest extends TestCase
 {
-    use DatabaseMigrations;
+    use SignsInStaff, DatabaseMigrations;
 
     private function approvedRider(string $email = 'jun@example.com', string $name = 'Jun Dela Cruz'): string
     {
@@ -36,18 +37,6 @@ class RiderDeliveryApiTest extends TestCase
         ]);
 
         return $rider->createToken('rider-portal', ['rider'])->plainTextToken;
-    }
-
-    private function deviceToken(): string
-    {
-        return $this->postJson('/api/device-sessions', [
-            'organizationSlug' => 'demo-coffee',
-            'storeCode' => 'main',
-            'pairingCode' => '123456',
-            'deviceName' => 'Counter 1',
-            'platform' => 'web',
-            'appVersion' => '0.1.0',
-        ])->assertOk()->json('token');
     }
 
     private function placeDeliveryOrder(): string
@@ -228,7 +217,7 @@ class RiderDeliveryApiTest extends TestCase
         // Nothing about SellerOrderController changed — the columns the
         // dashboard already reads are the ones the portal writes.
         $this->app['auth']->forgetGuards();
-        $this->withHeader('Authorization', "Bearer {$this->deviceToken()}")
+        $this->withHeader('Authorization', "Bearer {$this->staffToken()}")
             ->getJson('/api/seller/online-orders')
             ->assertOk()
             ->assertJsonPath('orders.0.riderName', 'Jun Dela Cruz')

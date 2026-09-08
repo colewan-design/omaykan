@@ -7,24 +7,18 @@ use App\Models\Product;
 use App\Models\Store;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\SignsInStaff;
 use Tests\TestCase;
 
 class ShiftApiTest extends TestCase
 {
-    use RefreshDatabase;
+    use SignsInStaff, RefreshDatabase;
 
-    public function test_authenticated_device_can_open_update_and_close_a_shift(): void
+    public function test_signed_in_staff_can_open_update_and_close_a_shift(): void
     {
         $this->seed();
 
-        $login = $this->postJson('/api/device-sessions', [
-            'organizationSlug' => 'demo-coffee',
-            'storeCode' => 'main',
-            'pairingCode' => '123456',
-            'deviceName' => 'Counter 1',
-            'platform' => 'web',
-            'appVersion' => '0.1.0',
-        ])->assertOk()->json();
+        $token = $this->staffToken();
 
         $organization = Organization::query()->where('slug', 'demo-coffee')->firstOrFail();
         $store = Store::query()
@@ -33,7 +27,6 @@ class ShiftApiTest extends TestCase
             ->firstOrFail();
         $admin = User::query()->where('username', 'admin')->firstOrFail();
         $product = Product::query()->where('organization_id', $organization->id)->firstOrFail();
-        $token = $login['token'];
 
         $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/shifts/open', [

@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\ActsForAStore;
 use App\Http\Controllers\Controller;
-use App\Models\Device;
 use App\Models\Store;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -29,6 +29,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class StoreImageController extends Controller
 {
+    use ActsForAStore;
+
     /** Alongside `rider-documents/` on the same private disk. */
     private const DIRECTORY = 'store-images';
 
@@ -166,17 +168,18 @@ class StoreImageController extends Controller
     }
 
     /**
-     * The store the calling till belongs to — the same scoping rule the sync
+     * The store this session is signed in to — the same scoping rule the sync
      * and seller-order endpoints follow.
+     *
+     * The shop's photo is what customers see in the directory, so changing it
+     * is a manager's call rather than something any signed-in cashier can do.
      */
     private function storeFromRequest(Request $request): Store
     {
-        $device = $request->user();
-        abort_unless($device instanceof Device, 403, 'Authenticated device required.');
+        $context = $this->storeContext($request);
 
-        $store = Store::query()->find($device->store_id);
-        abort_if($store === null, 404, 'Store not found.');
+        abort_unless($context->isManager(), 403, 'Only an admin or manager can change the shop photo.');
 
-        return $store;
+        return $context->store;
     }
 }

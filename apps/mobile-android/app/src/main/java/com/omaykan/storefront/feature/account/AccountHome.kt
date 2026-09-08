@@ -29,7 +29,6 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material3.Badge
@@ -85,7 +84,6 @@ fun AccountHome(
     onOpenSecurity: (() -> Unit)? = null,
     onOpenSaved: (() -> Unit)? = null,
     onOpenOrders: ((OrderStage?) -> Unit)? = null,
-    onOpenShopCode: (() -> Unit)? = null,
     onOpenAbout: (() -> Unit)? = null,
     onTrackOrder: ((String) -> Unit)? = null,
     onRefresh: () -> Unit = {},
@@ -131,7 +129,6 @@ fun AccountHome(
                 onOpenSecurity = onOpenSecurity,
                 onOpenSaved = onOpenSaved,
                 onOpenOrders = onOpenOrders,
-                onOpenShopCode = onOpenShopCode,
                 onOpenAbout = onOpenAbout,
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
@@ -602,7 +599,6 @@ private fun ShortcutGrid(
     onOpenSecurity: (() -> Unit)?,
     onOpenSaved: (() -> Unit)?,
     onOpenOrders: ((OrderStage?) -> Unit)?,
-    onOpenShopCode: (() -> Unit)?,
     onOpenAbout: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
@@ -630,7 +626,6 @@ private fun ShortcutGrid(
                 summary.active.takeIf { n -> n > 0 },
             ) { open(null) }
         },
-        onOpenShopCode?.let { Shortcut("Shop code", Icons.Filled.QrCode2, null, it) },
         onOpenAbout?.let { Shortcut("About", Icons.Filled.Info, null, it) },
     )
 
@@ -684,7 +679,6 @@ fun AccountGuestShortcuts(
     modifier: Modifier = Modifier,
     onOpenSaved: (() -> Unit)? = null,
     onOpenOrders: (() -> Unit)? = null,
-    onOpenShopCode: (() -> Unit)? = null,
     onOpenAbout: (() -> Unit)? = null,
 ) {
     val tiles = listOfNotNull(
@@ -692,7 +686,6 @@ fun AccountGuestShortcuts(
             Shortcut("Saved", Icons.Filled.FavoriteBorder, savedCount.takeIf { n -> n > 0 }, it)
         },
         onOpenOrders?.let { Shortcut("Orders", Icons.AutoMirrored.Filled.ReceiptLong, null, it) },
-        onOpenShopCode?.let { Shortcut("Shop code", Icons.Filled.QrCode2, null, it) },
         onOpenAbout?.let { Shortcut("About", Icons.Filled.Info, null, it) },
     )
 

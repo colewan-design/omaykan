@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { Check, Copy, Eye, EyeOff } from '@lucide/vue'
-import { reactive, ref } from 'vue'
+import { Check, Eye, EyeOff } from '@lucide/vue'
+import { onBeforeUnmount, reactive, ref, watch } from 'vue'
 import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import BrandLogo from '@pos/core/components/BrandLogo.vue'
 import { businessModeLabel, SUPPORT_EMAIL, supportMailto, type BusinessMode } from '@pos/shared/index'
-import { writePendingInitialSettings, writePendingPairingCode, writeStaffTenant } from '@pos/web/tenantBinding'
+import { googleSignInAvailable, releaseGoogleButton, renderGoogleButton } from '@pos/web/commerce/google'
+import { writePendingInitialSettings, writeStaffTenant } from '@pos/web/tenantBinding'
 import MerchantFooter from './MerchantFooter.vue'
 import MerchantHeader from './MerchantHeader.vue'
 import MerchantPitch from './MerchantPitch.vue'
 
-const mode = ref<'signup' | 'pair'>('signup')
+const mode = ref<'signup' | 'signin'>('signup')
 const saving = ref(false)
 const errorMessage = ref('')
 const passwordVisible = ref(false)
@@ -32,15 +33,34 @@ const signupForm = reactive({
 })
 const lastSuggestedBusinessType = ref(signupForm.businessTypeLabel)
 
-const pairForm = reactive({
-  pairingCode: '',
+const signInForm = reactive({
+  identifier: '',
+  password: '',
 })
 
-// Set once signup succeeds, holding the UI on a confirmation step (instead of
-// redirecting straight to /app) so the owner actually sees the code their
-// customers will need — it's otherwise never shown anywhere else on first run.
-const createdPairingCode = ref('')
-const codeCopied = ref(false)
+/**
+ * The shops a sign-in turned up, when there is more than one.
+ *
+ * A person who works at one shop never sees this. A manager covering three
+ * does, because the alternative — picking the first — binds this browser to a
+ * branch they may not have meant and every order they advance afterwards is at
+ * the wrong counter.
+ */
+interface SignInStore {
+  id: string
+  code: string
+  name: string
+  organizationSlug: string
+}
+const storeChoices = ref<SignInStore[]>([])
+
+// Set once signup succeeds, holding the UI on a confirmation step rather than
+// redirecting straight to /app: the owner has an email to go and verify before
+// they can sign in, and that instruction is worth a page of its own.
+const signedUp = ref(false)
+
+const googleAvailable = googleSignInAvailable()
+const googleButton = ref<HTMLElement | null>(null)
 
 function clearError() {
   errorMessage.value = ''
@@ -80,6 +100,19 @@ function bindAndEnter(
   return true
 }
 
+/**
+ * Bind this browser to one shop and hand over to the register.
+ *
+ * Signing in here does not carry a session into /app — the register asks for
+ * the password again on its own lock screen, and that is the point: this page
+ * decides *which shop* this browser is, and the register decides who is
+ * standing at it. What crosses over is the tenant binding and nothing else.
+ */
+function enterStore(store: SignInStore) {
+  writeStaffTenant({ organizationSlug: store.organizationSlug, storeCode: store.code })
+  window.location.href = '/app'
+}
+
 async function submitSignup() {
   clearError()
   if (saving.value) return
@@ -101,7 +134,6 @@ async function submitSignup() {
     const body = await response.json().catch(() => ({})) as {
       organizationSlug?: string
       storeCode?: string
-      pairingCode?: string
       error?: string
       message?: string
     }
@@ -115,9 +147,8 @@ async function submitSignup() {
       writePendingInitialSettings({
         businessName: signupForm.businessName,
         businessMode: signupForm.businessMode,
-        pairingCode: body.pairingCode ?? '',
       })
-      createdPairingCode.value = body.pairingCode ?? ''
+      signedUp.value = true
       window.scrollTo({ top: 0 })
     }
   } catch {
@@ -127,63 +158,108 @@ async function submitSignup() {
   }
 }
 
-async function copyPairingCode() {
-  try {
-    await navigator.clipboard.writeText(createdPairingCode.value)
-    codeCopied.value = true
-    setTimeout(() => { codeCopied.value = false }, 2000)
-  } catch {
-    // Clipboard permission denied — the code is still shown on screen to copy manually.
-  }
-}
-
 function continueToStore() {
   window.location.href = '/app'
 }
 
-async function submitPairing() {
+/**
+ * Sign in and find out which shops this account can open.
+ *
+ * This replaced "add a device", which took the shop's code: one string that
+ * both found the shop and let a till join it, so anyone who could read a
+ * receipt could add themselves a register. The proof is a person now.
+ */
+async function submitSignIn() {
   clearError()
   if (saving.value) return
   saving.value = true
+  storeChoices.value = []
   try {
-    const response = await fetch('/api/store-codes/resolve-staff', {
+    await consumeSignIn(await fetch('/api/staff/sign-in', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: pairForm.pairingCode }),
-    })
-    const body = await response.json().catch(() => ({})) as {
-      organizationSlug?: string
-      storeCode?: string
-      error?: string
-      message?: string
-    }
-    if (!response.ok) {
-      errorMessage.value = messageFrom(body, 'Unable to find that store.')
-      return
-    }
-    if (bindAndEnter(body, 'Unable to find that store.')) {
-      // Hand the code to main.ts so this device can open a backend sync
-      // session, without resetting the existing store's own settings.
-      writePendingPairingCode(pairForm.pairingCode)
-      window.location.href = '/app'
-    }
+      body: JSON.stringify(signInForm),
+    }))
   } catch {
     errorMessage.value = 'Something went wrong — check your connection and try again.'
   } finally {
     saving.value = false
   }
 }
+
+async function signInWithGoogle(credential: string) {
+  clearError()
+  if (saving.value) return
+  saving.value = true
+  storeChoices.value = []
+  try {
+    await consumeSignIn(await fetch('/api/staff/auth/google', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential }),
+    }))
+  } catch {
+    errorMessage.value = 'Something went wrong — check your connection and try again.'
+  } finally {
+    saving.value = false
+  }
+}
+
+/** Both sign-in doors end here: one shop goes straight through, several ask. */
+async function consumeSignIn(response: Response) {
+  const body = await response.json().catch(() => ({})) as {
+    stores?: SignInStore[]
+    error?: string
+    message?: string
+  }
+
+  if (!response.ok) {
+    errorMessage.value = messageFrom(body, 'That sign-in did not work.')
+    return
+  }
+
+  const stores = body.stores ?? []
+
+  if (stores.length === 0) {
+    errorMessage.value = "This account isn't set up for any shop yet. Ask an admin to add you in Staff."
+    return
+  }
+
+  if (stores.length === 1) {
+    enterStore(stores[0])
+    return
+  }
+
+  storeChoices.value = stores
+}
+
+/**
+ * Google's button is an iframe it draws itself, so it can only be rendered once
+ * the element exists — which is after the sign-in tab is shown, not on mount.
+ */
+watch([mode, googleButton], async () => {
+  if (mode.value !== 'signin' || !googleAvailable || !googleButton.value) return
+
+  try {
+    await renderGoogleButton(googleButton.value, signInWithGoogle)
+  } catch {
+    // Blocked, offline, or misconfigured. Password sign-in is unaffected and
+    // the empty slot simply collapses.
+  }
+})
+
+onBeforeUnmount(() => releaseGoogleButton(signInWithGoogle))
 </script>
 
 <template>
   <div class="onboarding-shell">
-    <MerchantHeader :compact="Boolean(createdPairingCode)" />
+    <MerchantHeader :compact="signedUp" />
 
     <!-- Before signup: the merchant pitch, with the form handed to its closing
          section so the two sit side by side rather than the form floating on a
          blank field below the story. After signup they're a customer, not a
-         prospect — the pitch comes down and the store code is the whole page. -->
-    <MerchantPitch v-if="!createdPairingCode">
+         prospect — the pitch comes down and what to do next is the whole page. -->
+    <MerchantPitch v-if="!signedUp">
       <template #form>
         <!-- .auth-page carries the green form palette every control inside
              reads; --inline drops its full-screen framing so it can sit in the
@@ -205,11 +281,11 @@ async function submitPairing() {
               </button>
               <button
                 class="segment-button"
-                :class="{ active: mode === 'pair' }"
+                :class="{ active: mode === 'signin' }"
                 type="button"
-                @click="mode = 'pair'; clearError()"
+                @click="mode = 'signin'; clearError()"
               >
-                <span>Add a device</span>
+                <span>Sign in</span>
               </button>
             </div>
 
@@ -218,8 +294,8 @@ async function submitPairing() {
               <p class="auth-card__copy">Live on the app and ready to ring up sales in about a minute.</p>
             </div>
             <div v-else class="auth-card__hero">
-              <h1 class="auth-card__title">Add a device</h1>
-              <p class="auth-card__copy">Already have a store? Enter its code to set this device up as another register.</p>
+              <h1 class="auth-card__title">Sign in</h1>
+              <p class="auth-card__copy">Already work somewhere on Omaykan? Sign in and this browser opens that shop.</p>
             </div>
 
             <Transition name="auth-form-fade" mode="out-in">
@@ -308,15 +384,39 @@ async function submitPairing() {
                 </button>
               </form>
 
-              <form v-else key="pair" class="auth-form" @submit.prevent="submitPairing">
-                <label class="settings-field">
-                  <span class="settings-row__label">Store code</span>
-                  <input v-model="pairForm.pairingCode" class="sheet-input" type="text" autocomplete="off" placeholder="e.g. DEMO01" required>
-                  <span class="onboarding-hint">Find it in Settings on a device that's already set up.</span>
-                </label>
-                <button class="primary-button auth-submit" type="submit" :disabled="saving">
-                  {{ saving ? 'Connecting…' : 'Continue' }}
-                </button>
+              <form v-else key="signin" class="auth-form" @submit.prevent="submitSignIn">
+                <!-- Several shops: the sign-in worked, and the only thing left
+                     is which counter this browser is standing at. -->
+                <template v-if="storeChoices.length">
+                  <p class="onboarding-hint">You work at more than one shop. Which is this one?</p>
+                  <button
+                    v-for="store in storeChoices"
+                    :key="store.id"
+                    class="primary-button auth-submit"
+                    type="button"
+                    @click="enterStore(store)"
+                  >
+                    {{ store.name }}
+                  </button>
+                </template>
+
+                <template v-else>
+                  <label class="settings-field">
+                    <span class="settings-row__label">Username or email</span>
+                    <input v-model="signInForm.identifier" class="sheet-input" type="text" autocomplete="username" required>
+                  </label>
+                  <label class="settings-field">
+                    <span class="settings-row__label">Password</span>
+                    <input v-model="signInForm.password" class="sheet-input" type="password" autocomplete="current-password" required>
+                  </label>
+                  <button class="primary-button auth-submit" type="submit" :disabled="saving">
+                    {{ saving ? 'Signing in…' : 'Sign in' }}
+                  </button>
+
+                  <!-- Absent entirely on a build with no client id, rather than
+                       a dead button: see commerce/google.ts. -->
+                  <div v-if="googleAvailable" ref="googleButton" class="onboarding-google"></div>
+                </template>
               </form>
             </Transition>
 
@@ -330,7 +430,7 @@ async function submitPairing() {
       </template>
     </MerchantPitch>
 
-    <!-- Success: the store code is the only thing on screen worth reading. -->
+    <!-- Success: one instruction, which is to go and read their email. -->
     <div v-else class="auth-page onboarding-done">
       <section class="auth-card">
         <div class="auth-brand">
@@ -344,24 +444,16 @@ async function submitPairing() {
           </span>
           <h1 class="auth-card__title">You're live on Omaykan.</h1>
           <p class="auth-card__copy">
-            Share this store code with your customers — they enter it in the Omaykan app to find your
-            shop and order from it. Verify the email we just sent before signing in. It's in Settings whenever you need it again.
+            Verify the email we just sent, then sign in with the account you just made. Your shop
+            has its own page and its own link — both are in Settings &rsaquo; Online Store.
           </p>
         </div>
 
-        <div class="onboarding-code">
-          <span class="onboarding-code__value">{{ createdPairingCode }}</span>
-          <button class="auth-password-toggle onboarding-code__copy" type="button" @click="copyPairingCode">
-            <Check v-if="codeCopied" :size="16" />
-            <Copy v-else :size="16" />
-            <span>{{ codeCopied ? 'Copied' : 'Copy code' }}</span>
-          </button>
-        </div>
-
         <ol class="onboarding-next">
+          <li>Verify your email address, so you can sign in.</li>
           <li>Add your products, or edit the starter catalog we set up for you.</li>
           <li>Ring up your first sale at the counter.</li>
-          <li>Hand the code to customers so they can order for delivery.</li>
+          <li>Add whoever works with you under Staff — they sign in as themselves.</li>
         </ol>
 
         <button class="primary-button auth-submit" type="button" @click="continueToStore">

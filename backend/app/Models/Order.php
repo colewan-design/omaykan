@@ -141,6 +141,61 @@ class Order extends Model
     }
 
     /**
+     * Where the rider is, but only while they are carrying this order.
+     *
+     * The same gate as the phone number and for a stronger version of the same
+     * reason. A phone number leaked after the handover is a nuisance; a live
+     * position leaked after the handover is a person's movements for the rest
+     * of their shift, readable by anyone who was ever forwarded this tracking
+     * link. So the disclosure is bounded twice over — by the stage, and by the
+     * fact that a rider only ever reports at all while an order is open.
+     *
+     * A rider typed in at the till has no `rider_id` and therefore no position.
+     * The map falls back to shop and door, which is all it ever had for them.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function riderPositionForCustomer(): ?array
+    {
+        if (! in_array($this->delivery_stage, self::RIDER_CONTACTABLE_STAGES, true)) {
+            return null;
+        }
+
+        $rider = $this->relationLoaded('rider') ? $this->getRelation('rider') : $this->rider;
+
+        return $rider?->positionArray();
+    }
+
+    /**
+     * The two fixed ends of the trip: the shop, and the door.
+     *
+     * Both go to the customer. The shop's address and coordinates are already
+     * public on its storefront, and the destination is the customer's own
+     * address — neither is a disclosure, and without them a live map is a dot
+     * moving across an empty city.
+     *
+     * @return array<string, mixed>
+     */
+    public function routeEndpointsArray(): array
+    {
+        $store = $this->relationLoaded('store') ? $this->getRelation('store') : $this->store;
+
+        return [
+            'pickup' => [
+                'name' => $store?->name,
+                'address' => $store?->address,
+                'lat' => $store?->lat !== null ? (float) $store->lat : null,
+                'lng' => $store?->lng !== null ? (float) $store->lng : null,
+            ],
+            'dropoff' => [
+                'address' => $this->delivery_address,
+                'lat' => $this->delivery_lat !== null ? (float) $this->delivery_lat : null,
+                'lng' => $this->delivery_lng !== null ? (float) $this->delivery_lng : null,
+            ],
+        ];
+    }
+
+    /**
      * The customer's own view of an order: enough to track it, nothing that
      * would matter if the link were forwarded.
      *
@@ -156,7 +211,10 @@ class Order extends Model
      */
     public function toTrackedArray(): array
     {
-        $this->loadMissing('items');
+        // The rider is loaded for the position, the store for the pickup pin.
+        // Both are needed by the map on the tracking page and neither is worth
+        // a second round trip to fetch.
+        $this->loadMissing('items', 'rider', 'store');
 
         return [
             'orderId' => $this->id,
@@ -173,6 +231,8 @@ class Order extends Model
             'deliveryStage' => $this->delivery_stage,
             'riderName' => $this->rider_name,
             'riderPhone' => $this->riderPhoneForCustomer(),
+            'riderPosition' => $this->riderPositionForCustomer(),
+            'route' => $this->routeEndpointsArray(),
             'placedAt' => $this->created_at?->toIso8601String(),
             'items' => $this->items->map(fn ($item) => [
                 'productId' => $item->product_id ?? '',

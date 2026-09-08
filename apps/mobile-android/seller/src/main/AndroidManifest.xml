@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
+      From API 33 a notification is something the user grants, not something an
+      app takes. The permission is requested the first time the orders screen
+      opens, not on launch: asking before the merchant has seen what this app
+      is for is how the prompt gets dismissed forever.
+
+      Denied is a supported state. The list still refreshes and still shows the
+      new order at the top — the alert is what is lost, not the work.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
+      The watcher. Held only while the merchant has the switch on, and declared
+      as dataSync because that is what it does: it keeps one polling loop alive
+      so a shop hears about an order with the app in the background.
+
+      FOREGROUND_SERVICE_DATA_SYNC is the API 34+ half of the same grant. Both
+      are install-time permissions, not runtime ones — the user's control over
+      this is the switch in the app and the Stop button on the notification.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <application
+        android:name=".SellerApp"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.OmaykanSeller.Starting">
+
+        <!--
+          One screen activity, no deep links, and nothing exported but the
+          launcher and the OAuth redirect below. Every screen here is behind a
+          signed-in session, so there is no URL worth honouring from outside.
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.OmaykanSeller.Starting"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          Where Google's OAuth redirect lands, and the only exported thing here
+          besides the launcher.
+
+          Its own activity, not a filter on MainActivity: a custom-scheme filter
+          is a public entry point that anything on the phone can fire an intent
+          at, and none of that should be able to walk in through the merchant's
+          order list. Nothing arriving here is believed until GoogleAuthFlow has
+          matched the `state` it issued.
+
+          The scheme is ${applicationId}, which AGP substitutes per variant — so
+          the debug build (.debug) redirects somewhere the release build does
+          not, matching the two separate OAuth clients the Google console
+          requires for two differently-signed packages.
+
+          singleTask is what dismisses the Custom Tab: the tab was launched into
+          this app's task, and bringing this activity forward clears it rather
+          than leaving the merchant looking at a browser page.
+        -->
+        <activity
+            android:name=".core.auth.GoogleAuthRedirectActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <!--
+                  No android:host, and lint is right that there is none: the
+                  redirect URI is `com.omaykan.seller:/oauth2redirect`, a
+                  private-use scheme with no authority component (RFC 8252),
+                  which is the form Google's console derives for an Android
+                  OAuth client. Adding a host would change the URI and break
+                  the registration.
+
+                  The consequence, stated because it is easy to misread the
+                  line below: **Android ignores android:path when there is no
+                  host**, so this filter matches any URI on the scheme, not
+                  just /oauth2redirect. The path here is documentation. What
+                  actually stops a hostile intent is the `state` comparison in
+                  GoogleAuthFlow.readRedirect, which runs before anything in
+                  the URI is believed.
+                -->
+                <data
+                    android:scheme="${applicationId}"
+                    android:path="/oauth2redirect"
+                    tools:ignore="AppLinkUrlError" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          Not exported: nothing outside this app may start the watcher. The two
+          things that legitimately do — the switch on the orders screen, and the
+          Stop action on the service's own notification — are both this app.
+        -->
+        <service
+            android:name=".core.notify.OrderWatchService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+    </application>
+
+</manifest>

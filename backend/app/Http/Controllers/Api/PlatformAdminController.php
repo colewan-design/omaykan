@@ -120,9 +120,10 @@ class PlatformAdminController extends Controller
                     'name' => $store->name,
                     'businessMode' => $store->business_mode,
                     'businessTypeLabel' => $this->businessTypeLabelFor($store),
-                    // Readable because it is a public identifier, not the
-                    // pairing secret — see the store discovery migration.
-                    'pairingCode' => $store->public_store_code,
+                    // The branch slug, not a credential. The shop-wide pairing
+                    // code that used to sit here was retired with device
+                    // pairing; staff sign in as themselves now.
+                    'storeCode' => $store->code,
                 ],
                 'subscription' => $subscription === null ? null : [
                     'status' => $subscription->status,

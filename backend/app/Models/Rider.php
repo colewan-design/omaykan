@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Notifications\RiderPasswordReset;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -76,6 +77,12 @@ class Rider extends Authenticatable
             'password' => 'hashed',
             'reviewed_at' => 'datetime',
             'last_seen_at' => 'datetime',
+            'position_updated_at' => 'datetime',
+            'last_lat' => 'float',
+            'last_lng' => 'float',
+            'last_heading_deg' => 'float',
+            'last_speed_kph' => 'float',
+            'last_accuracy_m' => 'float',
         ];
     }
 
@@ -95,10 +102,87 @@ class Rider extends Authenticatable
         return $this->status === self::STATUS_APPROVED;
     }
 
+    /**
+     * The framework's default links at a named `web` route this application
+     * does not have — there is no Blade password page anywhere, only the Vue
+     * portals — so the notification builds its own URL. Overridden here rather
+     * than configured, exactly as CustomerAccount does it.
+     */
+    public function sendPasswordResetNotification(#[\SensitiveParameter] $token): void
+    {
+        $this->notify(new RiderPasswordReset($token));
+    }
+
     /** Orders this rider has claimed, at any stage. */
     public function orders(): HasMany
     {
         return $this->hasMany(Order::class);
+    }
+
+    /**
+     * A fix older than this is not a position, it is a memory.
+     *
+     * The app pings every ten seconds while it is carrying something, so two
+     * minutes is a dozen missed pings — a phone in a dead spot, a killed
+     * process, a flat battery. Past that the map stops drawing a moving rider
+     * and says when it last heard from them, which is the honest thing to show
+     * a customer watching a marker that has stopped.
+     */
+    public const POSITION_STALE_AFTER_SECONDS = 120;
+
+    /** Orders this rider is physically carrying right now. */
+    public function activeOrders(): HasMany
+    {
+        return $this->orders()->whereIn('delivery_stage', ['assigned', 'picked_up']);
+    }
+
+    /** Saved-rider rows across every shop that keeps this rider on file. */
+    public function savedBy(): HasMany
+    {
+        return $this->hasMany(StoreSavedRider::class);
+    }
+
+    /** Whether there is a fix recent enough to draw. */
+    public function isReportingPosition(): bool
+    {
+        return $this->last_lat !== null
+            && $this->last_lng !== null
+            && $this->position_updated_at !== null
+            && $this->position_updated_at->gt(now()->subSeconds(self::POSITION_STALE_AFTER_SECONDS));
+    }
+
+    /**
+     * The last fix, or null if there has never been one.
+     *
+     * Deliberately returns a stale fix rather than hiding it, with `stale` set
+     * and `ageSeconds` alongside — the caller decides. A customer whose rider
+     * dropped off the network eight minutes ago is far better served by "last
+     * seen here, 8 minutes ago" than by an empty map, and a shop deciding
+     * whether to ring needs exactly that number.
+     *
+     * This is never reached through the rider's own account. Only an order they
+     * are carrying discloses it, and only to that order's two parties.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function positionArray(): ?array
+    {
+        if ($this->last_lat === null || $this->last_lng === null || $this->position_updated_at === null) {
+            return null;
+        }
+
+        $age = $this->position_updated_at->diffInSeconds(now());
+
+        return [
+            'lat' => (float) $this->last_lat,
+            'lng' => (float) $this->last_lng,
+            'headingDeg' => $this->last_heading_deg !== null ? (float) $this->last_heading_deg : null,
+            'speedKph' => $this->last_speed_kph !== null ? (float) $this->last_speed_kph : null,
+            'accuracyM' => $this->last_accuracy_m !== null ? (float) $this->last_accuracy_m : null,
+            'at' => $this->position_updated_at->toIso8601String(),
+            'ageSeconds' => (int) $age,
+            'stale' => $age > self::POSITION_STALE_AFTER_SECONDS,
+        ];
     }
 
     /**
@@ -138,6 +222,7 @@ class Rider extends Authenticatable
                 ->where('delivery_stage', 'delivered')
                 ->count(),
             'lastSeenAt' => $this->last_seen_at?->toIso8601String(),
+            'reportingPosition' => $this->isReportingPosition(),
         ];
     }
 }

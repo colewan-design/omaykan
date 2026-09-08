@@ -4,7 +4,7 @@ import type { BusinessMode } from '@pos/shared/index'
 // talks to. Absent by default — src/main.ts falls back to the build-time
 // VITE_POS_ORGANIZATION_SLUG/VITE_POS_STORE_CODE env vars, which is the
 // production deployment's single hardcoded tenant. This key only gets set
-// after a browser explicitly signs up or pairs via src/onboarding, so
+// after a browser explicitly signs up or signs in via src/onboarding, so
 // existing browsers/deployments are completely unaffected.
 export const STAFF_TENANT_STORAGE_KEY = 'pos_staff_tenant'
 
@@ -33,15 +33,14 @@ export function readStaffTenant(): StaffTenant | null {
 // One business per store owner, for now: whatever they entered on the
 // signup form (business name/type) becomes that store's actual settings on
 // first boot, instead of landing on empty defaults they'd have to redo in
-// Settings. Only written on signup, not on pairing an existing store — a
-// store that already exists already has its own settings, and re-pairing a
-// second device for it must not reset them.
+// Settings. Only written on signup, never when an existing account signs in —
+// a store that already exists already has its own settings, and a second
+// browser opening it must not reset them.
 const PENDING_INITIAL_SETTINGS_KEY = 'pos_staff_pending_settings'
 
 export interface PendingInitialSettings {
   businessName: string
   businessMode: BusinessMode
-  pairingCode: string
 }
 
 export function writePendingInitialSettings(settings: PendingInitialSettings) {
@@ -56,29 +55,10 @@ export function consumePendingInitialSettings(): PendingInitialSettings | null {
     window.localStorage.removeItem(PENDING_INITIAL_SETTINGS_KEY)
     const parsed = JSON.parse(raw) as Partial<PendingInitialSettings>
     return parsed.businessName && parsed.businessMode
-      ? { businessName: parsed.businessName, businessMode: parsed.businessMode, pairingCode: parsed.pairingCode ?? '' }
+      ? { businessName: parsed.businessName, businessMode: parsed.businessMode }
       : null
   } catch {
     return null
   }
 }
 
-// Pairing an *existing* store must not reset its business identity, so it can't
-// reuse PendingInitialSettings — it only needs to hand main.ts the store's
-// pairing code so the device can open a backend sync session. Read-and-clear.
-const PENDING_PAIRING_CODE_KEY = 'pos_staff_pending_pairing'
-
-export function writePendingPairingCode(code: string) {
-  window.localStorage.setItem(PENDING_PAIRING_CODE_KEY, code)
-}
-
-export function consumePendingPairingCode(): string | null {
-  try {
-    const code = window.localStorage.getItem(PENDING_PAIRING_CODE_KEY)
-    if (!code) return null
-    window.localStorage.removeItem(PENDING_PAIRING_CODE_KEY)
-    return code
-  } catch {
-    return null
-  }
-}

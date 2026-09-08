@@ -5,51 +5,46 @@ namespace Tests\Feature\Api;
 use App\Models\Organization;
 use App\Models\Store;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\SignsInStaff;
 use Tests\TestCase;
 
 class SyncApiTest extends TestCase
 {
-    use RefreshDatabase;
+    use SignsInStaff, RefreshDatabase;
 
-    public function test_device_can_create_a_session_and_receive_a_token(): void
+    public function test_staff_can_sign_in_choose_a_store_and_receive_a_token(): void
     {
         $this->seed();
 
-        $response = $this->postJson('/api/device-sessions', [
-            'organizationSlug' => 'demo-coffee',
-            'storeCode' => 'main',
-            'pairingCode' => '123456',
-            'deviceName' => 'Counter 1',
-            'platform' => 'web',
-            'appVersion' => '0.1.0',
-        ]);
+        $signIn = $this->postJson('/api/staff/sign-in', [
+            'identifier' => 'admin',
+            'password' => 'password',
+        ])->assertOk();
+
+        $response = $this->withToken($signIn->json('token'))
+            ->postJson('/api/staff/session-store', [
+                'storeId' => $signIn->json('stores.0.id'),
+            ]);
 
         $response
             ->assertOk()
             ->assertJsonStructure([
                 'token',
-                'device' => ['id', 'name', 'platform', 'appVersion'],
-                'store' => ['id', 'name', 'code'],
-                'organization' => ['id', 'name', 'slug'],
-            ]);
+                'user' => ['id', 'fullName', 'roleId'],
+                'store' => ['id', 'name', 'code', 'organizationSlug'],
+            ])
+            ->assertJsonPath('store.code', 'main')
+            ->assertJsonPath('user.roleId', 'admin');
     }
 
     public function test_authenticated_device_can_bootstrap_and_push_orders(): void
     {
         $this->seed();
 
-        $login = $this->postJson('/api/device-sessions', [
-            'organizationSlug' => 'demo-coffee',
-            'storeCode' => 'main',
-            'pairingCode' => '123456',
-            'deviceName' => 'Counter 1',
-            'platform' => 'web',
-            'appVersion' => '0.1.0',
-        ])->assertOk()->json();
+        $token = $this->staffToken();
 
         $organization = Organization::query()->where('slug', 'demo-coffee')->firstOrFail();
         $store = Store::query()->where('organization_id', $organization->id)->where('code', 'main')->firstOrFail();
-        $token = $login['token'];
 
         $this->withHeader('Authorization', "Bearer {$token}")
             ->getJson('/api/sync/bootstrap')
@@ -134,18 +129,10 @@ class SyncApiTest extends TestCase
     {
         $this->seed();
 
-        $login = $this->postJson('/api/device-sessions', [
-            'organizationSlug' => 'demo-coffee',
-            'storeCode' => 'main',
-            'pairingCode' => '123456',
-            'deviceName' => 'Counter 1',
-            'platform' => 'web',
-            'appVersion' => '0.1.0',
-        ])->assertOk()->json();
+        $token = $this->staffToken();
 
         $organization = Organization::query()->where('slug', 'demo-coffee')->firstOrFail();
         $store = Store::query()->where('organization_id', $organization->id)->where('code', 'main')->firstOrFail();
-        $token = $login['token'];
 
         $bootstrap = $this->withHeader('Authorization', "Bearer {$token}")
             ->getJson('/api/sync/bootstrap')

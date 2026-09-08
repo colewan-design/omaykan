@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { Bike, Link2, MessageCircle, Monitor, PhilippinePeso, QrCode, Smartphone, Store } from '@lucide/vue'
 import ParticleField from '@pos/web/landing/ParticleField.vue'
 import { vReveal } from '@pos/web/landing/reveal'
 import PartnerCarousel from './PartnerCarousel.vue'
@@ -30,23 +31,26 @@ function onHeroPointerLeave() {
 const reduceMotion =
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-const steps = [
-  {
-    title: 'Create your store',
-    body: 'Business name, your name, a password. Pick your business type — café, grocery, restaurant, or nail salon — and the catalog, layout, and checkout adapt to it.',
-  },
-  {
-    title: 'Add your products',
-    body: 'Start from a ready-made catalog for your business type, then change prices and add your own. What you list is exactly what customers see online.',
-  },
-  {
-    title: 'Share your store code',
-    body: "You get a short code the moment you sign up. Customers enter it in the Omaykan app to find your shop — it's in Settings whenever you need it again.",
-  },
-  {
-    title: 'Take orders, both ways',
-    body: 'Walk-ins ring up at the register. Online orders arrive in the same queue, a rider collects them, and both land in the same day’s numbers.',
-  },
+// The four "How it works" steps used to be this array rendered through one
+// v-for. Each card carries its own illustration now, and no two are alike, so
+// the markup is written out per step rather than branching four ways inside a
+// loop — the same way the cards in the two sections either side of it are.
+//
+// The shelf photos the second and third cards are built from are the real
+// storefront product images, not stock art: /public/products is what a shop's
+// catalog actually looks like, so the picture of "add your products" is made of
+// products. They are decorative, lazily loaded, and always the same handful, so
+// the third card's copies cost nothing over the second's.
+// Chosen for weight rather than appetite: these are drained to grey behind the
+// subject, and a white product on a white backdrop (the milk, the eggs) greys
+// out to nothing at all. Also the five smallest files that do the job — they
+// are decoration, and the page already carries a 2.4MB recording.
+const shelf = [
+  '/products/bananas.jpg',
+  '/products/latte.jpg',
+  '/products/bread-loaf.jpg',
+  '/products/cold-brew.jpg',
+  '/products/spring-rolls.jpg',
 ]
 </script>
 
@@ -168,21 +172,118 @@ const steps = [
     </section>
 
     <!-- ── How it works ──────────────────────────────────────────────── -->
-    <section id="how" class="pm-band pm-band--dark">
+    <section id="how" class="pm-band pm-band--surface">
       <div class="pm-container">
         <header class="pm-head">
-          <p v-reveal class="pm-eyebrow pm-eyebrow--onDark">How it works</p>
-          <h2 v-reveal="60" class="pm-h2 pm-h2--onDark">From sign-up to your first order.</h2>
-          <p v-reveal="120" class="pm-head-sub pm-head-sub--onDark">
+          <p v-reveal class="pm-eyebrow pm-eyebrow--pill">How it works</p>
+          <h2 v-reveal="60" class="pm-h2">
+            From sign-up to your <span class="accent">first order</span>.
+          </h2>
+          <p v-reveal="120" class="pm-head-sub">
             Four steps, all of them yours to do. Nobody has to approve you first.
           </p>
         </header>
 
+        <!-- Every card is art on top, copy underneath. The art bleeds to the
+             card's edges — the shelf photos are meant to run off the sides,
+             which is what stops four square panels reading as four more
+             boxes. Each one is aria-hidden: it draws the sentence below it and
+             says nothing a reader would miss. -->
         <ol class="pm-steps">
-          <li v-for="(step, i) in steps" :key="step.title" v-reveal="i * 60" class="pm-step">
-            <span class="pm-step__num">{{ String(i + 1).padStart(2, '0') }}</span>
-            <h3 class="pm-step__title">{{ step.title }}</h3>
-            <p class="pm-step__body">{{ step.body }}</p>
+          <li v-reveal class="pm-step">
+            <div class="pm-step__art pm-art--radiate" aria-hidden="true">
+              <span class="pm-art__ring pm-art__ring--1"></span>
+              <span class="pm-art__ring pm-art__ring--2"></span>
+              <span class="pm-art__ring pm-art__ring--3"></span>
+              <span class="pm-art__badge"><Store :size="24" :stroke-width="2" /></span>
+            </div>
+            <div class="pm-step__text">
+              <span class="pm-step__num">Step 1</span>
+              <h3 class="pm-step__title">Create your store</h3>
+              <p class="pm-step__body">
+                Business name, your name, a password. Pick your business type — café, grocery,
+                restaurant, or nail salon — and the catalog, layout, and checkout adapt to it.
+              </p>
+            </div>
+          </li>
+
+          <li v-reveal="60" class="pm-step">
+            <div class="pm-step__art pm-art--shelf" aria-hidden="true">
+              <img
+                v-for="(src, i) in shelf"
+                :key="src"
+                :src="src"
+                :class="`pm-art__thumb pm-art__thumb--${i + 1}`"
+                alt=""
+                loading="lazy"
+                decoding="async"
+              />
+              <img class="pm-art__hero" src="/products/tomatoes.jpg" alt="" loading="lazy" decoding="async" />
+            </div>
+            <div class="pm-step__text">
+              <span class="pm-step__num">Step 2</span>
+              <h3 class="pm-step__title">Add your products</h3>
+              <p class="pm-step__body">
+                Start from a ready-made catalog for your business type, then change prices and add
+                your own. What you list is exactly what customers see online.
+              </p>
+            </div>
+          </li>
+
+          <li v-reveal="120" class="pm-step">
+            <div class="pm-step__art pm-art--shelf pm-art--code" aria-hidden="true">
+              <img
+                v-for="(src, i) in shelf.slice(0, 4)"
+                :key="src"
+                :src="src"
+                :class="`pm-art__thumb pm-art__thumb--${i + 1}`"
+                alt=""
+                loading="lazy"
+                decoding="async"
+              />
+              <span class="pm-art__chip pm-art__chip--tl"><MessageCircle :size="16" :stroke-width="2" /></span>
+              <span class="pm-art__chip pm-art__chip--tr"><Link2 :size="16" :stroke-width="2" /></span>
+              <span class="pm-art__chip pm-art__chip--br"><Smartphone :size="16" :stroke-width="2" /></span>
+              <span class="pm-art__pill">
+                <QrCode :size="16" :stroke-width="2" />
+                Store code
+              </span>
+            </div>
+            <div class="pm-step__text">
+              <span class="pm-step__num">Step 3</span>
+              <h3 class="pm-step__title">Share your store code</h3>
+              <p class="pm-step__body">
+                You get a short code the moment you sign up. Customers enter it in the Omaykan app
+                to find your shop — it's in Settings whenever you need it again.
+              </p>
+            </div>
+          </li>
+
+          <li v-reveal="180" class="pm-step">
+            <div class="pm-step__art pm-art--radiate pm-art--counters" aria-hidden="true">
+              <span class="pm-art__ring pm-art__ring--1"></span>
+              <span class="pm-art__ring pm-art__ring--2"></span>
+              <span class="pm-art__ring pm-art__ring--3"></span>
+              <span class="pm-art__chip pm-art__chip--tl"><Monitor :size="16" :stroke-width="2" /></span>
+              <span class="pm-art__chip pm-art__chip--tr"><Smartphone :size="16" :stroke-width="2" /></span>
+              <span class="pm-art__chip pm-art__chip--br"><Bike :size="16" :stroke-width="2" /></span>
+              <!-- ₱, not the $ this badge used to wear: every shop on Omaykan
+                   prices in pesos. It was a lucide Receipt, and lucide ships a
+                   receipt for the dollar, euro, yen, rupee, ruble, franc, lira
+                   and pound but none for the peso. Setting the peso glyph
+                   inside the receipt outline was tried and dropped — at 24px
+                   the two bars close up against the P and the whole thing
+                   turns to mush. The bare mark stays legible. -->
+              <span class="pm-art__badge"><PhilippinePeso :size="24" :stroke-width="2" /></span>
+            </div>
+            <div class="pm-step__text">
+              <span class="pm-step__num">Step 4</span>
+              <h3 class="pm-step__title">Take orders, both ways</h3>
+              <p class="pm-step__body">
+                Walk-ins ring up at the register. Online orders arrive in the same queue, a rider
+                collects them, and both land in the same day's numbers.
+              </p>
+            </div>
           </li>
         </ol>
       </div>
@@ -230,7 +331,7 @@ const steps = [
             <p>Every sale moves the same number, whichever counter it came from — with low-stock alerts before you run out.</p>
           </article>
 
-          <article v-reveal="60" class="pm-point pm-point--dark reveal--scale">
+          <article v-reveal="60" class="pm-point reveal--scale">
             <span class="pm-point__icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 4v5c0 4.5-3 8-7 9-4-1-7-4.5-7-9V7l7-4z"/><path d="M9 12l2 2 4-4"/></svg>
             </span>
@@ -419,8 +520,13 @@ const steps = [
 }
 
 /* ── Bands ─────────────────────────────────────────────────────────── */
+/* Bands alternate tint and white down the page. "How it works" used to be the
+   one dark slab in the middle of it — a light page with a black hole punched
+   through it — so it takes the white side of that alternation instead, and its
+   step cards take the tint. Nothing on this page is dark now; anything added
+   below should stay on one of these two grounds. */
 .pm-band { padding: 104px 40px; background: var(--bg-base); scroll-margin-top: 68px; }
-.pm-band--dark { background: var(--marketing-dark); }
+.pm-band--surface { background: var(--bg-surface); }
 .pm-container { max-width: 1280px; margin: 0 auto; }
 
 .pm-head { max-width: 660px; margin: 0 auto 56px; text-align: center; }
@@ -430,6 +536,15 @@ const steps = [
   color: #8a8f98;
 }
 .pm-eyebrow--onDark { color: var(--accent); }
+/* An outlined chip rather than loose lettering — the same shape the hero's
+   "Now in early access" badge uses, so the two eyebrows on this page agree. */
+.pm-eyebrow--pill {
+  display: inline-flex; align-items: center;
+  padding: 5px 15px; border-radius: 999px;
+  border: 1px solid rgba(var(--accent-rgb), 0.34);
+  background: rgba(var(--accent-rgb), 0.07);
+  color: var(--accent-deep);
+}
 
 .pm-h2 {
   margin: 0 0 16px;
@@ -437,10 +552,10 @@ const steps = [
   font-weight: 800; letter-spacing: -0.03em; line-height: 1.12;
   color: var(--text-primary);
 }
-.pm-h2--onDark { color: #fff; }
-
+/* --accent-deep, not the hero's brighter --accent: #22c55e is 2.4:1 on white,
+   which does not clear the 3:1 large-text floor even at this size. */
+.pm-h2 .accent { color: var(--accent-deep); }
 .pm-head-sub { margin: 0; font-size: 15px; line-height: 1.7; color: var(--text-secondary); }
-.pm-head-sub--onDark { color: rgba(255,255,255,0.6); }
 
 /* ── What you get (three equal cards) ──────────────────────────────── */
 .pm-trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
@@ -463,46 +578,171 @@ const steps = [
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px;
   margin: 0; padding: 0; list-style: none; counter-reset: none;
 }
+/* overflow:hidden is load-bearing, not tidiness: the art inside is built to
+   overrun the card and be cut off by this edge. */
 .pm-step {
-  padding: 30px 26px 32px;
-  border: 1px solid rgba(255,255,255,0.1); border-radius: 20px;
-  background: rgba(255,255,255,0.03);
+  display: flex; flex-direction: column;
+  border: 1px solid rgba(0,0,0,0.07); border-radius: 20px;
+  background: var(--bg-base);
+  overflow: hidden;
 }
+.pm-step__text { padding: 22px 26px 30px; }
+/* --accent-deep, not --accent: the brand green is a 2.4:1 read against white,
+   which is fine for the hero's 40px headline and not for a 12px label. */
 .pm-step__num {
-  display: block; margin-bottom: 18px;
-  font-size: 12px; font-weight: 800; letter-spacing: 0.1em;
-  color: var(--accent);
+  display: block; margin-bottom: 10px;
+  font-size: 12px; font-weight: 800; letter-spacing: 0.04em;
+  color: var(--accent-deep);
 }
 .pm-step__title {
   margin: 0 0 10px;
-  font-size: 1.05rem; font-weight: 800; letter-spacing: -0.02em; color: #fff;
+  font-size: 1.05rem; font-weight: 800; letter-spacing: -0.02em; color: var(--text-primary);
 }
-.pm-step__body { margin: 0; font-size: 13.5px; line-height: 1.68; color: rgba(255,255,255,0.6); }
+.pm-step__body { margin: 0; font-size: 13.5px; line-height: 1.68; color: var(--text-secondary); }
+
+/* ── Step illustrations ────────────────────────────────────────────────
+   Four small stages, all the same size and all built from the same handful of
+   pieces: a ring set, a round badge, a pill, square chips, and shelf photos.
+   Everything is positioned against the stage in percentages, so the pieces
+   hold their arrangement from a 305px card down to a phone's full width. */
+.pm-step__art {
+  position: relative;
+  display: grid; place-items: center;
+  height: 190px;
+  overflow: hidden;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+  background: radial-gradient(115% 85% at 50% 42%, rgba(var(--accent-rgb), 0.12), transparent 72%);
+}
+
+.pm-art__badge {
+  position: relative; z-index: 3;
+  display: grid; place-items: center;
+  width: 54px; height: 54px; border-radius: 50%;
+  background: linear-gradient(145deg, var(--accent), var(--accent-pressed));
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(var(--accent-rgb), 0.34);
+}
+
+/* Three rings breathing outward on a staggered loop, so one is always on its
+   way out while another is arriving — a single ring would leave the stage
+   empty for two thirds of the cycle. */
+.pm-art__ring {
+  position: absolute; top: 50%; left: 50%;
+  border-radius: 50%;
+  border: 1px solid rgba(var(--accent-rgb), 0.30);
+  transform: translate(-50%, -50%);
+}
+.pm-art__ring--1 { width: 92px; height: 92px; }
+.pm-art__ring--2 { width: 136px; height: 136px; }
+.pm-art__ring--3 { width: 184px; height: 184px; }
+.pm-art--radiate .pm-art__ring { animation: pmRadiate 3.9s ease-out infinite; }
+.pm-art--radiate .pm-art__ring--2 { animation-delay: 1.3s; }
+.pm-art--radiate .pm-art__ring--3 { animation-delay: 2.6s; }
+@keyframes pmRadiate {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.72); }
+  22%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.16); }
+}
+
+/* The shelf: five photos pushed out to the corners with two deliberately
+   hanging off the sides, and the picked one in the middle at full colour.
+   The rest are drained and dimmed so the centre is the only thing in focus. */
+.pm-art--shelf .pm-art__thumb {
+  position: absolute; z-index: 1;
+  border-radius: 14px;
+  object-fit: cover;
+  /* The border is what makes these read as tiles. Grey and dimmed this far,
+     a product shot on a white backdrop is otherwise a pale smudge with no
+     edge to it. */
+  border: 1px solid rgba(15, 23, 42, 0.07);
+  filter: grayscale(1) brightness(0.97);
+  opacity: 0.46;
+}
+.pm-art__thumb--1 { top: 7%;  left: 5%;    width: 48px; height: 48px; }
+.pm-art__thumb--2 { top: 3%;  right: 8%;   width: 40px; height: 40px; }
+.pm-art__thumb--3 { top: 36%; left: -5%;   width: 44px; height: 44px; }
+.pm-art__thumb--4 { bottom: 6%; left: 15%; width: 46px; height: 46px; }
+.pm-art__thumb--5 { bottom: 3%; right: 6%; width: 52px; height: 52px; }
+
+.pm-art__hero {
+  position: relative; z-index: 3;
+  width: 88px; height: 88px; border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.55), 0 14px 28px rgba(15, 23, 42, 0.18);
+}
+
+/* The third card reuses the shelf as a backdrop rather than a subject, so it
+   drops back another stop to leave the pill on top of it. */
+.pm-art--code .pm-art__thumb { opacity: 0.18; }
+
+.pm-art__pill {
+  position: relative; z-index: 3;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 9px 16px; border-radius: 999px;
+  background: linear-gradient(145deg, var(--accent), var(--accent-pressed));
+  color: #fff; font-size: 13px; font-weight: 700; letter-spacing: -0.01em;
+  box-shadow: 0 10px 22px rgba(var(--accent-rgb), 0.32);
+}
+
+.pm-art__chip {
+  position: absolute; z-index: 2;
+  display: grid; place-items: center;
+  width: 34px; height: 34px; border-radius: 11px;
+  background: #fff; color: var(--accent-deep);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.10);
+  animation: pmFloat 4.6s ease-in-out infinite;
+}
+.pm-art__chip--tl { top: 14%; left: 10%; }
+.pm-art__chip--tr { top: 22%; right: 8%;  animation-delay: -1.5s; }
+.pm-art__chip--br { bottom: 14%; right: 16%; animation-delay: -3s; }
+@keyframes pmFloat {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-7px); }
+}
+
+/* The fourth card's rings sit behind three chips, so they stay quieter than
+   the first card's, where they are the whole picture. */
+.pm-art--counters .pm-art__ring { border-color: rgba(var(--accent-rgb), 0.20); }
+
+@media (prefers-reduced-motion: reduce) {
+  .pm-art__ring,
+  .pm-art__chip { animation: none; }
+  /* Without the loop the rings would sit at whatever the keyframe left them,
+     which for two of the three is invisible. */
+  .pm-art--radiate .pm-art__ring { opacity: 1; }
+}
 
 /* ── Behind the counter ────────────────────────────────────────────── */
-/* The demo breaks out of the 1280px container and the band's padding, centred
-   on the page by the margin/transform pair rather than by the layout it just
-   escaped. */
+/* The demo sits outside the 1280px container in the markup, and is centred on
+   the page by the margin/transform pair rather than by the layout it left.
+   It used to break out past that container; it is narrower than it now, and
+   the centring is what still holds it under the heading. */
 .pm-demo {
   position: relative;
-  /* Wider than the 1280px container so it still reads as a breakout, but no
-     longer flush to the glass — and since it now has edges, it takes the same
-     22px corner the cards in this section use. */
-  width: min(92vw, 1680px);
+  /* One number sets the whole size of this thing — the height follows from the
+     16:9 below it. 1024px puts the frame back to roughly the height the old
+     64vh cap gave it, the difference being that this is the whole recording
+     rather than the middle of it. 88vw is the same figure for a phone. */
+  width: min(88vw, 1024px);
   border-radius: 22px;
   margin: 0 0 48px 50%;
   transform: translateX(-50%);
+  /* The recording is 1920x1080 and the frame is cut to match, so the capture
+     plays whole at whatever width it is given. A 64vh cap used to stand here
+     and squeeze the frame below 16:9, which `cover` paid for by shaving the
+     top and bottom off the recording — the size is set by the width now, so
+     nothing has to be cropped to control the height. */
   aspect-ratio: 16 / 9;
-  /* Without a cap a 16:9 band is 1080px tall on a 1080p screen and swallows the
-     section. The cap also crops the capture's taskbar off the bottom, which a
-     fixed crop could not do — the recording zooms partway through, so the
-     chrome does not stay in one place. Going much below this starts eating
-     into the app itself on the zoomed passages. */
-  max-height: 64vh;
   overflow: hidden;
   background: #0b0d10;
 }
-.pm-demo__video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+/* contain rather than cover: should the frame and the recording ever stop
+   agreeing on 16:9, this letterboxes against the backing colour instead of
+   quietly cropping the app out of its own demo. At 16:9 the two are identical
+   and nothing letterboxes. */
+.pm-demo__video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
 
 .pm-points { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
 .pm-point {
@@ -510,14 +750,13 @@ const steps = [
   padding: 28px 26px 30px; border-radius: 22px;
   border: 1px solid rgba(0,0,0,0.08); background: var(--bg-surface);
 }
-.pm-point--dark { border-color: transparent; background: var(--marketing-dark); }
-.pm-point--dark h3 { color: #fff; }
-.pm-point--dark h3 .accent { color: var(--accent); }
-.pm-point--dark p { color: rgba(255,255,255,0.62); }
 .pm-point h3 {
   margin: 0 0 10px;
   font-size: 1.05rem; font-weight: 800; letter-spacing: -0.02em; color: var(--text-primary);
 }
+/* "Always on" was the one black card in the row; it's a card like the other
+   three now, and the green words are all that's left marking it out. */
+.pm-point h3 .accent { color: var(--accent-deep); }
 .pm-point p { margin: 0; font-size: 13.5px; line-height: 1.65; color: var(--text-secondary); }
 .pm-point__icon {
   display: inline-flex; align-items: center; justify-content: center;

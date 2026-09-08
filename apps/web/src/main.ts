@@ -1,7 +1,7 @@
 import { createPosApp } from '@pos/core/app/createPosApp'
 import { clearLocalPosCache, createBrowserPosRepository } from '@pos/data/index'
 import { defaultSettings } from '@pos/shared/index'
-import { consumePendingInitialSettings, consumePendingPairingCode, readStaffTenant } from '@pos/web/tenantBinding'
+import { consumePendingInitialSettings, readStaffTenant } from '@pos/web/tenantBinding'
 
 // The local cache (packages/data's storageKeys — session, users, roles,
 // settings, catalog, ...) is one global bucket per browser, not partitioned
@@ -51,30 +51,28 @@ async function bootstrap() {
   })
 
   const pendingSettings = consumePendingInitialSettings()
-  const pendingPairingCode = consumePendingPairingCode()
   if (pendingSettings) {
     // One business per store owner, for now: seed the store's settings from
     // what they entered on the signup form, so they don't land on empty
     // defaults and have to redo it in Settings. Queued by
-    // src/onboarding/OnboardingPage.vue only on signup (never on pairing an
-    // existing store), and applied at most once.
+    // src/onboarding/OnboardingPage.vue only on signup (never when an existing
+    // account signs in), and applied at most once.
     await repository.saveSettings({
       ...defaultSettings,
       businessName: pendingSettings.businessName,
       businessMode: pendingSettings.businessMode,
-      pairingCode: pendingSettings.pairingCode,
+      storefrontSlug: organizationSlug ?? '',
       syncMode: 'online-sync',
     })
     window.localStorage.setItem(SYNC_SEEDED_KEY, '1')
   } else if (organizationSlug && storeCode && !window.localStorage.getItem(SYNC_SEEDED_KEY)) {
     // The deployed seller app is backend-first: default a freshly bound browser
-    // to online sync so staff sign-in reaches the Laravel API. Pairing an
-    // existing store also drops its code in here without touching the store's
-    // business identity, which lives on the server already.
+    // to online sync so staff sign-in reaches the Laravel API. The shop's own
+    // identity lives on the server and is left alone here.
     const current = await repository.loadSettings()
     await repository.saveSettings({
       ...current,
-      pairingCode: pendingPairingCode ?? current.pairingCode,
+      storefrontSlug: current.storefrontSlug || organizationSlug,
       syncMode: 'online-sync',
     })
     window.localStorage.setItem(SYNC_SEEDED_KEY, '1')

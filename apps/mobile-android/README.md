@@ -45,7 +45,6 @@ com.omaykan.storefront
   core/data           repositories — the only thing features depend on
   core/designsystem   theme, tokens, shared composables
   feature/shops       the market: which shops there are
-  feature/pairing     store-code entry
   feature/catalog     shelf, search, product detail
   navigation          type-safe destinations
 ```
@@ -59,8 +58,6 @@ package boundary until it does.
 ## What is built (Phase 1)
 
 - The market — `GET /api/stores`, searchable, debounced against the 60/min limit
-- Store-code entry — `POST /api/store-codes/resolve`, with the 409 ("this shop
-  does not sell online") surfaced as its own state rather than as a bad code
 - Catalog — `GET /api/storefront/catalog`, with categories, search, and a Room
   cache that renders instantly and refreshes behind itself
 - Product detail, read straight from that cache

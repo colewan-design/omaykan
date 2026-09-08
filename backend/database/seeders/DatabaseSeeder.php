@@ -84,13 +84,6 @@ class DatabaseSeeder extends Seeder
             ],
         );
 
-        // Sets the bcrypt hash and the discovery lookup key together; assigning
-        // either column directly lets the two drift apart.
-        if ($store->public_store_code === null) {
-            $store->setPairingCode('123456');
-            $store->save();
-        }
-
         $admin = User::query()->firstOrCreate([
             'email' => 'admin@example.com',
         ], [
@@ -203,6 +196,11 @@ class DatabaseSeeder extends Seeder
         // firstOrCreate throughout, so this stays safe to re-run.
         if (app()->environment('local')) {
             $this->call(DemoSellerSeeder::class);
+
+            // Same gate, same reason, plus one of its own: RiderSeeder's
+            // approved account has a password in this repository, and a rider
+            // token reads live customer addresses and phone numbers.
+            $this->call(RiderSeeder::class);
         }
     }
 }

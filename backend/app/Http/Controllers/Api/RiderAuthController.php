@@ -9,7 +9,9 @@ use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password as PasswordRule;
 use Illuminate\Validation\ValidationException;
 
@@ -137,6 +139,78 @@ class RiderAuthController extends Controller
         $rider->forceFill(['last_seen_at' => now()])->save();
 
         return response()->json(['rider' => $rider->toPortalArray()]);
+    }
+
+    /**
+     * Asks for a reset link, and says the same thing either way.
+     *
+     * Same shape as the shopper's, and the constant reply matters more here:
+     * the set of people who ride for the platform is small and knowable, so an
+     * endpoint that distinguished "no such rider" from "link sent" would be a
+     * way to enumerate them by address.
+     *
+     * Until this existed a rider who forgot their password was simply locked
+     * out — there is no operator screen that sets one, and the licence photos
+     * they would have to re-upload to register again are already on file
+     * against the address they cannot use.
+     */
+    public function forgotPassword(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'email' => ['required', 'email'],
+        ]);
+
+        Password::broker('riders')->sendResetLink([
+            'email' => strtolower(trim($data['email'])),
+        ]);
+
+        return response()->json([
+            'message' => 'If that email has a rider account, a reset link is on its way.',
+        ]);
+    }
+
+    public function resetPassword(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'token' => ['required', 'string'],
+            'email' => ['required', 'email'],
+            'password' => ['required', 'confirmed', PasswordRule::min(8)],
+        ]);
+
+        $status = Password::broker('riders')->reset(
+            [
+                'email' => strtolower(trim($data['email'])),
+                'password' => $data['password'],
+                'password_confirmation' => $data['password_confirmation'] ?? $data['password'],
+                'token' => $data['token'],
+            ],
+            function (Rider $rider, string $password) {
+                $rider->forceFill([
+                    'password' => $password,
+                    'remember_token' => Str::random(60),
+                ])->save();
+
+                /*
+                 * Every phone, signed out.
+                 *
+                 * A rider resetting a password may be doing it because somebody
+                 * else has it, and a rider token is not a shopping session: it
+                 * reads a live list of strangers' home addresses and phone
+                 * numbers. The status the account is in does not matter here —
+                 * a suspended rider's tokens are already gone, and an approved
+                 * one gets a clean set on the next sign-in.
+                 */
+                $rider->tokens()->delete();
+            },
+        );
+
+        if ($status !== Password::PASSWORD_RESET) {
+            throw ValidationException::withMessages([
+                'token' => 'That reset link has expired or has already been used. Ask for a new one.',
+            ]);
+        }
+
+        return response()->json(['message' => 'Your password has been changed. Sign in with it.']);
     }
 
     /**

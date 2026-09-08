@@ -92,7 +92,7 @@ class DemoSellerSeeder extends Seeder
     /**
      * The coffee shop repeats DatabaseSeeder's org, store code and owner email
      * on purpose — those are the lookup keys, so it adopts the existing rows
-     * (pairing code 123456 included) instead of standing up a second tenant.
+     * instead of standing up a second tenant.
      *
      * @return array<int, array<string, mixed>>
      */
@@ -108,7 +108,6 @@ class DemoSellerSeeder extends Seeder
                 'address' => '12 Session Road, Baguio City',
                 'lat' => 16.4123,
                 'lng' => 120.5960,
-                'pairingCode' => '123456',
                 'owner' => [
                     'name' => 'Admin User',
                     'username' => 'admin',
@@ -124,7 +123,6 @@ class DemoSellerSeeder extends Seeder
                 'address' => 'Magsaysay Avenue, Baguio City',
                 'lat' => 16.4145,
                 'lng' => 120.5931,
-                'pairingCode' => '234567',
                 'owner' => [
                     'name' => 'Grocery Owner',
                     'username' => 'grocery',
@@ -140,7 +138,6 @@ class DemoSellerSeeder extends Seeder
                 'address' => '88 Session Road, Baguio City',
                 'lat' => 16.4110,
                 'lng' => 120.5948,
-                'pairingCode' => '345678',
                 'owner' => [
                     'name' => 'Restaurant Owner',
                     'username' => 'restaurant',
@@ -156,7 +153,6 @@ class DemoSellerSeeder extends Seeder
                 'address' => 'Upper General Luna Road, Baguio City',
                 'lat' => 16.4098,
                 'lng' => 120.5977,
-                'pairingCode' => '456789',
                 'owner' => [
                     'name' => 'Salon Owner',
                     'username' => 'salon',
@@ -197,14 +193,6 @@ class DemoSellerSeeder extends Seeder
                 'lng' => $seller['lng'],
             ],
         );
-
-        // Sets the bcrypt hash and the discovery lookup key together; assigning
-        // either column directly lets the two drift apart. Only ever set on a
-        // store that has none, so a rotated code survives a re-seed.
-        if ($store->public_store_code === null) {
-            $store->setPairingCode($seller['pairingCode']);
-            $store->save();
-        }
 
         // Backfilled, not just set on create: the coffee shop is adopted from
         // DatabaseSeeder, which predates this column and leaves it null. The

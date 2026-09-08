@@ -3,9 +3,12 @@ package com.omaykan.storefront.core.data
 import com.omaykan.storefront.core.model.Cart
 import com.omaykan.storefront.core.model.Contact
 import com.omaykan.storefront.core.model.DeliveryDestination
+import com.omaykan.storefront.core.model.DeliveryRoute
 import com.omaykan.storefront.core.model.FulfillmentMethod
 import com.omaykan.storefront.core.model.PaymentPreference
 import com.omaykan.storefront.core.model.PlacedOrder
+import com.omaykan.storefront.core.model.RiderPosition
+import com.omaykan.storefront.core.model.RoutePoint
 import com.omaykan.storefront.core.model.TrackedOrder
 import com.omaykan.storefront.core.model.TrackedOrderItem
 import com.omaykan.storefront.core.network.ApiCaller
@@ -14,6 +17,7 @@ import com.omaykan.storefront.core.network.dto.FulfillmentDto
 import com.omaykan.storefront.core.network.dto.GuestDto
 import com.omaykan.storefront.core.network.dto.PlaceOrderItemDto
 import com.omaykan.storefront.core.network.dto.PlaceOrderRequestDto
+import com.omaykan.storefront.core.network.dto.RoutePointDto
 import com.omaykan.storefront.core.network.dto.TrackedOrderDto
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -144,6 +148,21 @@ private fun TrackedOrderDto.toModel() = TrackedOrder(
     deliveryStage = deliveryStage,
     riderName = riderName,
     riderPhone = riderPhone,
+    riderPosition = riderPosition?.let {
+        RiderPosition(
+            lat = it.lat,
+            lng = it.lng,
+            headingDeg = it.headingDeg,
+            ageSeconds = it.ageSeconds,
+            stale = it.stale,
+        )
+    },
+    route = route?.let {
+        DeliveryRoute(
+            pickup = it.pickup.toModel(),
+            dropoff = it.dropoff.toModel(),
+        )
+    },
     placedAt = placedAt,
     items = items.map {
         TrackedOrderItem(
@@ -154,4 +173,11 @@ private fun TrackedOrderDto.toModel() = TrackedOrder(
             lineTotalCents = it.lineTotalCents,
         )
     },
+)
+
+private fun RoutePointDto.toModel() = RoutePoint(
+    name = name?.takeIf { it.isNotBlank() },
+    address = address?.takeIf { it.isNotBlank() },
+    lat = lat,
+    lng = lng,
 )

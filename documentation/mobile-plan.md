@@ -50,7 +50,7 @@ The case for Kotlin rather than fixing the shell:
 | Realtime | `pusher-websocket-java` against Reverb | Reverb speaks the Pusher protocol; Echo is a JS convenience, not the wire format. **The only push channel — see §8** |
 | Background | WorkManager (order-status refresh) + a bounded foreground service while an order is live (§8) | No FCM, no Google Play Services messaging |
 | Location | Play Services Location (`FusedLocationProviderClient`) | Delivery pin for catalog filtering and fee quoting |
-| QR | ML Kit barcode scanning + CameraX (Phase 4) | Scan a store code instead of typing it |
+| QR | ~~ML Kit barcode scanning + CameraX~~ | Dropped 2026-09-03 with the codes it would have scanned. A shop's QR should encode its storefront link, which any camera app already opens |
 | Testing | JUnit + Turbine + MockWebServer; Compose UI tests over checkout | |
 
 **Deliberately absent — and this is the rule the rest of the plan is written against: no Firebase, in any form.** Not Firestore, not Cloud Messaging, not Analytics, not Crashlytics. Everything the server does for this app is Laravel: HTTP for reads and writes, **Reverb** for live updates, **queues and jobs** for anything that must not block a request, the **scheduler** for anything periodic. Also absent: any payment SDK ([plan.md §4a](./plan.md) — payment is COD on purpose), and any offline write queue for orders (§7).
@@ -92,7 +92,7 @@ Every endpoint the app uses, from `backend/routes/api.php`. Base URL is `https:/
 
 | Call | Auth | Used by |
 |---|---|---|
-| `POST /api/store-codes/resolve` | none (10/min) | Pairing. Returns `orgSlug`, `storeCode`, `businessMode`, `storeName`, `storeAddress`, `storeLat`, `storeLng`. **409** means the store cannot sell online — surface that message, do not treat it as a bad code |
+| ~~`POST /api/store-codes/resolve`~~ | — | **Gone, 2026-09-03.** Resolving a shop from a typed code was retired with the pairing the same code did double duty as. A shopper reaches a shop through `GET /api/stores` and its org-slug/branch-code pair |
 | `GET /api/storefront/catalog?orgSlug&storeCode` | none (60/min) | Catalog. On `main` this validates **`orgSlug` and `storeCode` and nothing else** — no `lat`, no `lng`, no branch selection, no `delivery` block. The address-filtered version is real but unmerged; **not on `main`** — see §8a.2 |
 | `POST /api/customer/register` | none (5/min) | Sign up. Replies `verificationRequired: true`; no token is minted here |
 | `POST /api/customer/login` | none (10/min) | Sign in. **Refuses unverified emails** and re-sends the link — that is a state, not a failure toast |
@@ -121,7 +121,7 @@ One-to-one with the routes the Vue app had, plus what customer accounts added si
 
 | Screen | Contents |
 |---|---|
-| **First launch / pairing** | Store-code entry (QR scan in Phase 4), explained in one line: this is the code your store gave you |
+| **First launch** | The market — `GET /api/stores`, searchable. Typed store-code entry was built and then removed with the codes themselves (2026-09-03); the directory is the whole of how a shop is found |
 | **Catalog** | Category rail, search, product grid, cart badge. The delivery-address chip that drives a `lat`/`lng` catalog call is **Phase 5**, and depends on §8a.2 landing first |
 | **Product detail** | Image, price, description, quantity, add to cart |
 | **Cart** | Bottom sheet — lines, quantities, running estimate, "prices confirmed at checkout" |
@@ -239,7 +239,7 @@ Each phase ends with something installable.
 ~~The `app_releases` table, endpoint and artisan command (§8a.1)~~ — built; see §8a.1. What remains of this phase is operational. Confirm `queue:work` is under supervisor, and note `REVERB_APP_KEY` + host for the client. **Settle the Reverb path question (§8) here, not in Phase 3**: connect any Pusher-protocol client to production and find out whether the Android library can reach `/reverb/` at all, because the answer may be an nginx and DNS change with its own lead time. *(Queuing the order-confirmation mail has been struck — it was already done before this plan was written.)* Nothing else on the backend changes for Phases 1–4; §8a.2 is a Phase 5 prerequisite, not a Phase 0 one.
 
 **Phase 1 — Skeleton and catalog.**
-Project, modules, theme, DI, Retrofit and error mapping, pairing screen, catalog + search + product detail, Room cache. Signed release build that installs over the Capacitor app. *Deliverable: a customer can pair to a store and browse it offline.*
+Project, modules, theme, DI, Retrofit and error mapping, store-code entry, catalog + search + product detail, Room cache. Signed release build that installs over the Capacitor app. *Deliverable: a customer can open a store and browse it offline.* (The code-entry screen shipped and was later deleted — see §7's table.)
 
 **Phase 2 — Cart, accounts, checkout.**
 Cart with persistence, **guest checkout first** — pickup and delivery, address entry with a device-location fix, cash/GCash preference, order placement, confirmation. Register/login/verification lands in the same phase but strictly beside checkout, never in front of it (§5, fact 3): a signed-in customer gets their contact details prefilled and their order in history, a guest gets the identical order. *Deliverable: an order placed from the phone — signed in or not — lands on the merchant's Track Order strip.*
@@ -251,7 +251,7 @@ Tracking screen, Reverb subscription (`order.{uuid}`, all three events) with the
 Notification channels, the bounded foreground service that holds the socket while an order is live, the WorkManager fallback chain, deep links from a notification into the order screen, and the stale-order sweep on the Laravel side (§8a.3) so a status can never sit still forever.
 
 **Phase 5 — The native dividend.**
-QR scan for store codes, saved-address management, the delivery-address chip in the catalog header, address-filtered catalog with the "nothing reaches you" state, list and image polish, Compose UI tests over checkout. **Precondition: §8a.2 merged** — without it the endpoint ignores `lat`/`lng` and the whole feature is a chip that changes nothing.
+Saved-address management, the delivery-address chip in the catalog header, address-filtered catalog with the "nothing reaches you" state, list and image polish, Compose UI tests over checkout. **Precondition: §8a.2 merged** — without it the endpoint ignores `lat`/`lng` and the whole feature is a chip that changes nothing.
 
 ---
 
@@ -259,8 +259,21 @@ QR scan for store codes, saved-address management, the delivery-address chip in 
 
 Named here so this plan is not mistaken for covering them.
 
-- **Merchant app** — the `apps/mobile-admin` shell was empty and is now deleted with the rest. The till is a PWA and [plan.md](./plan.md) keeps it that way: the merchant's offline-first, SQLite-backed register is a far larger native lift than the customer app and gains much less from being native. If a merchant phone app is ever wanted, the useful version is small and specific — new-order alerts off the `store.{id}` private channel and order acceptance, not the whole register — and that is its own plan. Note it would need `/broadcasting/auth` for the staff guard — which **already exists** at `POST /api/broadcasting/auth` (`routes/api.php:233`, `auth:sanctum`, staff-only), so that is one less thing standing in its way. The customer app still avoids needing it (§8).
-- **Rider app** — not built in any form, though the API for it already exists and is fuller than the customer's (`/api/rider/*`: register with licence uploads, board, accept, stage, release). It is the strongest native candidate on the platform: background location, persistent notifications, a screen used one-handed on a motorbike. It deserves its own plan and its own module tree, sharing `core:network` conventions but not code.
+- **Merchant app** — **built, 2026-08-29**, as `:seller` (`com.omaykan.seller`) alongside the customer app in `apps/mobile-android`. It is the small, specific version this section called for: live orders, status advance, rider assignment, payment settlement, today's takings. The till stays a PWA and [plan.md](./plan.md) keeps it that way. See [apps/mobile-android/seller/README.md](../apps/mobile-android/seller/README.md) for the design record.
+
+  Two things this section predicted turned out differently, and both are worth reading before touching it:
+
+  1. ~~**It pairs as a device, not as staff.**~~ **Reversed 2026-09-03.** It did, and every merchant client did: `SellerOrderController` aborted unless `$request->user()` was a `Device`, and sign-in was `store-codes/resolve-staff` then `device-sessions` — one code, off the shop's own paperwork. Pairing has since been retired platform-wide. The order endpoints resolve a signed-in staff user and the store their token names (`StoreContextResolver`), and `payment_confirmed_by_user_id` records the person who tapped. What that cost is a password at six in the morning, which is what the Google button is there to answer.
+  2. **It does not use the `store.{id}` channel** — but the reason it could not has gone. That channel authorizes on a `store_memberships` row keyed by **user id** (`routes/channels.php`), and a `Device` had no such row, so the credential the order endpoints demanded was precisely the one the channel refused. The app now holds a token for a user who *does* have that row. It still polls every 15s, with an opt-in `dataSync` foreground service holding the loop open in the background, and switching it to the websocket should now be close to a no-op.
+- **Rider app** — **built, 2026-08-29**, as `:rider` (`com.omaykan.rider`), the third application in `apps/mobile-android`. Registration with the two licence uploads, the approval gate as three screens rather than an error, the platform-wide board, accept/advance/release, and map and dial handoff. See [apps/mobile-android/rider/README.md](../apps/mobile-android/rider/README.md) for the design record.
+
+  Three things this section assumed are worth correcting, since they shaped the app:
+
+  1. **No background location, and it is not an omission of nerve.** The API has nowhere to put a coordinate — no column, no endpoint, no consumer. The customer's tracking page reads the delivery *stage*, not a position. Asking a rider for location all day and discarding it would be the worst of both, so `ACCESS_FINE_LOCATION` is not in the manifest. It goes in when the backend can receive it, and that is a backend change first.
+  2. **No persistent notifications either, for now.** There is no channel a rider can subscribe to: `store.{id}` authorizes on a `store_memberships` row keyed by user id and a rider has no membership row anywhere, and there is no "job posted" event to broadcast — a board is a query, not an event. So `WorkFeed` polls at 15s, like `:seller`'s. Real alerts need FCM *and* a new backend event, not just a service.
+  3. **`core:network` conventions were shared by being ported a third time**, not by a library module. Three copies is the signal that the shared layer can now be designed from examples rather than guessed at; doing it before this app existed would have meant designing it from one.
+
+  The one piece of genuinely new machinery is the **generation counter** in `WorkFeed`: a fetch already in flight when a rider claims a job would, if published, put that job back on a board it has left. Every write bumps a counter, and any fetch that returns into a changed one is discarded and reissued. Neither of the other two apps needs this, because neither has a shared resource two users race for.
 
 ---
 
@@ -271,4 +284,4 @@ Named here so this plan is not mistaken for covering them.
 3. **How hard do we push tier 2?** (§8) — the foreground service is the whole no-Firebase bet. If a persistent "tracking your order" notification turns out to annoy customers more than a missed status update does, the fallback is tier 3 alone (coarser, quieter) or the UnifiedPush escalation (better, more ops). Decide with a real order in hand during Phase 4, not on paper now.
 4. **Does the app keep the GCash preference?** The web storefront stopped asking; mobile still does. Parity says drop it; the merchants who liked it say keep it. Either is defensible — but the two clients should stop disagreeing with each other.
 5. **Wishlist** — mobile-only today, with nothing server-side behind it. Port as a local-only feature, or drop it with the rewrite?
-6. **Multi-store pairing.** Today: one code, one store, remembered forever. Now that customers have accounts, "my stores" is cheap to add and changes the pairing screen's shape. Worth deciding before Phase 1 rather than retrofitting after.
+6. ~~**Multi-store pairing.**~~ **Settled 2026-09-03** by the move off pairing: `/api/staff/sign-in` answers with every shop the account can act for, and the seller app shows a picker when there is more than one. The shopper app never needed it — it browses a directory rather than remembering one shop.

@@ -22,7 +22,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Inventory2
-import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.ShoppingCart
 import androidx.compose.material3.Badge
@@ -68,7 +67,6 @@ fun HomeScreen(
     onOpenShop: (StoreRef) -> Unit,
     onOpenAisle: (StoreRef, String) -> Unit,
     onOpenCart: (StoreRef) -> Unit,
-    onEnterCode: () -> Unit,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
@@ -84,7 +82,6 @@ fun HomeScreen(
         BrandBar(
             cartCount = cartCount,
             onOpenCart = { onOpenCart(store) },
-            onEnterCode = onEnterCode,
         )
 
         SearchPill(
@@ -246,7 +243,6 @@ private fun androidx.compose.foundation.lazy.LazyListScope.productGrid(
 private fun BrandBar(
     cartCount: Int,
     onOpenCart: () -> Unit,
-    onEnterCode: () -> Unit,
 ) {
     Row(
         Modifier
@@ -269,11 +265,6 @@ private fun BrandBar(
                     .padding(top = 2.dp),
             )
         }
-        CircleButton(
-            icon = Icons.Outlined.QrCodeScanner,
-            description = "Enter a store code",
-            onClick = onEnterCode,
-        )
         Box(Modifier.padding(start = 8.dp)) {
             BadgedBox(
                 badge = { if (cartCount > 0) Badge { Text("$cartCount") } },

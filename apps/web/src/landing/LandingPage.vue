@@ -174,6 +174,11 @@ const header = ref<InstanceType<typeof FdHeader> | null>(null)
 /** Waits a tick: picking a category swaps the hero out from above the anchor. */
 async function scrollToShop() {
   await nextTick()
+  // The header folds its category rail away on a downward scroll, and this is
+  // a downward scroll the page made on the shopper's behalf — hold the rail
+  // open through it so the aisle they just picked stays lit, and so #shop's
+  // scroll-margin still matches the header actually standing above it.
+  header.value?.revealNav()
   document.getElementById('shop')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 

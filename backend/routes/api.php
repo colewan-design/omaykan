@@ -9,21 +9,23 @@ use App\Http\Controllers\Api\CustomerAddressController;
 use App\Http\Controllers\Api\CustomerAuthController;
 use App\Http\Controllers\Api\CustomerOrderController;
 use App\Http\Controllers\Api\CustomerPaymentMethodController;
-use App\Http\Controllers\Api\DeviceSessionController;
 use App\Http\Controllers\Api\OnlineOrderController;
 use App\Http\Controllers\Api\PlatformAdminAuthController;
 use App\Http\Controllers\Api\PlatformAdminController;
 use App\Http\Controllers\Api\PlatformAdminInboxController;
 use App\Http\Controllers\Api\PlatformCustomerController;
+use App\Http\Controllers\Api\RiderAccountController;
 use App\Http\Controllers\Api\RiderAuthController;
 use App\Http\Controllers\Api\RiderDeliveryController;
+use App\Http\Controllers\Api\RiderEarningsController;
+use App\Http\Controllers\Api\RiderPositionController;
 use App\Http\Controllers\Api\RiderReviewController;
 use App\Http\Controllers\Api\SellerOrderController;
+use App\Http\Controllers\Api\SellerRiderController;
 use App\Http\Controllers\Api\SignupController;
 use App\Http\Controllers\Api\StaffRoleController;
-use App\Http\Controllers\Api\StaffSessionController;
+use App\Http\Controllers\Api\StaffAuthController;
 use App\Http\Controllers\Api\StaffUserController;
-use App\Http\Controllers\Api\StoreCodeController;
 use App\Http\Controllers\Api\StoreDirectoryController;
 use App\Http\Controllers\Api\StoreImageController;
 use App\Http\Controllers\Api\StorefrontCatalogController;
@@ -34,9 +36,20 @@ Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware(['auth:sanctum', 'merchant.token']);
 
-Route::post('/device-sessions', [DeviceSessionController::class, 'store']);
-Route::post('/staff-sessions', [StaffSessionController::class, 'store']);
-Route::post('/staff-register', [StaffSessionController::class, 'register']);
+/*
+ * Staff sign-in.
+ *
+ * Replaces `/device-sessions`, `/staff-sessions` and `/staff-register`, and
+ * with them the shop-wide pairing code all three were keyed on. Merchant
+ * clients now sign a *person* in — see StaffAuthController for why.
+ *
+ * Throttled like the customer doors: sign-in is a password oracle, and the
+ * Google one is not but shares a door with it.
+ */
+Route::post('/staff/sign-in', [StaffAuthController::class, 'signIn'])
+    ->middleware('throttle:10,1');
+Route::post('/staff/auth/google', [StaffAuthController::class, 'google'])
+    ->middleware('throttle:10,1');
 
 // Storefront. Unauthenticated by nature — a customer placing an order has no
 // account. Replaces api/create-online-order.ts. Rate-limited because it is
@@ -44,8 +57,6 @@ Route::post('/staff-register', [StaffSessionController::class, 'register']);
 Route::post('/online-orders', [OnlineOrderController::class, 'store'])
     ->middleware('throttle:20,1');
 
-// Store discovery by code. Public and enumerable by nature, so throttled
-// harder than the order endpoint — a short code space is worth guessing at.
 // Order tracking. The UUID in the path is the capability — see the controller.
 Route::get('/online-orders/{order}', [OnlineOrderController::class, 'show'])
     ->middleware('throttle:60,1');
@@ -74,10 +85,10 @@ Route::get('/stores/{store}/image', [StoreImageController::class, 'show'])
 Route::get('/app-releases/{slug}', [AppReleaseController::class, 'show'])
     ->middleware('throttle:60,1');
 
-Route::post('/store-codes/resolve', [StoreCodeController::class, 'resolve'])
-    ->middleware('throttle:10,1');
-Route::post('/store-codes/resolve-staff', [StoreCodeController::class, 'resolveForStaff'])
-    ->middleware('throttle:10,1');
+// Store discovery by typed code is gone with the pairing code it read. A
+// shopper reaches a shop through the directory (`GET /stores`) and its
+// org-slug/branch-code URL; staff reach theirs through `POST /staff/sign-in`,
+// which lists the shops that account can act for.
 
 // Public self-serve signup. Throttled hard: it creates an organization, a
 // store and a user account on every successful call.
@@ -196,11 +207,32 @@ Route::post('/rider/register', [RiderAuthController::class, 'register'])
 Route::post('/rider/login', [RiderAuthController::class, 'login'])
     ->middleware('throttle:10,1');
 
+/*
+ * The way back in.
+ *
+ * Throttled like the customer pair and for the same two reasons: forgot-password
+ * sends mail on request, and reset is a token oracle. Both answer the same thing
+ * whether or not the address is a rider's — the platform's riders are a small,
+ * knowable set, and an endpoint that distinguished them would be a way to
+ * enumerate it.
+ */
+Route::post('/rider/forgot-password', [RiderAuthController::class, 'forgotPassword'])
+    ->middleware('throttle:5,1');
+Route::post('/rider/reset-password', [RiderAuthController::class, 'resetPassword'])
+    ->middleware('throttle:5,1');
+
 Route::middleware('auth:rider')->prefix('rider')->group(function () {
     // Outside the approval gate on purpose: a pending or rejected rider needs
     // to be able to read their own status and sign out.
     Route::get('/me', [RiderAuthController::class, 'me']);
     Route::post('/logout', [RiderAuthController::class, 'logout']);
+
+    // Outside the gate with them, and deliberately: a rider waiting on review
+    // is the one most likely to be fixing a mistyped phone number, and a
+    // suspended rider must still be able to change a password they think
+    // somebody else has. Neither can see a job either way.
+    Route::patch('/me', [RiderAccountController::class, 'update']);
+    Route::patch('/password', [RiderAccountController::class, 'updatePassword']);
 
     Route::middleware('rider.approved')->group(function () {
         Route::get('/board', [RiderDeliveryController::class, 'board']);
@@ -208,6 +240,17 @@ Route::middleware('auth:rider')->prefix('rider')->group(function () {
         Route::post('/deliveries/{order}/accept', [RiderDeliveryController::class, 'accept']);
         Route::post('/deliveries/{order}/stage', [RiderDeliveryController::class, 'advance']);
         Route::post('/deliveries/{order}/release', [RiderDeliveryController::class, 'release']);
+
+        // Behind the gate: earnings are a fact about work, and an account that
+        // has never been allowed to work has none to report.
+        Route::get('/earnings', [RiderEarningsController::class, 'summary']);
+
+        // Where the rider is. Throttled well above the app's ten-second
+        // cadence so a brief burst after a tunnel does not lock a rider out of
+        // reporting, and well below what a runaway loop could cost.
+        Route::post('/position', [RiderPositionController::class, 'store'])
+            ->middleware('throttle:60,1');
+        Route::delete('/position', [RiderPositionController::class, 'destroy']);
     });
 });
 
@@ -219,6 +262,15 @@ Route::middleware('auth:rider')->prefix('rider')->group(function () {
 // token. The middleware states, once for the whole group, that everything in
 // here is for staff and tills. See EnsureMerchantToken.
 Route::middleware(['auth:sanctum', 'merchant.token'])->group(function () {
+    /*
+     * The rest of sign-in. These three take the unscoped token `/staff/sign-in`
+     * returns, which reaches nothing else: everything below needs a token that
+     * names a store, and `session-store` is what mints one.
+     */
+    Route::get('/staff/stores', [StaffAuthController::class, 'stores']);
+    Route::post('/staff/session-store', [StaffAuthController::class, 'selectStore']);
+    Route::post('/staff/sign-out', [StaffAuthController::class, 'signOut']);
+
     Route::get('/sync/bootstrap', [SyncController::class, 'bootstrap']);
     Route::post('/sync/push', [SyncController::class, 'push']);
     Route::get('/sync/pull', [SyncController::class, 'pull']);
@@ -231,6 +283,13 @@ Route::middleware(['auth:sanctum', 'merchant.token'])->group(function () {
     // store, like the sync endpoints above.
     Route::get('/seller/online-orders', [SellerOrderController::class, 'index']);
     Route::post('/seller/online-orders/{order}/rider', [SellerOrderController::class, 'assignRider']);
+    Route::delete('/seller/online-orders/{order}/rider', [SellerOrderController::class, 'unassignRider']);
+    // The shop's own riders. Not a directory of the platform's — see
+    // SellerRiderController for why there deliberately isn't one.
+    Route::get('/seller/riders', [SellerRiderController::class, 'index']);
+    Route::post('/seller/riders', [SellerRiderController::class, 'store']);
+    Route::patch('/seller/riders/{savedRider}', [SellerRiderController::class, 'update']);
+    Route::delete('/seller/riders/{savedRider}', [SellerRiderController::class, 'destroy']);
     Route::post('/seller/online-orders/{order}/delivery-stage', [SellerOrderController::class, 'updateDeliveryStage']);
     Route::post('/seller/online-orders/{order}/status', [SellerOrderController::class, 'updateStatus']);
     Route::post('/seller/online-orders/{order}/settle-payment', [SellerOrderController::class, 'settlePayment']);
@@ -240,6 +299,10 @@ Route::middleware(['auth:sanctum', 'merchant.token'])->group(function () {
     Route::get('/staff-roles', [StaffRoleController::class, 'index']);
     Route::put('/staff-roles', [StaffRoleController::class, 'sync']);
     Route::get('/staff-users', [StaffUserController::class, 'index']);
+    // Adding a member of staff. This is where `/staff-register` went: that was
+    // public because the shop's code was the proof, and with the code gone the
+    // proof is an admin who is already signed in to the shop.
+    Route::post('/staff-users', [StaffUserController::class, 'store']);
     Route::patch('/staff-users/{user}/role', [StaffUserController::class, 'updateRole']);
 });
 

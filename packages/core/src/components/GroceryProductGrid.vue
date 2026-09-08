@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { Barcode, Cookie, LayoutGrid, Leaf, Milk, Scale, ShoppingBasket } from '@lucide/vue'
+import { Barcode, LayoutGrid, Scale, ShoppingBasket } from '@lucide/vue'
 import { computed, reactive } from 'vue'
+import { categoryIcon } from '@pos/core/utils/categoryIcons'
 import { categoryTagVar, formatCurrency } from '@pos/shared/index'
 import { usePosStore } from '@pos/core/stores/pos'
 import { haptic, ImpactStyle } from '@pos/core/utils/haptics'
@@ -57,16 +58,15 @@ function markImageFailed(productId: string) {
   failedImages[productId] = true
 }
 
-const categoryIcons: Record<string, typeof ShoppingBasket> = {
-  all: LayoutGrid,
-  groceries: ShoppingBasket,
-  produce: Leaf,
-  dairy: Milk,
-  snacks: Cookie,
-}
-
+// The register's own aisle glyphs come from the shared name-keyed table, so
+// the storefront and the register can't drift into drawing different icons for
+// the same shelf. Anything the table doesn't know falls back to ShoppingBasket.
+//
+// `categoryNameFor` is the bridge: everything here addresses a category by id,
+// but ids off the API are uuids, and it is the name the table is keyed on.
 function iconFor(categoryId: string) {
-  return categoryIcons[categoryId] ?? ShoppingBasket
+  if (categoryId === 'all') return LayoutGrid
+  return categoryIcon(categoryNameFor(categoryId)) ?? ShoppingBasket
 }
 
 function categoryNameFor(categoryId: string) {

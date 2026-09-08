@@ -17,6 +17,7 @@ class SyncEvent extends Model
         'organization_id',
         'store_id',
         'device_id',
+        'user_id',
         'entity_type',
         'entity_id',
         'operation',

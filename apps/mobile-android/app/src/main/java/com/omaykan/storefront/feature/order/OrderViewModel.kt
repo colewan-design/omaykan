@@ -82,9 +82,27 @@ class OrderViewModel @Inject constructor(
             while (coroutineContext.isActive) {
                 load()
                 if (_state.value.order?.status in TERMINAL) return@launch
-                delay(POLL_MS)
+                delay(pollInterval())
             }
         }
+    }
+
+    /**
+     * How long to wait before asking again.
+     *
+     * Twenty seconds is right for "is it being made yet" — that answer changes
+     * a handful of times an hour. It is wrong for a marker moving across a map:
+     * the rider's phone reports every ten seconds, and a screen that reads it
+     * every twenty draws a rider who jumps a block at a time.
+     *
+     * So the interval halves while there is actually a position to watch, and
+     * goes back up the moment there is not. An order waiting for a rider, or
+     * carried by somebody the shop rang personally, costs exactly what it
+     * always did.
+     */
+    private fun pollInterval(): Long {
+        val position = _state.value.order?.riderPosition
+        return if (position != null && !position.stale) MOVING_POLL_MS else POLL_MS
     }
 
     fun refresh() {
@@ -129,6 +147,9 @@ class OrderViewModel @Inject constructor(
 
     private companion object {
         const val POLL_MS = 20_000L
+
+        /** While a rider is actually reporting — see [pollInterval]. */
+        const val MOVING_POLL_MS = 10_000L
         val TERMINAL = setOf("completed", "cancelled", "voided")
     }
 }

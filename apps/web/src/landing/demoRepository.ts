@@ -315,6 +315,25 @@ export function createDemoPosRepository(): PosRepository {
       throw new Error(`No online order ${orderId} in the demo catalog.`)
     },
 
+    async unassignOrderRider(orderId: string) {
+      throw new Error(`No online order ${orderId} in the demo catalog.`)
+    },
+
+    // The demo shelf has no shop behind it, so it has no riders either. Empty
+    // rather than a throw: the dashboard reads this on entry, and a demo build
+    // should not open onto an error banner about a feature nobody asked for.
+    async loadSavedRiders() {
+      return { saved: [], recent: [] }
+    },
+
+    async saveRider() {
+      throw new Error('The demo catalog has no shop to save a rider against.')
+    },
+
+    async deleteSavedRider() {
+      throw new Error('The demo catalog has no shop to save a rider against.')
+    },
+
     async updateOrderDeliveryStage(orderId: string) {
       throw new Error(`No online order ${orderId} in the demo catalog.`)
     },

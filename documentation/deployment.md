@@ -49,18 +49,31 @@ The browser therefore needs `wsPath: '/reverb'`, which is what
 Key auth, no password:
 
 ```bash
-ssh xponent          # ~/.ssh/config alias → root@187.124.138.58
+ssh omaykan          # ~/.ssh/config alias → root@187.124.138.58
 ```
 
-**The alias is `xponent`, not `omaykan`** — this page said `omaykan` until
-2026-08-28, and there is no such `Host` block in `~/.ssh/config`, so the
-command as written could only ever have failed. The box is shared with
-xponent-global, and Omaykan is a tenant on someone else's alias.
+**The alias is `omaykan`.** This page claimed the opposite between 2026-08-28
+and 2026-09-08 — that the only working alias was `xponent`, that no `omaykan`
+`Host` block existed, and that the key it names does not exist. All three were
+wrong for the machine deploys are actually run from, where `~/.ssh/config` holds
+exactly one relevant block and no `xponent` block at all, so the corrected
+command was the one that could not work:
 
-The identity that alias uses is `~/.ssh/xponent-global-deploy`. There are also
-`omaykan-deploy` and `omaykan_vps` keypairs in the same directory (this page
-previously named a third, `omaykan_vps_ed25519`, which does not exist); nothing
-in the deploy path reaches for them.
+```
+Host omaykan
+    HostName 187.124.138.58
+    User root
+    IdentityFile ~/.ssh/omaykan_vps_ed25519
+    IdentitiesOnly yes
+```
+
+The box is still shared with xponent-global — that part was true, and §1's
+warning about not assuming a running service belongs to Omaykan still stands.
+`vault_vps_ed25519` and `project-tracker-deploy` sit in the same directory for
+the other tenants; nothing in the deploy path reaches for them.
+
+The commands in §3 have always said `ssh omaykan`, so a deploy run by copying
+them worked throughout. Only §2 disagreed.
 
 ---
 

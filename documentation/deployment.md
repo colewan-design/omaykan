@@ -115,6 +115,19 @@ ssh omaykan "cd /root/staging/backend &&
 Then, on the server, before swapping:
 
 - copy the live `.env` into the release — **never overwrite the server's `.env`**
+  with a local one. Adding a key it lacks is a different thing and sometimes
+  required: a release whose code reads a new variable ships against a server
+  that has never heard of it. The 2026-09-08 deploy had to append
+  `GOOGLE_CLIENT_ID`, without which the Google button the bundle renders would
+  have been visible on every sign-in screen and rejected every token. Compare
+  the two before swapping:
+
+  ```bash
+  comm -13 <(grep -oE '^[A-Z_0-9]+' /var/www/omaykan/backend/.env | sort -u)            <(grep -rhoE "env\('[A-Z0-9_]+'" backend/config/ | sed "s/env('//;s/'//" | sort -u)
+  ```
+
+  Most of what that prints is Laravel's own defaults and can be ignored. What
+  matters is any key this release's own code added.
 - `rsync -a` the live `storage/app/` across. **This is now load-bearing.** The
   private disk holds rider licence and plate photos (`rider-documents/`) and,
   since 2026-08-28, the photo each shop owner uploads for their own shop
@@ -146,14 +159,23 @@ sudo -u www-data env HOME=/tmp php artisan ...
 ### 3.3 Rollback
 
 Directory swaps are reversible. The current rollback point is
-`backend.bak-20260828-113306-store-image` and
-`web.bak-20260828-113306-store-image`. Swap them back and restart the two
-daemons. A database dump taken immediately before that deploy is at
-`/root/db-backups/omaykan-predeploy-20260828-113306.dump` (`pg_restore` format).
+`backend.bak-20260908-230835-rider-map-staff-auth` and
+`web.bak-20260908-230835-rider-map-staff-auth`. Swap them back and restart the
+two daemons. A database dump taken immediately before that deploy is at
+`/root/db-backups/omaykan-predeploy-20260908-230835.dump` (`pg_restore` format).
 
-Rolling that one back also means dropping `stores.image_path`, which the
-release before it does not know about. An extra nullable column is harmless to
-older code, so prefer leaving it.
+The 2026-08-28 pair this section named until now **was already gone** when the
+2026-09-08 deploy went out — pruned by hand at some point, leaving only a 4K
+`web.failed-20260828-125957`. For eleven days this page named a rollback point
+that did not exist, and nothing would have said so until someone needed it.
+Check that the directory is there before trusting the name written here.
+
+**Rolling back past 2026-09-08 is not a directory swap alone.** That release
+retired device pairing: `stores.public_store_code` and `pairing_code_hash` are
+dropped, and `sync_cursors` is now unique per store/user/cursor rather than per
+device/cursor. The older code needs those columns and cannot sign a till in
+without them, so a rollback means restoring the dump as well — and the dump
+predates every order taken since. Prefer fixing forward.
 
 Keep one generation. Older ones were deleted on 2026-08-27 after they had
 accumulated to 525M across 23 directories, and by 2026-08-28 six web
@@ -225,6 +247,15 @@ recorded as applied rather than trying to recreate an existing table. The row
 for `2026_08_26_000400_add_payment_confirmed_by_role_to_orders` still points at
 a file that no longer exists — left deliberately, because the column it
 describes is still there.
+
+**Updated 2026-09-08.** That deploy found production two releases behind, not
+one: the whole customer Google sign-in commit had never gone out, so seven
+migrations were pending rather than the expected five. They applied cleanly and
+production now carries every migration in `main` — but the drift described
+above is untouched. `platform_audit_logs`, `orders.payment_confirmed_by_role`
+and the extra `platform_admins` columns are all still there, and the two ledger
+rows still point at files that do not exist. Nothing in this section has been
+fixed; it has only been re-confirmed.
 
 **Consequences:**
 

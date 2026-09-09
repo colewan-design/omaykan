@@ -175,6 +175,10 @@ export interface StoreSummary {
   lat: number | null
   lng: number | null
   productCount: number
+  /** The busiest few aisles this shop has stocked, in its own category names. */
+  categories: string[]
+  /** Opened on Omaykan recently; the window is the API's to decide. */
+  isNew: boolean
   /** Null when either side has no pin, so "no distance" is not "0 km away". */
   distanceKm: number | null
 }
@@ -204,7 +208,12 @@ export async function fetchStores(
     { fallbackError: 'Could not load the shops.' },
   )
 
-  return (payload.stores ?? []).map((store) => ({ ...store, imageUrl: resolveImageUrl(store.imageUrl) }))
+  return (payload.stores ?? []).map((store) => ({
+    ...store,
+    categories: store.categories ?? [],
+    isNew: store.isNew ?? false,
+    imageUrl: resolveImageUrl(store.imageUrl),
+  }))
 }
 
 /**

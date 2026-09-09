@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { discountPercent } from '@pos/shared/index'
-import { useStockedCategories, useStorefrontCatalog } from '@pos/web/commerce/catalog'
+import { retryStorefrontCatalog, useStockedCategories, useStorefrontCatalog } from '@pos/web/commerce/catalog'
 import FdHeader from './FdHeader.vue'
+import DeliveryBand from './DeliveryBand.vue'
 import FdHero from './FdHero.vue'
+import HowItWorks from './HowItWorks.vue'
 import FdFooter from './FdFooter.vue'
 import ProductRow from './ProductRow.vue'
 import ProductGrid from './ProductGrid.vue'
 import ProductDetail from './ProductDetail.vue'
 import PartnerDialog from './PartnerDialog.vue'
 import ShopDirectory from './ShopDirectory.vue'
+import WhyOmaykan from './WhyOmaykan.vue'
 
 // Grocery-marketplace landing, modelled on the FreshDirect reference: a dark
 // green utility bar with the search front and centre, then a stack of
@@ -31,6 +34,11 @@ const catalog = useStorefrontCatalog()
 const stockedCategories = useStockedCategories()
 
 const loading = computed(() => catalog.loading)
+const catalogError = computed(() => catalog.error)
+
+function retryCatalog() {
+  retryStorefrontCatalog()
+}
 const products = computed(() => catalog.products.filter((p) => !p.outOfStock))
 
 // Search, aisle and product all live in the URL: arriving from the about page
@@ -140,7 +148,20 @@ const scopedProducts = computed(() =>
 const pagedProducts = computed(() => scopedProducts.value.slice(0, shownCount.value))
 const hasMore = computed(() => scopedProducts.value.length > shownCount.value)
 
-/** Shelves are v-if'd on non-empty, so a thin catalog just shows fewer rows. */
+/**
+ * Every shelf on this page is one shop's stock — the catalog is fetched for a
+ * single tenant — so the shop's own name is the truest thing a shelf can be
+ * titled with, and the one a national marketplace has no way to copy.
+ */
+const shelfTitle = computed(() =>
+  catalog.shop?.name ? `On the shelves at ${catalog.shop.name}` : 'On the shelves now',
+)
+
+/**
+ * The first twelve, not the best-selling twelve: nothing here counts orders.
+ * It was titled "Popular near you", which claimed both a ranking and a
+ * locality this list does not have.
+ */
 const popular = computed(() => visibleProducts.value.slice(0, 12))
 
 const deals = computed(() => visibleProducts.value.filter((p) => discountPercent(p) !== null))
@@ -159,15 +180,14 @@ const cheapest = computed(() =>
     .slice(0, 12),
 )
 
-/** Products from the largest category, for the editorial block. */
-const featureCategory = computed(() => {
-  if (catalog.categories.length === 0) return null
-  const counts = catalog.categories.map((c) => ({
-    category: c,
-    items: products.value.filter((p) => p.categoryId === c.id),
-  }))
-  return counts.sort((a, b) => b.items.length - a.items.length)[0] ?? null
-})
+/** What a merchant actually gets — each one is a thing that already ships. */
+const sellerBenefits = [
+  'Your own online storefront',
+  'Product and inventory management',
+  'Order management',
+  'Local customer discovery',
+  'No marketplace commission',
+]
 
 const header = ref<InstanceType<typeof FdHeader> | null>(null)
 
@@ -239,6 +259,7 @@ function clearSearch() {
       ref="header"
       :active-category="navCategory"
       @search="onSearch"
+      @product="openProduct"
       @category="onCategory"
     />
 
@@ -250,12 +271,31 @@ function clearSearch() {
              goods are the point, so it stands down. -->
         <FdHero v-if="!browsingCategory && !browsingProduct" />
 
+        <!-- Directly under the banner, so "what is this?" and "is it near me?"
+             are answered in the same glance. Front page only: inside a
+             category or a product the question has already been answered. -->
+        <DeliveryBand v-if="!browsingCategory && !browsingProduct" />
+
         <!-- The anchor every "shop" link, the search submit and the category
              nav scroll to. It used to sit on a "Shop by category" block that
              listed a fixed taxonomy, linked to the same place, and filtered
              nothing — the block went, the nav took over the job, and the id
              moved here onto the products people were being sent to. -->
         <div id="shop">
+
+          <!-- ── Shops, then goods ─────────────────────────────────────
+               The merchants come before any shelf: this is a marketplace of
+               counters, and which shop you are buying from is the choice that
+               frames every other one.
+
+               While searching it answers the same query — "SMJ Grocery" has
+               to be able to return a shop — and hides itself when the term
+               matches no shop, so a search for "rice" is not topped by an
+               empty shop list. -->
+          <ShopDirectory
+            v-if="!browsingCategory && !browsingProduct"
+            :query="activeSearch"
+          />
 
           <!-- ── One product ──────────────────────────────────────────── -->
           <template v-if="browsingProduct">
@@ -296,6 +336,11 @@ function clearSearch() {
 
             <p v-if="loading" class="fd-loading">Loading today's catalog…</p>
 
+            <p v-else-if="catalogError" class="fd-catalog-error">
+              {{ catalogError }}
+              <button type="button" class="fd-linkbtn" @click="retryCatalog">Try again</button>
+            </p>
+
             <template v-else-if="scopedProducts.length > 0">
               <ProductGrid :products="pagedProducts" @select="openProduct" />
 
@@ -323,6 +368,14 @@ function clearSearch() {
 
             <p v-if="loading" class="fd-loading">Loading today's catalog…</p>
 
+            <!-- Same reason as the search note below: a catalog that failed to
+                 load would otherwise drop every shelf and leave the front page
+                 blank, with the spinner gone and nothing said. -->
+            <p v-else-if="catalogError" class="fd-catalog-error">
+              {{ catalogError }}
+              <button type="button" class="fd-linkbtn" @click="retryCatalog">Try again</button>
+            </p>
+
             <!-- Without this the shelves would simply vanish on a no-match search,
                  leaving a blank page with no explanation. -->
             <p v-else-if="activeSearch" class="fd-searchnote">
@@ -334,32 +387,62 @@ function clearSearch() {
               <button type="button" class="fd-linkbtn" @click="clearSearch">Clear search</button>
             </p>
 
-            <ProductRow title="Popular now" :products="popular" @select="openProduct" />
+            <!-- After the shops, before the first shelf: a first-time visitor
+                 sees that the market is real, then learns how to use it. It
+                 also keeps the page alternating — shops, steps, shelf, why,
+                 shelf, seller, shelf — so no two blocks of the same kind sit
+                 next to each other. -->
+            <HowItWorks v-if="!activeSearch" />
+
+            <ProductRow :title="shelfTitle" :products="popular" @select="openProduct" />
+
+            <!-- Between the first two shelves: it explains why the shelves are
+                 worth browsing at all, and it stops two near-identical
+                 carousels from running back to back. -->
+            <WhyOmaykan />
 
             <ProductRow
-              title="Fresh deals: this week's best for less"
-              blurb="Marked down by the shops themselves — no commission taken out, so the discount reaches you whole."
+              anchor="deals"
+              title="Marked down at the counter"
+              blurb="The shops set these markdowns themselves, and Omaykan takes no percentage of a sale — so the discount reaches you whole."
               :products="deals"
               @select="openProduct"
             />
 
-            <!-- ── Editorial ─────────────────────────────────────────── -->
-            <section v-if="featureCategory && featureCategory.items.length > 0" class="fd-editorial">
-              <div class="fd-editorial__body">
-                <div class="fdrow-head">
-                  <h2 class="fd-h2">Meet your local vendors</h2>
-                  <a href="/signup" class="fd-viewall">Become one</a>
-                </div>
-                <p class="fd-editorial__copy">
-                  Every shop here is a real counter somewhere in the city — a carinderia, a sari-sari
-                  store, a market stall. They run their day on Omaykan's point of sale, and
-                  the same catalog they ring up in person is the one you're browsing now. Nothing is
-                  marked up for the privilege.
+            <!-- ── Seller acquisition ────────────────────────────────
+                 Was "Meet your local vendors": copy addressed to shoppers,
+                 about merchants, with the sign-up link as an aside. The page
+                 needs merchant density more than it needs that paragraph, so
+                 it asks the question directly and answers what you get.
+
+                 No longer gated on a feature category — it never rendered one,
+                 and the pitch disappearing for a shop with no categories is
+                 the opposite of what an acquisition block is for. -->
+            <section class="fd-seller">
+              <div class="fd-seller__body">
+                <h2 class="fd-seller__title">Own a store in Baguio or La Trinidad?</h2>
+
+                <p class="fd-seller__lead">
+                  Put your products online and start accepting local orders through Omaykan.
                 </p>
-                <a href="/signup" class="fd-btn">List your shop for free</a>
+
+                <p class="fd-seller__terms">
+                  No sales commission. Keep 100% of your product sales.
+                </p>
+
+                <a href="/signup" class="fd-seller__cta">List your store</a>
+                <p class="fd-seller__note">Free while we're in early access.</p>
+
+                <ul class="fd-seller__list">
+                  <li v-for="item in sellerBenefits" :key="item">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+                    <span>{{ item }}</span>
+                  </li>
+                </ul>
               </div>
-              <div class="fd-editorial__art">
-                <img src="/delivery/fruit-basket.webp" alt="Basket of fresh fruit and vegetables" width="900" height="1125" loading="lazy" />
+
+              <div class="fd-seller__art">
+                <img src="/delivery/fruit-basket.webp" alt="" width="900" height="1125" loading="lazy" />
               </div>
             </section>
 
@@ -373,23 +456,6 @@ function clearSearch() {
 
         </div>
 
-        <!-- ── Shops ─────────────────────────────────────────────────────
-             Only on the shelf view: while browsing one category or one
-             product, the visitor is inside a shop, and a list of other shops
-             underneath it is a way out of what they were doing. -->
-        <ShopDirectory v-if="!browsingCategory && !browsingProduct" />
-
-        <!-- ── Merchant strip ────────────────────────────────────────── -->
-        <section class="fd-merchant">
-          <div>
-            <h2 class="fd-merchant__title">Run a shop? Sell with us.</h2>
-            <p class="fd-merchant__sub">
-              A full point-of-sale, a storefront, and riders — free while we're in early access.
-              You keep 100% of every sale.
-            </p>
-          </div>
-          <a href="/signup" class="fd-merchant__cta">Get started</a>
-        </section>
       </div>
     </main>
 
@@ -456,6 +522,7 @@ function clearSearch() {
 .fd-viewall:hover { color: #1a6b3c; }
 
 .fd-loading { margin: 0 0 40px; color: #9ca3af; font-size: 15px; }
+.fd-catalog-error { margin: 0 0 40px; color: #b91c1c; font-size: 15px; }
 
 /* ── Category listing ────────────────────────────────────────────── */
 .fd-cat { margin-bottom: 56px; }
@@ -498,7 +565,7 @@ function clearSearch() {
 .fd-cat__empty { margin: 0; color: #6b7280; font-size: 15px; }
 
 /* ── Editorial ───────────────────────────────────────────────────── */
-.fd-editorial {
+.fd-seller {
   display: grid;
   grid-template-columns: 1.15fr 0.85fr;
   gap: 44px;
@@ -508,14 +575,72 @@ function clearSearch() {
   border-radius: 14px;
   background: #f5f9f6;
 }
-.fd-editorial__copy {
-  margin: 0 0 22px;
-  font-size: 15px;
-  line-height: 1.7;
+
+.fd-seller__title {
+  margin: 0 0 10px;
+  font-size: clamp(1.4rem, 2.2vw, 1.85rem);
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: #06240f;
+  text-wrap: balance;
+}
+
+.fd-seller__lead {
+  margin: 0 0 12px;
+  max-width: 46ch;
+  font-size: 15.5px;
+  line-height: 1.6;
   color: #4b5563;
 }
-.fd-editorial__art { display: flex; justify-content: center; }
-.fd-editorial__art img { width: 100%; max-width: 300px; height: auto; }
+
+/* The one line a shop owner is deciding on. */
+.fd-seller__terms {
+  margin: 0 0 22px;
+  font-size: 15.5px;
+  font-weight: 800;
+  line-height: 1.5;
+  color: #1a6b3c;
+}
+
+.fd-seller__cta {
+  display: inline-block;
+  padding: 13px 30px;
+  border-radius: 999px;
+  background: #bbf451;
+  color: #06240f;
+  font-size: 15px;
+  font-weight: 800;
+}
+.fd-seller__cta:hover { background: #1a6b3c; color: #fff; }
+.fd-seller__cta:focus-visible { outline: 2px solid #1a6b3c; outline-offset: 3px; }
+
+.fd-seller__note {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: #6b7a70;
+}
+
+.fd-seller__list {
+  margin: 24px 0 0;
+  padding: 22px 0 0;
+  border-top: 1px solid #dde9e1;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+.fd-seller__list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: #23342a;
+}
+.fd-seller__list svg { flex-shrink: 0; color: #1a6b3c; }
+
+.fd-seller__art { display: flex; justify-content: center; }
+.fd-seller__art img { width: 100%; max-width: 300px; height: auto; }
 
 .fd-btn {
   display: inline-block;
@@ -524,44 +649,29 @@ function clearSearch() {
   border-radius: 999px;
   background: #1a1a1a;
   color: #fff;
-  font: 700 14.5px/1.2 inherit;
+  /* Longhands: `inherit` is only legal as the shorthand's entire value, so
+     `font: 700 14.5px/1.2 inherit` is dropped whole and the element renders at
+     the inherited 17px/400 instead. Same trap as .fd-totop in FdFooter. */
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 700;
+  line-height: 1.2;
   cursor: pointer;
 }
 .fd-btn:hover { background: #1a6b3c; }
 
-/* ── Merchant strip ──────────────────────────────────────────────── */
-.fd-merchant {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 28px;
-  flex-wrap: wrap;
-  padding: 34px 36px;
-  border-radius: 14px;
-  background: #1a6b3c;
-  color: #fff;
-}
-.fd-merchant__title { margin: 0 0 6px; font-size: 1.6rem; font-weight: 800; letter-spacing: -0.03em; }
-.fd-merchant__sub { margin: 0; max-width: 560px; font-size: 14.5px; line-height: 1.6; color: rgba(255,255,255,0.85); }
-.fd-merchant__cta {
-  flex-shrink: 0;
-  padding: 13px 30px;
-  border-radius: 999px;
-  background: #bbf451;
-  color: #06240f;
-  font-size: 15px;
-  font-weight: 800;
-}
-.fd-merchant__cta:hover { background: #fff; }
-
 /* ── Responsive ──────────────────────────────────────────────────── */
 @media (max-width: 1080px) {
-  .fd-editorial { grid-template-columns: 1fr; gap: 28px; }
+  /* The art goes under the pitch rather than beside it; the checklist keeps
+     its own column so it does not become one long ladder on a tablet. */
+  .fd-seller { grid-template-columns: 1fr; gap: 28px; }
+  .fd-seller__list { grid-template-columns: 1fr 1fr; column-gap: 24px; }
 }
 @media (max-width: 760px) {
   .fd-wrap { padding: 32px var(--fd-gutter) 56px; }
-  .fd-editorial { padding: 24px; }
-  .fd-merchant { padding: 26px 22px; }
+  .fd-seller { padding: 24px; }
+  .fd-seller__list { grid-template-columns: 1fr; }
+  .fd-seller__cta { display: block; text-align: center; }
   #shop { scroll-margin-top: 214px; }
 }
 </style>

@@ -84,11 +84,28 @@ onMounted(() => {
     </div>
 
     <div class="fd-hero__copy">
-      <h1 class="fd-hero__title">Shop the market, from home.</h1>
-      <p class="fd-hero__sub">
-        Order from the carinderias, sari-sari stores, and market stalls around you — at the
-        same price they charge at the counter. No commission taken, nothing marked up.
+      <!-- Where, before anything else. The banner has to answer "is this even
+           my city?" in the first glance, and "near you" in the subhead only
+           answers it for someone who already knows what Omaykan is. -->
+      <p class="fd-hero__where">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"/></svg>
+        Baguio &middot; La Trinidad
       </p>
+
+      <h1 class="fd-hero__title">Shop the market, from home.</h1>
+
+      <p class="fd-hero__sub">
+        Groceries, sari-sari stores, wet market sellers, and local shops near you — delivered
+        at the same price they charge at the counter.
+      </p>
+
+      <!-- Two audiences land on this page, and until now neither was given a
+           next step: a shopper had to scroll past the banner to find the
+           shelves, and a merchant had to notice "Sell with us" in the bar. -->
+      <div class="fd-hero__cta">
+        <a href="#shop" class="fd-hero__btn fd-hero__btn--primary">Start shopping</a>
+        <a href="/signup" class="fd-hero__btn fd-hero__btn--ghost">Sell on Omaykan</a>
+      </div>
     </div>
   </section>
 </template>
@@ -109,8 +126,10 @@ onMounted(() => {
   aspect-ratio: 1600 / 380;
   /* Below roughly 1150px the ratio alone would make the strip shorter than the
      overlaid copy. This lets the frame grow instead, trading a little side
-     crop for text that still fits. */
-  min-height: 240px;
+     crop for text that still fits. Raised from 240px when the hero gained the
+     location line and the two buttons — at 240 the CTA row clipped out of the
+     frame on a narrow desktop window. */
+  min-height: 330px;
   /* Not redundant with the block default: with a definite min-height and an
      aspect-ratio, an auto width gets *derived from the height* (240 x 4.21 =
      1010px), which overflows the column and puts a horizontal scrollbar on the
@@ -145,7 +164,10 @@ onMounted(() => {
   position: absolute;
   inset: 0;
   z-index: 1;
-  max-width: 620px;
+  /* 660 rather than 620 so the subhead sets in two lines instead of three with
+     a one-word last line. The scrim is still ~0.7 opaque this far across, so
+     the copy has not outrun its own background. */
+  max-width: 660px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -170,6 +192,54 @@ onMounted(() => {
   line-height: 1.5;
   color: rgba(255, 255, 255, 0.88);
 }
+
+.fd-hero__where {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: #bbf451;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fd-hero__cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.fd-hero__btn {
+  display: inline-block;
+  padding: 12px 26px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
+  transition: background 150ms, color 150ms, border-color 150ms;
+}
+
+/* Same lime pill as the merchant strip's "Get started" — the two primary
+   actions on the page should read as the same button. */
+.fd-hero__btn--primary {
+  background: #bbf451;
+  color: #06240f;
+}
+.fd-hero__btn--primary:hover { background: #fff; }
+
+/* Outlined rather than a second fill, so the shopper's action stays the
+   louder of the two. */
+.fd-hero__btn--ghost {
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+  color: #fff;
+}
+.fd-hero__btn--ghost:hover { border-color: #fff; background: rgba(255, 255, 255, 0.14); }
+
+.fd-hero__btn:focus-visible { outline: 2px solid #bbf451; outline-offset: 3px; }
 
 .fd-hero__toggle {
   position: absolute;
@@ -207,6 +277,14 @@ onMounted(() => {
   }
   .fd-hero__title { font-size: 1.6rem; color: #1a1a1a; }
   .fd-hero__sub { font-size: 0.95rem; color: #4a5b52; }
+
+  /* The scrim is gone here and the copy sits on the page's own white, so the
+     lime eyebrow and the white-outlined button would both disappear. */
+  .fd-hero__where { color: #1a6b3c; }
+  .fd-hero__cta { margin-top: 8px; }
+  .fd-hero__btn { padding: 11px 22px; font-size: 14.5px; }
+  .fd-hero__btn--ghost { border-color: #cfdad3; color: #1a1a1a; }
+  .fd-hero__btn--ghost:hover { border-color: #1a6b3c; background: transparent; }
 
   .fd-hero__toggle { left: 12px; bottom: 12px; width: 30px; height: 30px; }
 }

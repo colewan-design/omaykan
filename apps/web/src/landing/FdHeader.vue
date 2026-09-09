@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ShoppingBasket } from '@lucide/vue'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import BrandLogo from '@pos/core/components/BrandLogo.vue'
 import { useStorefrontCart } from '@pos/web/commerce/cart'
-import { useStockedCategories } from '@pos/web/commerce/catalog'
+import { useStockedCategories, useStorefrontCatalog } from '@pos/web/commerce/catalog'
+import { fetchStores, type StoreSummary } from '@pos/web/commerce/api'
 import { useCustomerAccount } from '@pos/web/commerce/customer'
 import { useDeliveryLocation } from '@pos/web/commerce/deliveryLocation'
 import { categoryIcon } from '@pos/core/utils/categoryIcons'
@@ -40,14 +41,17 @@ const props = withDefaults(
   { shopHref: '#shop', activeCategory: '', accountBanner: true },
 )
 
-const emit = defineEmits<{ search: [term: string]; category: [categoryId: string] }>()
+const emit = defineEmits<{
+  search: [term: string]
+  category: [categoryId: string]
+  product: [productId: string]
+}>()
 
 // "Enter your address" was an anchor to shopHref — it scrolled to the shelves
 // and collected nothing. It opens the address panel now, and lives in the
 // header rather than the landing page so the about and account pages get the
 // same working control, the way the cart already does.
 const delivery = useDeliveryLocation()
-const addressOpen = ref(false)
 
 const categories = useStockedCategories()
 
@@ -85,7 +89,102 @@ const accountFirstName = computed(() => account.account.value?.name.trim().split
 
 const searchTerm = ref('')
 
+// ── Suggestions ─────────────────────────────────────────────────────────
+// Two sources, because a marketplace search has two kinds of answer. Products
+// are already in memory — the catalog composable holds the whole shelf — so
+// they match instantly; shops are a debounced call, since only the API can
+// search a name the visitor has never loaded.
+const MAX_PRODUCT_HINTS = 5
+const MAX_SHOP_HINTS = 4
+
+const catalog = useStorefrontCatalog()
+const shopHints = ref<StoreSummary[]>([])
+const suggestOpen = ref(false)
+const cursor = ref(-1)
+
+let shopDebounce: ReturnType<typeof setTimeout> | null = null
+let shopSequence = 0
+
+const needle = computed(() => searchTerm.value.trim().toLowerCase())
+
+const productHints = computed(() => {
+  if (needle.value.length < 2) return []
+  return catalog.products
+    .filter((product) => product.name.toLowerCase().includes(needle.value))
+    .slice(0, MAX_PRODUCT_HINTS)
+})
+
+/** One flat list behind the two headings, so the arrow keys walk it as one. */
+const hints = computed(() => [
+  ...productHints.value.map((p) => ({ kind: 'product' as const, id: p.id, label: p.name })),
+  ...shopHints.value.map((s) => ({ kind: 'shop' as const, id: s.orgSlug, label: s.name, sub: s.address })),
+])
+
+const showSuggest = computed(() => suggestOpen.value && needle.value.length >= 2 && hints.value.length > 0)
+
+watch(needle, (value) => {
+  cursor.value = -1
+  if (shopDebounce !== null) clearTimeout(shopDebounce)
+  if (value.length < 2) {
+    shopHints.value = []
+    return
+  }
+  shopDebounce = setTimeout(async () => {
+    const ticket = ++shopSequence
+    try {
+      const found = await fetchStores({ q: value })
+      if (ticket === shopSequence) shopHints.value = found.slice(0, MAX_SHOP_HINTS)
+    } catch {
+      if (ticket === shopSequence) shopHints.value = []
+    }
+  }, 220)
+})
+
+/** -1 is "still typing"; the list wraps back through it rather than sticking. */
+function moveCursor(delta: number) {
+  if (!showSuggest.value) return
+  const count = hints.value.length
+  const next = cursor.value + delta
+  if (next < -1) cursor.value = count - 1
+  else if (next >= count) cursor.value = -1
+  else cursor.value = next
+}
+
+function choose(hint: { kind: 'product' | 'shop'; id: string; label: string }) {
+  suggestOpen.value = false
+  cursor.value = -1
+  if (hint.kind === 'shop') {
+    window.location.href = `${window.location.pathname}?shop=${encodeURIComponent(hint.id)}`
+    return
+  }
+  // On the landing page the product opens in place; anywhere else it is a
+  // real navigation to the page that can show it.
+  if (handlesCategoryInPage.value) {
+    searchTerm.value = ''
+    emit('product', hint.id)
+  } else {
+    window.location.href = `/?product=${encodeURIComponent(hint.id)}`
+  }
+}
+
+function onSearchKey(event: KeyboardEvent) {
+  if (event.key === 'ArrowDown') { event.preventDefault(); moveCursor(1) }
+  else if (event.key === 'ArrowUp') { event.preventDefault(); moveCursor(-1) }
+  else if (event.key === 'Escape') {
+    // A type="search" input clears itself on Escape. While the panel is open
+    // Escape should only dismiss the panel — losing the typed query as well
+    // is not what "close this dropdown" means.
+    if (showSuggest.value) event.preventDefault()
+    suggestOpen.value = false
+    cursor.value = -1
+  }
+}
+
 function submitSearch() {
+  // A highlighted suggestion is what Enter means; the raw term is the fallback.
+  const picked = cursor.value >= 0 ? hints.value[cursor.value] : null
+  if (picked) { choose(picked); return }
+  suggestOpen.value = false
   emit('search', searchTerm.value.trim())
 }
 
@@ -190,22 +289,82 @@ defineExpose({ clear: () => (searchTerm.value = ''), revealNav })
         <BrandLogo variant="dark" :size="20" />
       </a>
 
-      <div class="fd-bar__delivery">
-        <span>Delivery</span>
-        <button type="button" class="fd-bar__addr" @click="addressOpen = true">
-          {{ delivery.isSet.value ? delivery.summary.value : 'Enter your address' }}
-        </button>
-      </div>
+      <!-- Where you are is the thing that makes this shop list different from a
+           national marketplace, so it is read as a value with a label — the
+           way a food-delivery app does it — rather than as a link labelled
+           "Delivery". The whole block is the click target. -->
+      <button
+        type="button"
+        class="fd-bar__delivery"
+        :aria-label="delivery.isSet.value ? `Delivering to ${delivery.summary.value}. Change address.` : 'Set your delivery address'"
+        @click="delivery.openDialog()"
+      >
+        <span class="fd-bar__delivery-label">Deliver to</span>
+        <span class="fd-bar__addr">
+          <svg class="fd-bar__pin" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"/></svg>
+          <span class="fd-bar__addr-text">{{ delivery.isSet.value ? delivery.shortSummary.value : 'Set your location' }}</span>
+          <svg class="fd-bar__caret" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </span>
+      </button>
 
-      <form class="fd-search" @submit.prevent="submitSearch">
+      <form class="fd-search" role="search" @submit.prevent="submitSearch">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <input
           v-model="searchTerm"
           type="search"
-          placeholder="What's on your shopping list?"
-          aria-label="Search products"
+          placeholder="Search products or shops"
+          aria-label="Search products or shops"
+          autocomplete="off"
+          role="combobox"
+          aria-autocomplete="list"
+          :aria-expanded="showSuggest"
+          aria-controls="fd-suggest"
+          @focus="suggestOpen = true"
+          @blur="suggestOpen = false"
+          @keydown="onSearchKey"
         />
         <button type="submit" class="fd-search__go">Search</button>
+
+        <!-- Grouped, because "rice" and "SMJ Grocery" are different questions
+             and a single blended list makes the visitor work out which kind of
+             answer each row is. -->
+        <div v-if="showSuggest" id="fd-suggest" class="fd-suggest" role="listbox">
+          <template v-if="productHints.length > 0">
+            <p class="fd-suggest__label">Products</p>
+            <button
+              v-for="(p, i) in productHints"
+              :key="`p-${p.id}`"
+              type="button"
+              class="fd-suggest__row"
+              :class="{ 'fd-suggest__row--on': cursor === i }"
+              role="option"
+              :aria-selected="cursor === i"
+              @mousedown.prevent="choose({ kind: 'product', id: p.id, label: p.name })"
+              @mouseenter="cursor = i"
+            >
+              <span class="fd-suggest__name">{{ p.name }}</span>
+              <span v-if="p.unitLabel" class="fd-suggest__sub">{{ p.unitLabel }}</span>
+            </button>
+          </template>
+
+          <template v-if="shopHints.length > 0">
+            <p class="fd-suggest__label">Shops</p>
+            <button
+              v-for="(shop, i) in shopHints"
+              :key="`s-${shop.orgSlug}`"
+              type="button"
+              class="fd-suggest__row"
+              :class="{ 'fd-suggest__row--on': cursor === productHints.length + i }"
+              role="option"
+              :aria-selected="cursor === productHints.length + i"
+              @mousedown.prevent="choose({ kind: 'shop', id: shop.orgSlug, label: shop.name })"
+              @mouseenter="cursor = productHints.length + i"
+            >
+              <span class="fd-suggest__name">{{ shop.name }}</span>
+              <span class="fd-suggest__sub">{{ shop.businessTypeLabel || shop.businessMode }}</span>
+            </button>
+          </template>
+        </div>
       </form>
 
       <div class="fd-bar__account">
@@ -273,7 +432,7 @@ defineExpose({ clear: () => (searchTerm.value = ''), revealNav })
     </nav>
 
     <CartDrawer :open="cartOpen" :shop-href="props.shopHref" @close="cartOpen = false" />
-    <AddressDialog :open="addressOpen" @close="addressOpen = false" />
+    <AddressDialog :open="delivery.dialogOpen.value" @close="delivery.closeDialog()" />
   </div>
 </template>
 
@@ -385,38 +544,50 @@ defineExpose({ clear: () => (searchTerm.value = ''), revealNav })
 .fd-bar__delivery {
   display: flex;
   flex-direction: column;
-  line-height: 1.3;
-  padding-left: 22px;
+  align-items: flex-start;
+  gap: 1px;
+  line-height: 1.25;
+  padding: 4px 10px 4px 22px;
+  margin-left: -10px;
+  border: none;
   border-left: 1px solid rgba(255,255,255,0.22);
-  white-space: nowrap;
-}
-.fd-bar__delivery span { font-size: 13.5px; font-weight: 700; }
-.fd-bar__delivery a,
-.fd-bar__addr {
-  font-size: 13px;
-  color: rgba(255,255,255,0.85);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-.fd-bar__delivery a:hover,
-.fd-bar__addr:hover { color: #fff; }
-
-/* Reset only what the button adds over the anchor it replaced, and cap the
-   width so a long saved address cannot push the search bar off the row. */
-.fd-bar__addr {
-  padding: 0;
-  border: 0;
+  border-radius: 0 8px 8px 0;
   background: none;
-  font-family: inherit;
+  color: inherit;
+  font: inherit;
   text-align: left;
-  cursor: pointer;
-  max-width: 190px;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
 }
+.fd-bar__delivery:hover { background: rgba(255,255,255,0.08); }
+.fd-bar__delivery:focus-visible { outline: 2px solid #bbf451; outline-offset: 2px; }
+
+/* The label is the quiet half now — the place is the information, and it is
+   the reason this list of shops is different from a national marketplace. */
+.fd-bar__delivery-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.62);
+}
+.fd-bar__addr {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 210px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+}
+.fd-bar__pin { flex-shrink: 0; color: #bbf451; }
+.fd-bar__addr-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fd-bar__caret { flex-shrink: 0; color: rgba(255,255,255,0.7); }
+
 
 .fd-search {
+  /* The suggestion panel hangs off this. */
+  position: relative;
   flex: 1;
   min-width: 0;
   display: flex;
@@ -434,10 +605,68 @@ defineExpose({ clear: () => (searchTerm.value = ''), revealNav })
   border: none;
   outline: none;
   background: transparent;
-  font: 500 15px/1 inherit;
+  /* Longhands: `inherit` is only legal as the shorthand's entire value, so
+     `font: 500 15px/1 inherit` is dropped whole and the element renders at
+     the inherited 17px/400 instead. Same trap as .fd-totop in FdFooter. */
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1;
   color: #1a1a1a;
 }
 .fd-search input::placeholder { color: #9ca3af; }
+
+.fd-suggest {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 60;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid #e2ebe4;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 16px 40px rgba(6, 36, 15, 0.18);
+  text-align: left;
+}
+
+.fd-suggest__label {
+  margin: 6px 8px 4px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8b978f;
+}
+
+.fd-suggest__row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fd-suggest__row--on { background: #eef6f0; }
+
+.fd-suggest__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+.fd-suggest__sub { flex-shrink: 0; font-size: 12px; color: #8b978f; }
 .fd-search__go {
   flex-shrink: 0;
   height: 34px;
@@ -446,7 +675,13 @@ defineExpose({ clear: () => (searchTerm.value = ''), revealNav })
   border-radius: 999px;
   background: #22c55e;
   color: #06240f;
-  font: 700 13.5px/1 inherit;
+  /* Longhands: `inherit` is only legal as the shorthand's entire value, so
+     `font: 700 13.5px/1 inherit` is dropped whole and the element renders at
+     the inherited 17px/400 instead. Same trap as .fd-totop in FdFooter. */
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1;
   cursor: pointer;
 }
 .fd-search__go:hover { background: #16a34a; color: #fff; }

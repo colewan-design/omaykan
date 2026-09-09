@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Category;
 use App\Models\Product;
 use App\Models\Store;
 use Illuminate\Http\JsonResponse;
@@ -27,6 +28,12 @@ class StoreDirectoryController extends Controller
 {
     /** Sorting is only meaningful within a sane radius; beyond it, order by name. */
     private const MAX_DISTANCE_KM = 60.0;
+
+    /** Enough to say what kind of shop this is; more turns the card into a list. */
+    private const TOP_CATEGORIES = 3;
+
+    /** How long a shop counts as newly opened on Omaykan. */
+    private const NEW_SHOP_DAYS = 30;
 
     private const EARTH_RADIUS_KM = 6371.0;
 
@@ -79,6 +86,16 @@ class StoreDirectoryController extends Controller
                     'lat' => $store->lat === null ? null : (float) $store->lat,
                     'lng' => $store->lng === null ? null : (float) $store->lng,
                     'productCount' => $count,
+                    // What the shop actually sells, in its own words — the
+                    // aisles it has stocked, busiest first. A shopper choosing
+                    // between counters is choosing on this more than on the
+                    // shop's name.
+                    'categories' => $shelf['categories'] ?? [],
+                    // Computed here rather than shipping created_at: when a
+                    // shop stops being new is a business rule, and it should
+                    // not be duplicated into every client that draws a badge.
+                    'isNew' => $store->created_at !== null
+                        && $store->created_at->gt(now()->subDays(self::NEW_SHOP_DAYS)),
                     'distanceKm' => $this->distanceKm($store, $lat, $lng),
                 ];
             })
@@ -144,7 +161,7 @@ class StoreDirectoryController extends Controller
      * fallback rather than the source.
      *
      * @param  Collection<int, Store>  $stores
-     * @return array<string, array<string, array{count: int, imageUrl: ?string}>>
+     * @return array<string, array<string, array{count: int, imageUrl: ?string, categories: array<int, string>}>>
      */
     private function sellableShelves(Collection $stores): array
     {
@@ -166,11 +183,59 @@ class StoreDirectoryController extends Controller
                 ->map(fn ($row) => [
                     'count' => (int) $row->aggregate,
                     'imageUrl' => $row->shelf_photo,
+                    'categories' => [],
                 ])
                 ->all();
+
+            foreach ($this->topCategories($group->pluck('organization_id')->unique()->all(), (string) $mode) as $orgId => $names) {
+                if (isset($shelves[$mode][$orgId])) {
+                    $shelves[$mode][$orgId]['categories'] = $names;
+                }
+            }
         }
 
         return $shelves;
+    }
+
+    /**
+     * The busiest few aisles per organization, as names.
+     *
+     * Two queries for the whole directory rather than two per shop: one to
+     * count products per (organization, category), one to name the categories
+     * that survived the cut.
+     *
+     * @param  array<int, string>  $organizationIds
+     * @return array<string, array<int, string>>
+     */
+    private function topCategories(array $organizationIds, string $mode): array
+    {
+        if ($organizationIds === []) {
+            return [];
+        }
+
+        $counts = Product::query()
+            ->whereIn('organization_id', $organizationIds)
+            ->where('is_active', true)
+            ->whereJsonContains('business_modes', $mode)
+            ->whereNotNull('category_id')
+            ->groupBy('organization_id', 'category_id')
+            ->selectRaw('organization_id, category_id, count(*) as aggregate')
+            ->get();
+
+        $names = Category::query()
+            ->whereIn('id', $counts->pluck('category_id')->unique()->all())
+            ->pluck('name', 'id');
+
+        return $counts
+            ->groupBy('organization_id')
+            ->map(fn (Collection $rows) => $rows
+                ->sortByDesc('aggregate')
+                ->map(fn ($row) => $names[$row->category_id] ?? null)
+                ->filter()
+                ->take(self::TOP_CATEGORIES)
+                ->values()
+                ->all())
+            ->all();
     }
 
     /**

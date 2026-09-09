@@ -70,25 +70,49 @@ interface StorefrontCatalogState extends StorefrontCatalog {
 const state = reactive<StorefrontCatalogState>({ shop: null, categories: [], products: [], loading: true, error: '' })
 let loadStarted = false
 
+function runCatalogLoad(): void {
+  state.loading = true
+  state.error = ''
+  loadStorefrontCatalog()
+    .then((catalog) => {
+      state.shop = catalog.shop
+      state.categories = catalog.categories
+      state.products = catalog.products
+      // Only worth saying when there is nothing to show for it: the demo
+      // tenant still has its shelf, and an empty shop is its own message.
+      state.error = catalog.failed && catalog.products.length === 0
+        ? 'We could not load the shop just now.'
+        : ''
+      // A timeout that latched would leave the shelf empty for the rest of the
+      // visit, because the load only ever runs once. Releasing the latch on a
+      // failure is what lets "Try again" — and the next surface to ask for the
+      // catalog — actually re-fetch it.
+      if (state.error !== '') loadStarted = false
+    })
+    .finally(() => {
+      state.loading = false
+    })
+}
+
 export function useStorefrontCatalog(): StorefrontCatalogState {
   if (!loadStarted) {
     loadStarted = true
-    loadStorefrontCatalog()
-      .then((catalog) => {
-        state.shop = catalog.shop
-        state.categories = catalog.categories
-        state.products = catalog.products
-        // Only worth saying when there is nothing to show for it: the demo
-        // tenant still has its shelf, and an empty shop is its own message.
-        state.error = catalog.failed && catalog.products.length === 0
-          ? 'We could not load the shop just now. Please refresh to try again.'
-          : ''
-      })
-      .finally(() => {
-        state.loading = false
-      })
+    runCatalogLoad()
   }
   return state
+}
+
+/**
+ * Re-fetch after a failed load.
+ *
+ * The catalog is a module-level singleton loaded once on first use, so without
+ * this a single slow response — 15s is easy to exceed when the API is busy —
+ * left every surface showing an empty shelf until a full page reload.
+ */
+export function retryStorefrontCatalog(): void {
+  if (state.loading) return
+  loadStarted = true
+  runCatalogLoad()
 }
 
 // Categories with nothing in them are noise in the header bar and in the

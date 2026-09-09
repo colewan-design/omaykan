@@ -279,8 +279,8 @@ function addToCart() {
 
         <div class="fdpdp__notes">
           <p>
-            Sold at the counter price. Omaykan takes no commission, so nothing here is
-            marked up to pay for the app.
+            This shop sets its own price. Omaykan takes no percentage of the sale, so there
+            is nothing to mark this up to pay for.
           </p>
           <p>Cash or GCash when the rider arrives — nothing is charged online.</p>
         </div>
@@ -510,7 +510,13 @@ function addToCart() {
   border-radius: 999px;
   background: #1a6b3c;
   color: #fff;
-  font: 800 15px/1 inherit;
+  /* Longhands: `inherit` is only legal as the shorthand's entire value, so
+     `font: 800 15px/1 inherit` is dropped whole and the element renders at
+     the inherited 17px/400 instead. Same trap as .fd-totop in FdFooter. */
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
   cursor: pointer;
   transition: background 160ms;
 }

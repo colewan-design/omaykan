@@ -83,6 +83,17 @@ export function useStorefrontCart() {
     persist()
   }
 
+  /**
+   * How many of one product are in the basket, 0 when none.
+   *
+   * Reads the Map directly rather than scanning cartLines: every product card
+   * on a shelf calls this, and a linear scan per card turns rendering a grid
+   * of a few hundred into quadratic work.
+   */
+  function quantityOf(productId: string): number {
+    return lines.get(productId)?.quantity ?? 0
+  }
+
   const cartLines = computed(() => Array.from(lines.values()))
   const itemCount = computed(() => cartLines.value.reduce((sum, line) => sum + line.quantity, 0))
   const subtotalCents = computed(() =>
@@ -96,5 +107,5 @@ export function useStorefrontCart() {
   )
   const totalCents = computed(() => subtotalCents.value + taxCents.value)
 
-  return { cartLines, itemCount, subtotalCents, taxCents, totalCents, add, decrement, remove, clear }
+  return { cartLines, itemCount, subtotalCents, taxCents, totalCents, quantityOf, add, decrement, remove, clear }
 }

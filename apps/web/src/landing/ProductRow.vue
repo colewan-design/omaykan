@@ -17,8 +17,10 @@ const props = withDefaults(
     blurb?: string
     /** Empty hides the link. */
     viewAllHref?: string
+    /** Anchor, so a footer or a link can point at one shelf. */
+    anchor?: string
   }>(),
-  { blurb: '', viewAllHref: '' },
+  { blurb: '', viewAllHref: '', anchor: '' },
 )
 
 defineEmits<{ select: [productId: string] }>()
@@ -36,7 +38,7 @@ function scrollBy(direction: -1 | 1) {
 </script>
 
 <template>
-  <section v-if="hasProducts" class="fdrow">
+  <section v-if="hasProducts" :id="props.anchor || undefined" class="fdrow">
     <div class="fdrow__head">
       <div class="fdrow__headline">
         <h2 class="fdrow__title">{{ title }}</h2>

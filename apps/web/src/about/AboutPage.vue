@@ -94,7 +94,7 @@ const perKm = peso(DELIVERY_PER_KM_CENTS)
         <hr class="ab-rule" />
 
         <!-- ── Three steps ────────────────────────────────────────────── -->
-        <section class="ab-sec">
+        <section id="delivery" class="ab-sec">
           <h2 v-reveal class="ab-h2">Grocery Delivery In 3 Simple Steps</h2>
           <div class="ab-trio">
             <figure v-reveal="40" class="ab-trio__item">
@@ -226,7 +226,7 @@ const perKm = peso(DELIVERY_PER_KM_CENTS)
         <hr class="ab-rule" />
 
         <!-- ── For shops ──────────────────────────────────────────────── -->
-        <section class="ab-sec">
+        <section id="for-shops" class="ab-sec">
           <h2 v-reveal class="ab-h2">Omaykan For Shops</h2>
           <img
             v-reveal="40"

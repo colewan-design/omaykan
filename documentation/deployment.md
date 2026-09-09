@@ -159,10 +159,20 @@ sudo -u www-data env HOME=/tmp php artisan ...
 ### 3.3 Rollback
 
 Directory swaps are reversible. The current rollback point is
-`backend.bak-20260908-230835-rider-map-staff-auth` and
-`web.bak-20260908-230835-rider-map-staff-auth`. Swap them back and restart the
-two daemons. A database dump taken immediately before that deploy is at
-`/root/db-backups/omaykan-predeploy-20260908-230835.dump` (`pg_restore` format).
+`backend.bak-20260909-224036-storefront-landing-rework` and
+`web.bak-20260909-224036-storefront-landing-rework`. Swap them back and restart
+the two daemons. A database dump taken immediately before that deploy is at
+`/root/db-backups/omaykan-predeploy-20260909-224036.dump` (`pg_restore` format).
+
+That release was frontend-heavy — a landing page rework — plus one controller
+returning two extra fields on `GET /api/stores` (`categories`, `isNew`). It
+added **no migration**, so `migrate --force` reported "Nothing to migrate" and
+rolling back to it is a directory swap alone, with no dump to restore.
+
+The generation before it, `*-20260908-230835-rider-map-staff-auth`, is still on
+disk (the box is at 8% of 96G). §3.3's "keep one generation" says to prune it;
+it was left deliberately, because rolling back *past* 2026-09-08 needs the dump
+restored as well and having the directory costs nothing while disk is this free.
 
 The 2026-08-28 pair this section named until now **was already gone** when the
 2026-09-08 deploy went out — pruned by hand at some point, leaving only a 4K

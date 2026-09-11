@@ -858,7 +858,34 @@ const recentOrders = computed(() =>
             </template>
 
             <div v-else class="ops-rider ops-rider--assigned">
-              <span class="ops-rider__name">{{ order.riderName }}</span>
+              <!--
+                The face and the bike, for the counter.
+
+                Only for a rider with a platform account — a name typed in at
+                the till has neither, and falls through to the plain name it
+                always had. What this buys the person holding the bag is the
+                ability to pick the right one of three people waiting without
+                calling out an order number.
+              -->
+              <template v-if="order.riderProfile">
+                <img
+                  v-if="order.riderProfile.photoUrl"
+                  class="ops-rider__photo"
+                  :src="order.riderProfile.photoUrl"
+                  :alt="`Photo of ${order.riderProfile.name}`"
+                  loading="lazy"
+                />
+                <span v-else class="ops-rider__photo ops-rider__photo--letter">
+                  {{ order.riderProfile.name.trim().charAt(0).toUpperCase() || 'R' }}
+                </span>
+              </template>
+              <span class="ops-rider__name">
+                {{ order.riderName }}
+                <small v-if="order.riderProfile" class="ops-rider__bike">
+                  {{ order.riderProfile.vehicle.label }}
+                  · {{ order.riderProfile.vehicle.plateNumber }}
+                </small>
+              </span>
               <template v-if="order.riderPhone">
                 <a class="ops-action" :href="telHref(order.riderPhone)">
                   <Phone :size="14" />
@@ -2221,5 +2248,32 @@ const recentOrders = computed(() =>
   :deep(.metric-card) {
     min-height: 0;
   }
+}
+/* -- The rider at the counter -------------------------------------------- */
+
+.ops-rider__photo {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+/* The same fallback the app and the tracking page draw. Most riders never
+   upload a photo, and an empty disc reads as a broken image. */
+.ops-rider__photo--letter {
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft, #e3efe7);
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.ops-rider__bike {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--text-secondary);
 }
 </style>

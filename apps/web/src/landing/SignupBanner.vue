@@ -106,8 +106,8 @@ function dismiss(): void {
   align-items: center;
   gap: 12px;
   padding: 0 var(--fd-gutter);
-  background: #bbf451;
-  color: #06240f;
+  background: #ede5d8;
+  color: #231d18;
 }
 
 .sfb__inner {
@@ -140,7 +140,7 @@ function dismiss(): void {
   flex-shrink: 0;
   padding: 7px 16px;
   border-radius: 999px;
-  background: #06240f;
+  background: #1f2e25;
   color: #fff;
   font-size: 13.5px;
   font-weight: 700;
@@ -149,7 +149,7 @@ function dismiss(): void {
 }
 
 .sfb__cta:hover {
-  background: #124a22;
+  background: #17231c;
 }
 
 .sfb__signin {
@@ -158,7 +158,7 @@ function dismiss(): void {
 }
 
 .sfb__signin a {
-  color: #06240f;
+  color: #231d18;
   font-weight: 700;
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -181,12 +181,12 @@ function dismiss(): void {
   border: none;
   border-radius: 999px;
   background: transparent;
-  color: #06240f;
+  color: #231d18;
   cursor: pointer;
 }
 
 .sfb__x:hover {
-  background: rgba(6, 36, 15, 0.12);
+  background: rgba(35, 29, 24, 0.12);
 }
 
 @media (max-width: 760px) {

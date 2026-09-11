@@ -15,6 +15,8 @@ import {
   type CashMovementType,
   type CatalogSnapshot,
   type Category,
+  type ConversationSummary,
+  type ConversationThread,
   type CreateCustomerInput,
   type CreateCategoryInput,
   type CreateOrderInput,
@@ -93,6 +95,17 @@ export interface PosRepository {
   }): Promise<SavedRider>
   deleteSavedRider(id: string): Promise<void>
   updateOrderDeliveryStage(orderId: string, stage: DeliveryStage): Promise<OrderSummary>
+  /**
+   * Customer messages. Server-side like online orders, so a local-only store
+   * has an empty inbox rather than an error. A shop answers threads; it has no
+   * way to start one.
+   */
+  loadConversations(): Promise<ConversationSummary[]>
+  /** Reading a thread is what marks it read for the shop. */
+  loadConversation(id: string): Promise<ConversationThread>
+  sendConversationMessage(id: string, body: string): Promise<ConversationThread>
+  /** For the nav badge. Zero, never a throw, when the API can't be reached. */
+  loadUnreadMessageCount(): Promise<number>
   saveCustomer(input: CreateCustomerInput): Promise<Customer>
   updateCustomer(customer: Customer): Promise<Customer>
   deleteCustomer(id: string): Promise<void>
@@ -2050,6 +2063,40 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         { method: 'POST', body: JSON.stringify({ stage }) },
       )
       return normalizeOrder(payload.order)
+    },
+
+    // Not cached: a conversation is only worth reading as it is now, and a
+    // stale copy would show a customer's question as unanswered after a
+    // colleague already answered it.
+    async loadConversations() {
+      if (!(await isOnlineSyncEnabled())) {
+        return []
+      }
+      const payload = await backendFetch<{ conversations: ConversationSummary[] }>('/api/seller/conversations')
+      return payload.conversations ?? []
+    },
+
+    async loadConversation(id) {
+      return backendFetch<ConversationThread>(`/api/seller/conversations/${encodeURIComponent(id)}`)
+    },
+
+    async sendConversationMessage(id, body) {
+      return backendFetch<ConversationThread>(
+        `/api/seller/conversations/${encodeURIComponent(id)}/messages`,
+        { method: 'POST', body: JSON.stringify({ body }) },
+      )
+    },
+
+    async loadUnreadMessageCount() {
+      if (!(await isOnlineSyncEnabled())) {
+        return 0
+      }
+      try {
+        const payload = await backendFetch<{ unread: number }>('/api/seller/conversations/unread')
+        return payload.unread ?? 0
+      } catch {
+        return 0
+      }
     },
 
     async saveCustomer(input) {

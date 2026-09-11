@@ -2,13 +2,15 @@
 import { computed } from 'vue'
 import { discountPercent, formatCurrency, type Product } from '@pos/shared/index'
 import { useStorefrontCart } from '@pos/web/commerce/cart'
+import { useSavedProducts } from '@pos/web/commerce/favorites'
 
 // One product tile: photo, sale flag, add button, name, price, savings.
 //
-// Pulled out of ProductRow so the horizontal shelves on the front page and the
-// category grid render the identical card — the two surfaces sit one click
-// apart, and a card that changed size or shape between them would read as two
-// different products.
+// Pulled out of ProductRow so every shelf on the front page renders the
+// identical card. The aisle listing draws its own framed card to the listing
+// redesign (ListingCard.vue); the two keep the same behaviour — a real link,
+// the heart, an Add button that becomes a stepper — so a product acts the same
+// wherever it is picked up.
 //
 // The card is an <a href="/?product=id"> whose click the landing page
 // intercepts to show the detail in place. The href is real rather than
@@ -53,6 +55,17 @@ function removeOne(event: Event) {
   event.stopPropagation()
   cart.decrement(props.product.id)
 }
+
+// The heart. Kept in this browser (commerce/favorites.ts) and listed on the
+// account page's Wishlist.
+const saved = useSavedProducts()
+const isSaved = computed(() => saved.isSaved(props.product.id))
+
+function toggleSaved(event: Event) {
+  event.preventDefault()
+  event.stopPropagation()
+  saved.toggle(props.product)
+}
 </script>
 
 <template>
@@ -64,6 +77,16 @@ function removeOne(event: Event) {
       <span v-if="discount !== null" class="fdcard__flag">SALE {{ discount }}%</span>
       <img v-if="product.imageUrl" :src="product.imageUrl" :alt="product.name" loading="lazy" />
       <div v-else class="fdcard__placeholder" aria-hidden="true">🛒</div>
+      <button
+        type="button"
+        class="fdcard__save"
+        :class="{ 'fdcard__save--on': isSaved }"
+        :aria-pressed="isSaved"
+        :aria-label="isSaved ? `Remove ${product.name} from your wishlist` : `Save ${product.name} to your wishlist`"
+        @click="toggleSaved"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" :fill="isSaved ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>
+      </button>
     </div>
 
     <!-- Name and unit share one row so the price and the button below stay on
@@ -136,13 +159,13 @@ function removeOne(event: Event) {
   position: relative;
   aspect-ratio: 1 / 1;
   border-radius: 8px;
-  background: #f7f8f7;
+  background: var(--sf-sand);
   overflow: hidden;
   margin-bottom: 10px;
 }
 
 .fdcard:focus-visible {
-  outline: 2px solid #1a6b3c;
+  outline: 2px solid var(--sf-forest);
   outline-offset: 4px;
   border-radius: 10px;
 }
@@ -165,12 +188,35 @@ function removeOne(event: Event) {
   z-index: 2;
   padding: 4px 9px;
   border-radius: 0 0 6px 0;
-  background: #c2410c;
+  background: var(--sf-clay);
   color: #fff;
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.04em;
 }
+
+/* Above the photo, which scales on hover and would otherwise slide over it. */
+.fdcard__save {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 253, 249, 0.94);
+  color: var(--sf-ink);
+  box-shadow: 0 2px 8px rgba(23, 35, 28, 0.16);
+  cursor: pointer;
+  transition: color 150ms, transform 150ms;
+}
+.fdcard__save:hover { color: var(--sf-clay); transform: scale(1.08); }
+.fdcard__save:focus-visible { outline: 2px solid var(--sf-clay); outline-offset: 2px; }
+.fdcard__save--on { color: var(--sf-clay); }
 
 .fdcard__meta { min-width: 0; }
 
@@ -185,7 +231,7 @@ function removeOne(event: Event) {
   font-size: 15px;
   font-weight: 600;
   line-height: 1.35;
-  color: #1a1a1a;
+  color: var(--sf-ink);
 }
 .fdcard:hover .fdcard__name { text-decoration: underline; }
 
@@ -196,7 +242,7 @@ function removeOne(event: Event) {
   margin: 2px 0 0;
   font-size: 12.5px;
   line-height: 1.3;
-  color: #8b978f;
+  color: var(--sf-muted);
 }
 
 .fdcard__price {
@@ -205,9 +251,9 @@ function removeOne(event: Event) {
   align-items: baseline;
   gap: 7px;
 }
-.fdcard__price > span:first-child { font-size: 18px; font-weight: 800; color: #1a1a1a; }
-.fdcard__price--sale { color: #c2410c !important; }
-.fdcard__was { font-size: 13px; color: #9ca3af; text-decoration: line-through; }
+.fdcard__price > span:first-child { font-size: 18px; font-weight: 800; color: var(--sf-ink); }
+.fdcard__price--sale { color: var(--sf-clay) !important; }
+.fdcard__was { font-size: 13px; color: var(--sf-faint); text-decoration: line-through; }
 
 /* A labelled button on its own row rather than a 34px circle floating over the
    photo: "Add" is one of the four things this card exists to do, and an icon
@@ -220,10 +266,10 @@ function removeOne(event: Event) {
   gap: 6px;
   width: 100%;
   padding: 9px 12px;
-  border: 1.5px solid #1a6b3c;
+  border: 1.5px solid var(--sf-forest);
   border-radius: 999px;
-  background: #fff;
-  color: #1a6b3c;
+  background: var(--sf-paper);
+  color: var(--sf-forest);
   /* Longhands: `inherit` is only legal as the shorthand's entire value, so
      `font: 800 13.5px/1.2 inherit` is dropped whole and the element renders at
      the inherited 17px/400 instead. Same trap as .fd-totop in FdFooter. */
@@ -234,8 +280,8 @@ function removeOne(event: Event) {
   cursor: pointer;
   transition: background 150ms, color 150ms, border-color 150ms;
 }
-.fdcard__add:hover { background: #1a6b3c; color: #fff; }
-.fdcard__add:focus-visible { outline: 2px solid #1a6b3c; outline-offset: 2px; }
+.fdcard__add:hover { background: var(--sf-forest); color: #fff; }
+.fdcard__add:focus-visible { outline: 2px solid var(--sf-forest); outline-offset: 2px; }
 
 /* In the basket: filled rather than outlined, so a glance down a shelf says
    which items are already in it without reading a single number. The metrics
@@ -248,9 +294,9 @@ function removeOne(event: Event) {
   justify-content: space-between;
   width: 100%;
   padding: 0;
-  border: 1.5px solid #1a6b3c;
+  border: 1.5px solid var(--sf-forest);
   border-radius: 999px;
-  background: #1a6b3c;
+  background: var(--sf-forest);
   color: #fff;
   overflow: hidden;
 }
@@ -269,7 +315,7 @@ function removeOne(event: Event) {
   transition: background 150ms;
 }
 .fdcard__step:hover { background: rgba(255, 255, 255, 0.18); }
-.fdcard__step:focus-visible { outline: 2px solid #bbf451; outline-offset: -3px; }
+.fdcard__step:focus-visible { outline: 2px solid var(--sf-gold); outline-offset: -3px; }
 
 .fdcard__qty-n {
   flex: 1;

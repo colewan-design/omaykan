@@ -1,48 +1,52 @@
 /*
  * Chrome for the customer portal (/account).
  *
- * Global rather than seven copies of the same `<style scoped>` block: the menu
- * panel and every section it opens have to agree on one card, one field, one
- * button and one empty state, and scoped styles would let them drift the way
- * the header and footer were drifting before FdHeader was shared.
+ * Global rather than a copy of the same `<style scoped>` block per section:
+ * the sidebar, the dashboard and every section it opens have to agree on one
+ * card, one field, one button and one empty state, and scoped styles would
+ * let them drift the way the header and footer were drifting before FdHeader
+ * was shared.
  *
  * Everything is namespaced under `.acct`, so none of it reaches the storefront
  * chrome above and below it, or the app if app.css is ever loaded alongside.
  *
- * The palette is the reference's: near-white ground, black type, hairline
- * rules, and the storefront green used only where something is actionable.
- * The green header and footer are what tie the page to the rest of the site;
- * the portal itself stays quiet.
+ * The palette is the storefront's highland one (landing.css): cream ground,
+ * white cards on hairline rules, serif headings, and terracotta for the thing
+ * to press. Green is kept for one job — saying something is settled: the
+ * default address, a delivered order.
  */
 
 .acct {
-  --acct-ink: #1a1a1a;
-  --acct-muted: #6b7280;
-  --acct-faint: #9ca3af;
-  --acct-rule: #e8eae9;
-  --acct-ground: #f7f7f7;
-  --acct-surface: #ffffff;
-  --acct-green: #1a6b3c;
-  --acct-radius: 14px;
+  --acct-ink: #231d18;
+  --acct-muted: #6f665c;
+  --acct-faint: #9a9086;
+  --acct-rule: #e4dacb;
+  --acct-ground: #f6f1e8;
+  --acct-surface: #fffdf9;
+  --acct-accent: #b4532a;
+  --acct-accent-deep: #93401d;
+  --acct-green: #2f6b45;
+  --acct-radius: 10px;
 }
 
 /* ── Section headers ─────────────────────────────────────────────────── */
 
 .acct-head {
-  margin: 0 0 26px;
+  margin: 0 0 24px;
 }
 
 .acct-head__title {
   margin: 0;
-  font-size: 27px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  font-family: var(--sf-serif);
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
   color: var(--acct-ink);
 }
 
 .acct-head__sub {
   margin: 8px 0 0;
-  max-width: 58ch;
+  max-width: 62ch;
   font-size: 14.5px;
   line-height: 1.6;
   color: var(--acct-muted);
@@ -81,20 +85,19 @@
   align-items: center;
   height: 21px;
   padding: 0 9px;
-  border-radius: 999px;
-  background: rgba(26, 107, 60, 0.1);
+  border-radius: 4px;
+  background: #e4efe4;
   color: var(--acct-green);
   font-size: 11.5px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.02em;
-  text-transform: uppercase;
 }
 
 /* ── Empty states ────────────────────────────────────────────────────── */
 
 .acct-empty {
   padding: 34px 26px;
-  border: 1px dashed #dcdfdd;
+  border: 1px dashed #d8ccb9;
   border-radius: var(--acct-radius);
   background: var(--acct-surface);
   text-align: center;
@@ -102,7 +105,8 @@
 
 .acct-empty__title {
   margin: 0 0 6px;
-  font-size: 15.5px;
+  font-family: var(--sf-serif);
+  font-size: 17px;
   font-weight: 700;
   color: var(--acct-ink);
 }
@@ -137,15 +141,21 @@
   color: var(--acct-faint);
 }
 
+/* Longhands throughout: `font: 500 15px/1.4 inherit` is not a valid
+   shorthand — `inherit` is only legal as the whole value — so browsers drop
+   the declaration and the control falls back to its UA font. */
 .acct-input,
 .acct-select,
 .acct-textarea {
   width: 100%;
   padding: 11px 14px;
-  border: 1px solid #dcdfdd;
-  border-radius: 10px;
+  border: 1px solid var(--acct-rule);
+  border-radius: 6px;
   background: #fff;
-  font: 500 15px/1.4 inherit;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.4;
   color: var(--acct-ink);
 }
 
@@ -158,8 +168,8 @@
 .acct-select:focus,
 .acct-textarea:focus {
   outline: none;
-  border-color: var(--acct-green);
-  box-shadow: 0 0 0 3px rgba(26, 107, 60, 0.12);
+  border-color: var(--acct-accent);
+  box-shadow: 0 0 0 3px rgba(180, 83, 42, 0.14);
 }
 
 .acct-input::placeholder,
@@ -204,31 +214,58 @@
   height: 42px;
   padding: 0 20px;
   border: 1px solid transparent;
-  border-radius: 999px;
-  background: var(--acct-green);
+  border-radius: 6px;
+  background: var(--acct-accent);
   color: #fff;
-  font: 700 14px/1 inherit;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
   cursor: pointer;
 }
 
 .acct-btn:hover {
-  background: #14572f;
+  background: var(--acct-accent-deep);
+}
+
+.acct-btn:focus-visible {
+  outline: 2px solid var(--sf-forest, #1f2e25);
+  outline-offset: 2px;
 }
 
 .acct-btn:disabled {
-  background: #d6dbd8;
-  color: #8a938e;
+  background: #e2d7c5;
+  color: #9a9086;
   cursor: not-allowed;
 }
 
 .acct-btn--ghost {
   background: transparent;
-  border-color: #dcdfdd;
+  border-color: var(--acct-rule);
   color: var(--acct-ink);
 }
 
 .acct-btn--ghost:hover {
-  background: #f2f4f3;
+  background: #fff;
+  border-color: var(--acct-accent);
+  color: var(--acct-accent);
+}
+
+/* The reference's "Edit Profile": terracotta outline, terracotta type. */
+.acct-btn--outline {
+  height: 34px;
+  padding: 0 14px;
+  background: transparent;
+  border-color: var(--acct-accent);
+  color: var(--acct-accent);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.acct-btn--outline:hover {
+  background: var(--acct-accent);
+  color: #fff;
 }
 
 /* Text-only actions inside a card row — "Make default", "Remove". */
@@ -237,7 +274,10 @@
   border: none;
   background: none;
   color: var(--acct-muted);
-  font: 600 13px/1 inherit;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
   text-decoration: underline;
   text-underline-offset: 3px;
   cursor: pointer;
@@ -248,7 +288,29 @@
 }
 
 .acct-link--danger:hover {
-  color: #b42318;
+  color: #9a3b2a;
+}
+
+/* "View all orders →" beside a card heading. */
+.acct-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--acct-accent);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.acct-more:hover {
+  color: var(--acct-accent-deep);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .acct-actions {
@@ -258,6 +320,24 @@
   gap: 16px;
   margin-top: 16px;
 }
+
+/* ── Order status ────────────────────────────────────────────────────── */
+
+.acct-status {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.acct-status--done { background: #e4efe4; color: #2f6b45; }
+.acct-status--moving { background: #e3ebf5; color: #2c5886; }
+.acct-status--ready { background: #e3ebf5; color: #2c5886; }
+.acct-status--prep { background: #fbe7d8; color: #a4481f; }
 
 /* ── Toggles ─────────────────────────────────────────────────────────── */
 
@@ -279,7 +359,7 @@
   width: 18px;
   height: 18px;
   margin-top: 2px;
-  accent-color: var(--acct-green);
+  accent-color: var(--acct-accent);
   cursor: pointer;
 }
 
@@ -312,7 +392,7 @@
 }
 
 .acct-flash--error {
-  color: #b42318;
+  color: #9a3b2a;
 }
 
 /* ── Signed-out gate ─────────────────────────────────────────────────── */
@@ -332,10 +412,10 @@
    laps the two lines of "Choose a new password" over each other. */
 .acct-gate__title {
   margin: 0 0 10px;
-  font-size: 38px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  line-height: 1.1;
+  font-family: var(--sf-serif);
+  font-size: 36px;
+  font-weight: 700;
+  line-height: 1.15;
   color: var(--acct-ink);
 }
 

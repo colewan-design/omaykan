@@ -9,7 +9,8 @@ import {
 } from '@pos/shared/index'
 import { useStorefrontCart } from '@pos/web/commerce/cart'
 import { useStorefrontCatalog } from '@pos/web/commerce/catalog'
-import { STORE_ADDRESS } from '@pos/web/commerce/context'
+import { ORG_SLUG, STORE_ADDRESS, STORE_CODE } from '@pos/web/commerce/context'
+import { MESSAGING_ENABLED } from '@pos/web/commerce/features'
 import ProductRow from './ProductRow.vue'
 
 // The product detail face of the landing page: one product at full size, with
@@ -51,6 +52,23 @@ const shop = computed(() => catalog.shop)
  * for the demo shelf, which has no shop record behind it.
  */
 const shopAddress = computed(() => shop.value?.address ?? (STORE_ADDRESS || undefined))
+
+/**
+ * "Do you have this in a bigger size?" is a question for the shop. It goes
+ * through the portal, which signs a shopper in first if they need to and keeps
+ * the shop in the URL while they do. Absent on the demo shelf, which has no
+ * shop to answer.
+ */
+const messageShopHref = computed(() => {
+  if (!MESSAGING_ENABLED || !shop.value || !ORG_SLUG || !STORE_CODE) return ''
+  const params = new URLSearchParams({
+    section: 'messages',
+    shop: ORG_SLUG,
+    store: STORE_CODE,
+    name: shop.value.name,
+  })
+  return `/account?${params.toString()}`
+})
 
 const quantity = ref(1)
 const justAdded = ref(false)
@@ -299,6 +317,7 @@ function addToCart() {
               <dd>{{ shopAddress }}</dd>
             </div>
           </dl>
+          <a v-if="messageShopHref" class="fdpdp__message" :href="messageShopHref">Message this shop</a>
         </section>
 
         <dl class="fdpdp__facts">
@@ -558,6 +577,20 @@ function addToCart() {
 .fdpdp__shopfacts > div { display: flex; gap: 10px; font-size: 13.5px; }
 .fdpdp__shopfacts dt { min-width: 96px; flex: none; color: #9ca3af; }
 .fdpdp__shopfacts dd { margin: 0; color: #4b5563; font-weight: 600; }
+
+.fdpdp__message {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 14px;
+  padding: 8px 16px;
+  border: 1px solid #1a6b3c;
+  border-radius: 999px;
+  color: #1a6b3c;
+  font-size: 13.5px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.fdpdp__message:hover { background: #1a6b3c; color: #fff; }
 
 .fdpdp__facts { margin: 24px 0 0; display: grid; gap: 10px; }
 .fdpdp__facts > div { display: flex; gap: 10px; font-size: 13.5px; }

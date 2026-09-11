@@ -117,7 +117,7 @@ onBeforeUnmount(() => {
 .partner__scrim {
   position: absolute;
   inset: 0;
-  background: rgba(6, 36, 15, 0.42);
+  background: rgba(23, 35, 28, 0.42);
   animation: partner-fade 0.18s ease-out;
 }
 
@@ -126,8 +126,8 @@ onBeforeUnmount(() => {
   width: min(460px, 100%);
   padding: 34px 34px 28px;
   border-radius: 14px;
-  background: #fff;
-  box-shadow: 0 24px 60px rgba(6, 36, 15, 0.28);
+  background: #fbf8f3;
+  box-shadow: 0 24px 60px rgba(23, 35, 28, 0.28);
   animation: partner-rise 0.22s ease-out;
 }
 
@@ -154,12 +154,12 @@ onBeforeUnmount(() => {
   border: 0;
   border-radius: 999px;
   background: transparent;
-  color: #5b6b60;
+  color: #6f665c;
   font-size: 24px;
   line-height: 1;
   cursor: pointer;
 }
-.partner__x:hover { background: #f5f9f6; color: #06240f; }
+.partner__x:hover { background: #ede5d8; color: #231d18; }
 
 .partner__eyebrow {
   margin: 0 0 10px;
@@ -167,7 +167,7 @@ onBeforeUnmount(() => {
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #1a6b3c;
+  color: #b4532a;
 }
 
 .partner__title {
@@ -176,14 +176,14 @@ onBeforeUnmount(() => {
   font-weight: 800;
   letter-spacing: -0.03em;
   line-height: 1.2;
-  color: #06240f;
+  color: #231d18;
 }
 
 .partner__body {
   margin: 0 0 22px;
   font-size: 14.5px;
   line-height: 1.6;
-  color: #46564b;
+  color: #6f665c;
 }
 
 .partner__actions {
@@ -195,29 +195,30 @@ onBeforeUnmount(() => {
 
 .partner__cta {
   padding: 13px 28px;
-  border-radius: 999px;
-  background: #bbf451;
-  color: #06240f;
+  border-radius: 6px;
+  background: #b4532a;
+  color: #fff;
   font-size: 15px;
   font-weight: 800;
   text-decoration: none;
 }
-.partner__cta:hover { background: #1a6b3c; color: #fff; }
+.partner__cta:hover { background: #93401d; color: #fff; }
 
 .partner__later {
   border: 0;
   background: transparent;
   padding: 6px 2px;
-  color: #5b6b60;
+  color: #6f665c;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
 }
-.partner__later:hover { color: #06240f; text-decoration: underline; }
+.partner__later:hover { color: #231d18; text-decoration: underline; }
 
 @media (max-width: 520px) {
   .partner__panel { padding: 28px 22px 24px; }
   .partner__actions { gap: 10px; }
   .partner__cta { width: 100%; text-align: center; }
 }
+.partner__title { font-family: 'Libre Caslon Text', Georgia, serif; font-weight: 700; letter-spacing: 0; }
 </style>

@@ -44,7 +44,7 @@ const steps = [
   margin: 8px 0 52px;
   padding: 30px 32px;
   border-radius: 14px;
-  background: #f5f9f6;
+  background: var(--sf-sand);
 }
 
 .fd-how__title {
@@ -52,7 +52,7 @@ const steps = [
   font-size: 1.5rem;
   font-weight: 800;
   letter-spacing: -0.03em;
-  color: #06240f;
+  color: var(--sf-ink);
 }
 
 .fd-how__steps {
@@ -75,7 +75,7 @@ const steps = [
   left: 50px;
   right: -28px;
   height: 1.5px;
-  background: #d7e7dd;
+  background: var(--sf-rule);
 }
 
 .fd-how__n {
@@ -85,8 +85,8 @@ const steps = [
   height: 38px;
   margin-bottom: 14px;
   border-radius: 999px;
-  background: #1a6b3c;
-  color: #bbf451;
+  background: var(--sf-forest);
+  color: var(--sf-gold);
   font-size: 17px;
   font-weight: 800;
 }
@@ -95,14 +95,14 @@ const steps = [
   margin: 0 0 5px;
   font-size: 15.5px;
   font-weight: 800;
-  color: #06240f;
+  color: var(--sf-ink);
 }
 
 .fd-how__p {
   margin: 0;
   font-size: 14px;
   line-height: 1.55;
-  color: #5b6b60;
+  color: var(--sf-muted);
 }
 
 @media (max-width: 860px) {
@@ -114,4 +114,6 @@ const steps = [
   .fd-how__n { grid-row: span 2; margin-bottom: 0; }
   .fd-how__p { grid-column: 2; }
 }
+.fd-how__title { font-family: var(--sf-serif); font-weight: 700; letter-spacing: 0; }
+.fd-how__n { font-family: var(--sf-serif); }
 </style>

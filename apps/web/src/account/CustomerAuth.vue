@@ -25,9 +25,9 @@ import {
  * There is no emit: `useCustomerAccount` is module-level, so a successful
  * sign-in flips `signedIn` for the header and the portal at the same time.
  *
- * Google sits above the form on the two cards where it means anything, because
- * for most shoppers it is the whole interaction and the form beneath it is the
- * fallback. It is absent entirely when the build has no client id, and it
+ * Google sits below the form, after an "or", on the two cards where it means
+ * anything: email and password lead, and Google is the alternative offered
+ * underneath. It is absent entirely when the build has no client id, and it
  * removes itself if the script will not load — a content blocker eating it must
  * leave a working sign-in card behind, not a dead button.
  */
@@ -258,13 +258,6 @@ async function submit() {
     <p class="acct-gate__sub">{{ copy.sub }}</p>
 
     <form class="acct-card acct-gate__form" novalidate @submit.prevent="submit">
-      <!-- Google's own button renders into this slot; it is an iframe, which is
-           why it is a bare div and not styled from here. -->
-      <template v-if="googleUsable && googleOffered">
-        <div ref="googleSlot" class="auth-google" :class="{ 'auth-google--busy': pending }" />
-        <p class="auth-or"><span>or</span></p>
-      </template>
-
       <label v-if="mode === 'register'" class="acct-field">
         <span class="acct-field__label">Your name</span>
         <input
@@ -343,6 +336,13 @@ async function submit() {
           Forgot your password?
         </button>
       </p>
+
+      <!-- Google's own button renders into this slot; it is an iframe, which is
+           why it is a bare div and not styled from here. -->
+      <template v-if="googleUsable && googleOffered">
+        <p class="auth-or"><span>or</span></p>
+        <div ref="googleSlot" class="auth-google" :class="{ 'auth-google--busy': pending }" />
+      </template>
     </form>
 
     <p class="auth-switch">
@@ -391,7 +391,7 @@ async function submit() {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 18px 0 4px;
+  margin: 18px 0 14px;
   font-size: 13px;
   color: var(--acct-faint);
 }

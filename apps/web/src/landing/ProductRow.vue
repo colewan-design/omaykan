@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { ArrowRight, ChevronLeft, ChevronRight } from '@lucide/vue'
 import type { Product } from '@pos/shared/index'
 import ProductCard from './ProductCard.vue'
 
-// A horizontally-scrolling shelf of product cards — the repeating unit of the
-// reference grocery layout: heading + "View all", arrow controls on the right,
-// then a row of cards you can add to the cart without leaving the page.
+// A horizontally-scrolling shelf of product cards: serif heading and "See all"
+// on one line, then the cards, with round arrows riding the shelf's two edges
+// the way the redesign draws them.
 //
 // The card itself lives in ProductCard.vue, shared with the category grid.
 
@@ -13,7 +14,7 @@ const props = withDefaults(
   defineProps<{
     title: string
     products: Product[]
-    /** Optional paragraph between the heading and the shelf. */
+    /** Optional line under the heading. */
     blurb?: string
     /** Empty hides the link. */
     viewAllHref?: string
@@ -41,28 +42,32 @@ function scrollBy(direction: -1 | 1) {
   <section v-if="hasProducts" :id="props.anchor || undefined" class="fdrow">
     <div class="fdrow__head">
       <div class="fdrow__headline">
-        <h2 class="fdrow__title">{{ title }}</h2>
-        <a v-if="viewAllHref" :href="viewAllHref" class="fdrow__viewall">View all</a>
+        <h2 class="sf-h2">{{ title }}</h2>
+        <p v-if="blurb" class="fdrow__blurb">{{ blurb }}</p>
       </div>
-      <div class="fdrow__arrows">
-        <button type="button" aria-label="Scroll left" @click="scrollBy(-1)">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-        </button>
-        <button type="button" aria-label="Scroll right" @click="scrollBy(1)">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-        </button>
-      </div>
+      <a v-if="viewAllHref" :href="viewAllHref" class="sf-more">
+        See all
+        <ArrowRight :size="15" :stroke-width="2" />
+      </a>
     </div>
 
-    <p v-if="blurb" class="fdrow__blurb">{{ blurb }}</p>
+    <div class="fdrow__track">
+      <button type="button" class="fdrow__arrow fdrow__arrow--prev" aria-label="Scroll left" @click="scrollBy(-1)">
+        <ChevronLeft :size="20" :stroke-width="2" />
+      </button>
 
-    <div ref="shelf" class="fdrow__shelf">
-      <ProductCard
-        v-for="product in products"
-        :key="product.id"
-        :product="product"
-        @select="$emit('select', $event)"
-      />
+      <div ref="shelf" class="fdrow__shelf">
+        <ProductCard
+          v-for="product in products"
+          :key="product.id"
+          :product="product"
+          @select="$emit('select', $event)"
+        />
+      </div>
+
+      <button type="button" class="fdrow__arrow fdrow__arrow--next" aria-label="Scroll right" @click="scrollBy(1)">
+        <ChevronRight :size="20" :stroke-width="2" />
+      </button>
     </div>
   </section>
 </template>
@@ -72,66 +77,32 @@ function scrollBy(direction: -1 | 1) {
 
 .fdrow__head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 20px;
-  margin-bottom: 6px;
+  margin-bottom: 16px;
 }
 
-.fdrow__headline { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
-
-.fdrow__title {
-  margin: 0;
-  font-size: clamp(1.25rem, 2.4vw, 1.75rem);
-  font-weight: 800;
-  letter-spacing: -0.025em;
-  color: #1a1a1a;
-}
-
-.fdrow__viewall {
-  font-size: 14px;
-  font-weight: 600;
-  color: #16a34a;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  white-space: nowrap;
-}
-.fdrow__viewall:hover { color: #1a6b3c; }
-
-.fdrow__arrows { display: flex; gap: 6px; flex-shrink: 0; }
-.fdrow__arrows button {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border: none;
-  border-radius: 999px;
-  background: transparent;
-  color: #4b5563;
-  cursor: pointer;
-}
-.fdrow__arrows button:hover { background: #f4f6f5; color: #1a1a1a; }
+.fdrow__headline { min-width: 0; }
 
 .fdrow__blurb {
-  margin: 0 0 20px;
+  margin: 6px 0 0;
   max-width: 780px;
-  font-size: 15px;
+  font-size: 14.5px;
   line-height: 1.6;
-  color: #6b7280;
+  color: var(--sf-muted);
 }
 
-/* Horizontal shelf — scrolls, snaps, hides its scrollbar. */
+.fdrow__track { position: relative; }
+
 /* Fixed track, not minmax(..., 1fr): a shelf short enough to fit without
-   scrolling would otherwise stretch its cards across the full width, so a
-   three-item row like "Fresh deals" rendered cards 2.5x the size of every
-   other card on the page. Every shelf now uses one card size and short rows
-   simply end early. */
+   scrolling would otherwise stretch its cards across the full width. Every
+   shelf uses one card size and short rows simply end early. */
 .fdrow__shelf {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: 178px;
-  gap: 20px;
-  margin-top: 18px;
+  grid-auto-columns: 180px;
+  gap: 22px;
   overflow-x: auto;
   scroll-snap-type: x proximity;
   scrollbar-width: none;
@@ -139,8 +110,33 @@ function scrollBy(direction: -1 | 1) {
 }
 .fdrow__shelf::-webkit-scrollbar { display: none; }
 
+/* Centred on the photo row, not the whole card: the photo is 180px square. */
+.fdrow__arrow {
+  position: absolute;
+  top: 90px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--sf-rule);
+  border-radius: 50%;
+  background: var(--sf-sand);
+  color: var(--sf-ink);
+  box-shadow: 0 6px 16px rgba(23, 35, 28, 0.14);
+  transform: translateY(-50%);
+  cursor: pointer;
+  transition: background 150ms, color 150ms;
+}
+.fdrow__arrow:hover { background: var(--sf-forest); color: var(--sf-paper); }
+.fdrow__arrow:focus-visible { outline: 2px solid var(--sf-clay); outline-offset: 2px; }
+.fdrow__arrow--prev { left: -14px; }
+.fdrow__arrow--next { right: -14px; }
+
 @media (max-width: 720px) {
   .fdrow__shelf { grid-auto-columns: 148px; gap: 14px; }
-  .fdrow__arrows { display: none; }
+  /* Swiping is how a phone scrolls a shelf; the arrows would only cover cards. */
+  .fdrow__arrow { display: none; }
 }
 </style>

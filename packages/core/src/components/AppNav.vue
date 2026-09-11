@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   LayoutGrid,
   type LucideIcon,
+  MessageCircle,
   Package,
   Plug,
   ReceiptText,
@@ -13,19 +14,22 @@ import {
   UserCircle2,
   Users,
 } from '@lucide/vue'
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import BrandLogo from '@pos/core/components/BrandLogo.vue'
 import { usePosStore } from '@pos/core/stores/pos'
 import { useAuthStore } from '@pos/core/stores/auth'
+import { useMessagesStore } from '@pos/core/stores/messages'
 import type { AppPageKey } from '@pos/shared/index'
 
 const emit = defineEmits<{ navigate: [] }>()
 const route = useRoute()
 const store = usePosStore()
 const auth = useAuthStore()
+const messages = useMessagesStore()
 
 interface NavItem {
+  /** The permission that shows the item. Not unique — Messages rides on `orders`. */
   page: AppPageKey
   label: string
   icon: LucideIcon
@@ -38,6 +42,7 @@ const allNavItems: NavItem[] = [
   { page: 'register', label: 'Register', icon: ShoppingCart, to: '/register' },
   { page: 'sales', label: 'Sales', icon: BarChart3, to: '/sales' },
   { page: 'orders', label: 'Orders', icon: ReceiptText, to: '/orders' },
+  { page: 'orders', label: 'Messages', icon: MessageCircle, to: '/messages' },
   { page: 'tables', label: 'Tables', icon: LayoutGrid, to: '/tables' },
   { page: 'products', label: 'Products', icon: Package, to: '/products' },
   { page: 'customers', label: 'Customers', icon: Users, to: '/customers' },
@@ -63,6 +68,16 @@ const navItems = computed(() =>
 function isActive(path: string) {
   return route.path === path
 }
+
+const unreadLabel = computed(() => (messages.unread > 99 ? '99+' : String(messages.unread)))
+
+// Only someone who can open Messages is worth polling for. The store counts
+// subscribers, so the sidebar and the mobile drawer share one timer.
+let unsubscribe: (() => void) | null = null
+onMounted(() => {
+  if (auth.canAccess('orders')) unsubscribe = messages.subscribe()
+})
+onBeforeUnmount(() => unsubscribe?.())
 </script>
 
 <template>
@@ -76,7 +91,7 @@ function isActive(path: string) {
 
     <RouterLink
       v-for="item in navItems"
-      :key="item.page"
+      :key="item.to"
       class="workspace-nav__link"
       :class="{ 'workspace-nav__link--active': isActive(item.to) }"
       :to="item.to"
@@ -84,6 +99,13 @@ function isActive(path: string) {
     >
       <component :is="item.icon" :size="18" />
       <span>{{ item.label }}</span>
+      <span
+        v-if="item.to === '/messages' && messages.unread > 0"
+        class="workspace-nav__badge"
+        :aria-label="`${messages.unread} unread`"
+      >
+        {{ unreadLabel }}
+      </span>
     </RouterLink>
   </nav>
 </template>
@@ -137,5 +159,19 @@ function isActive(path: string) {
   background: linear-gradient(135deg, var(--accent), var(--accent-pressed));
   color: var(--accent-text-on);
   box-shadow: 0 12px 24px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.workspace-nav__badge {
+  display: grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--danger);
+  color: #fff;
+  font: var(--type-caption);
+  font-weight: 700;
 }
 </style>

@@ -326,6 +326,24 @@ export function createDemoPosRepository(): PosRepository {
       return { saved: [], recent: [] }
     },
 
+    // No storefront, so no customers to hear from. Empty rather than a throw
+    // for the reads, for the reason loadSavedRiders gives above.
+    async loadConversations() {
+      return []
+    },
+
+    async loadConversation(id: string) {
+      throw new Error(`No conversation ${id} in the demo catalog.`)
+    },
+
+    async sendConversationMessage(id: string) {
+      throw new Error(`No conversation ${id} in the demo catalog.`)
+    },
+
+    async loadUnreadMessageCount() {
+      return 0
+    },
+
     async saveRider() {
       throw new Error('The demo catalog has no shop to save a rider against.')
     },

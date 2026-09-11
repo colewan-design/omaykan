@@ -1,291 +1,236 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { ArrowRight, BadgeCheck, HandCoins, Store } from '@lucide/vue'
+import MountainMark from './MountainMark.vue'
 
-// Full-width video banner at the top of the landing page, modelled on the
-// FreshDirect reference: a short, wide strip of footage behind a left-weighted
-// scrim, the headline over it, and a play/pause control in the bottom-left.
+// The front page's opening: a full-bleed photograph with the pitch set over
+// its left side, in the highland redesign's serif.
 //
-// The footage is a Manila market stall, which is the literal subject of the
-// pitch further down the page ("Every shop here is a real counter somewhere in
-// the city") rather than generic stock.
+// The photograph is a named slot rather than a chosen asset. Whatever file is
+// at /storefront/hero.webp is the hero; today that is a copy of the market
+// photo from the about page, and replacing it with the real shoot is a file
+// drop with no code change. It is framed with object-fit: cover and a left
+// scrim, so any landscape photo with its subject right of centre will sit.
 //
-// The file is encoded already cropped to the banner's 1600x380, not letterboxed
-// by CSS from the 16:9 original — at this shape more than half the source frame
-// is off-screen, so shipping the full frame would mean paying to download
-// pixels nobody sees. It also fixes the framing here rather than leaving it to
-// object-position: the crop keeps the stallholder's head and one handwritten
-// price tag, which a centred crop would both miss.
+// It used to be a looping video of a market stall. A still loads in one
+// request, needs no pause control, and is what the redesign draws.
 
-const video = ref<HTMLVideoElement | null>(null)
+const HERO_IMAGE = '/storefront/hero.webp'
 
-// Read once, before the first render, so the `autoplay` attribute is present
-// in the initial DOM for the browsers that honour it. Someone who asked their
-// OS to stop animations gets the poster frame and a button, not motion.
-const reduceMotion =
-  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-
-const playing = ref(!reduceMotion)
-
-function toggle() {
-  const el = video.value
-  if (!el) return
-  if (el.paused) void el.play().catch(() => { playing.value = false })
-  else el.pause()
-}
-
-onMounted(() => {
-  const el = video.value
-  if (!el) return
-
-  // Belt and braces: an unmuted play() is rejected outright, and the `muted`
-  // content attribute alone has historically not been enough in every engine.
-  el.muted = true
-  if (reduceMotion) return
-
-  // Muted autoplay is allowed everywhere, but a data-saver or battery-saver
-  // mode can still refuse it. Reflect what actually happened so the button
-  // doesn't offer to "pause" a video that never started.
-  void el.play().catch(() => { playing.value = false })
-})
+/** Three things that are true of every order, not taglines. */
+const promises = [
+  { icon: Store, label: 'Real shops in your city' },
+  { icon: BadgeCheck, label: 'The same price as the counter' },
+  { icon: HandCoins, label: 'Cash or GCash on arrival' },
+]
 </script>
 
 <template>
-  <section class="fd-hero">
-    <div class="fd-hero__frame">
-      <video
-        ref="video"
-        class="fd-hero__video"
-        poster="/delivery/hero-market-poster.webp"
-        preload="metadata"
-        :autoplay="!reduceMotion"
-        muted
-        loop
-        playsinline
-        disablepictureinpicture
-        aria-hidden="true"
-        tabindex="-1"
-        @play="playing = true"
-        @pause="playing = false"
-      >
-        <source src="/delivery/hero-market.mp4" type="video/mp4" />
-      </video>
+  <section class="sfhero">
+    <img class="sfhero__img" :src="HERO_IMAGE" alt="" fetchpriority="high" />
+    <div class="sfhero__scrim" aria-hidden="true"></div>
 
-      <div class="fd-hero__scrim" aria-hidden="true"></div>
+    <div class="sfhero__inner">
+      <div class="sfhero__copy">
+        <!-- Where, before anything else. The banner has to answer "is this
+             even my city?" in the first glance. -->
+        <p class="sf-eyebrow sfhero__eyebrow">Local shops of Baguio &amp; La Trinidad</p>
 
-      <button
-        type="button"
-        class="fd-hero__toggle"
-        :aria-label="playing ? 'Pause background video' : 'Play background video'"
-        @click="toggle"
-      >
-        <svg v-if="playing" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
-        <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.14v13.72a1 1 0 0 0 1.54.84l10.3-6.86a1 1 0 0 0 0-1.68L9.54 4.3A1 1 0 0 0 8 5.14Z"/></svg>
-      </button>
-    </div>
+        <h1 class="sfhero__title">Shop the market, from&nbsp;home.</h1>
 
-    <div class="fd-hero__copy">
-      <!-- Where, before anything else. The banner has to answer "is this even
-           my city?" in the first glance, and "near you" in the subhead only
-           answers it for someone who already knows what Omaykan is. -->
-      <p class="fd-hero__where">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"/></svg>
-        Baguio &middot; La Trinidad
-      </p>
+        <p class="sfhero__sub">
+          Groceries, sari-sari stores, wet market sellers and local shops near you — delivered at
+          the price they charge at the counter.
+        </p>
 
-      <h1 class="fd-hero__title">Shop the market, from home.</h1>
+        <!-- Two audiences land here, and each gets a next step: the shopper the
+             louder one, the merchant the quieter. -->
+        <div class="sfhero__cta">
+          <a href="#shop" class="sfhero__btn">
+            Start shopping
+            <ArrowRight :size="18" :stroke-width="2" />
+          </a>
+          <a href="/signup" class="sfhero__ghost">Sell on Omaykan</a>
+        </div>
 
-      <p class="fd-hero__sub">
-        Groceries, sari-sari stores, wet market sellers, and local shops near you — delivered
-        at the same price they charge at the counter.
-      </p>
-
-      <!-- Two audiences land on this page, and until now neither was given a
-           next step: a shopper had to scroll past the banner to find the
-           shelves, and a merchant had to notice "Sell with us" in the bar. -->
-      <div class="fd-hero__cta">
-        <a href="#shop" class="fd-hero__btn fd-hero__btn--primary">Start shopping</a>
-        <a href="/signup" class="fd-hero__btn fd-hero__btn--ghost">Sell on Omaykan</a>
+        <ul class="sfhero__promises">
+          <li v-for="promise in promises" :key="promise.label">
+            <component :is="promise.icon" :size="26" :stroke-width="1.4" />
+            <span>{{ promise.label }}</span>
+          </li>
+        </ul>
       </div>
+
+      <p class="sfhero__script" aria-hidden="true">
+        More than a market.<br />
+        A neighbour,<br />
+        a counter,<br />
+        a brighter tomorrow.
+      </p>
+
+      <p class="sfhero__sign" aria-hidden="true">
+        <MountainMark :size="46" :sun="false" />
+        <span>Baguio · La Trinidad</span>
+      </p>
     </div>
   </section>
 </template>
 
 <style scoped>
-.fd-hero {
+.sfhero {
   position: relative;
-  margin-bottom: 48px;
-}
-
-.fd-hero__frame {
-  position: relative;
-  border-radius: 10px;
+  display: flex;
+  min-height: clamp(420px, 34vw, 520px);
   overflow: hidden;
-  background: #06240f;
-  /* The encoded size of the file, so the banner is the video's own shape and
-     object-fit has nothing left to crop. */
-  aspect-ratio: 1600 / 380;
-  /* Below roughly 1150px the ratio alone would make the strip shorter than the
-     overlaid copy. This lets the frame grow instead, trading a little side
-     crop for text that still fits. Raised from 240px when the hero gained the
-     location line and the two buttons — at 240 the CTA row clipped out of the
-     frame on a narrow desktop window. */
-  min-height: 330px;
-  /* Not redundant with the block default: with a definite min-height and an
-     aspect-ratio, an auto width gets *derived from the height* (240 x 4.21 =
-     1010px), which overflows the column and puts a horizontal scrollbar on the
-     page. Pinning the width keeps the ratio working in one direction only. */
-  width: 100%;
+  background: var(--sf-forest-deep);
+  color: var(--sf-paper);
 }
 
-.fd-hero__video {
+.sfhero__img {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: 60% 40%;
 }
 
-/* Market footage is bright and busy, so the headline needs its own ground —
-   heaviest at the left where the text sits, clearing by the midpoint so the
-   stall is still legible. */
-.fd-hero__scrim {
+/* Heaviest at the left where the words sit, clearing across the middle so
+   the photograph is still the thing you see, and settling a little at the
+   right edge for the script. */
+.sfhero__scrim {
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    90deg,
-    rgba(6, 36, 15, 0.92) 0%,
-    rgba(6, 36, 15, 0.78) 34%,
-    rgba(6, 36, 15, 0.3) 64%,
-    rgba(6, 36, 15, 0.06) 100%
-  );
+  background:
+    linear-gradient(90deg, rgba(23, 35, 28, 0.94) 0%, rgba(23, 35, 28, 0.8) 30%, rgba(23, 35, 28, 0.2) 62%, rgba(23, 35, 28, 0.5) 100%),
+    linear-gradient(0deg, rgba(23, 35, 28, 0.5) 0%, transparent 38%);
 }
 
-.fd-hero__copy {
-  position: absolute;
-  inset: 0;
+.sfhero__inner {
+  position: relative;
   z-index: 1;
-  /* 660 rather than 620 so the subhead sets in two lines instead of three with
-     a one-word last line. The scrim is still ~0.7 opaque this far across, so
-     the copy has not outrun its own background. */
-  max-width: 660px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 12px;
-  padding: 0 clamp(24px, 4vw, 56px);
+  display: grid;
+  grid-template-columns: minmax(0, 620px) 1fr;
+  align-items: center;
+  gap: 32px;
+  width: 100%;
+  padding: clamp(40px, 5vw, 64px) var(--fd-gutter) clamp(36px, 4vw, 52px);
 }
 
-.fd-hero__title {
+.sfhero__eyebrow { color: rgba(251, 248, 243, 0.85); }
+
+.sfhero__title {
   margin: 0;
-  font-size: clamp(1.6rem, 3vw, 2.6rem);
-  font-weight: 800;
-  line-height: 1.08;
-  letter-spacing: -0.03em;
-  color: #fff;
+  font-family: var(--sf-serif);
+  font-size: clamp(2.3rem, 4.6vw, 3.6rem);
+  font-weight: 700;
+  line-height: 1.06;
   text-wrap: balance;
 }
 
-.fd-hero__sub {
-  margin: 0;
+.sfhero__sub {
+  margin: 16px 0 0;
   max-width: 34em;
-  font-size: clamp(0.9rem, 1.1vw, 1.05rem);
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.88);
+  font-size: clamp(1rem, 1.3vw, 1.15rem);
+  line-height: 1.55;
+  color: rgba(251, 248, 243, 0.9);
 }
 
-.fd-hero__where {
+.sfhero__cta {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 22px;
+  margin-top: 26px;
+}
+
+.sfhero__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 26px;
+  border-radius: 6px;
+  background: var(--sf-clay);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
+  transition: background 150ms;
+}
+.sfhero__btn:hover { background: var(--sf-clay-deep); }
+.sfhero__btn:focus-visible { outline: 2px solid var(--sf-gold); outline-offset: 3px; }
+
+.sfhero__ghost {
+  color: var(--sf-paper);
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.sfhero__ghost:hover { color: var(--sf-gold); }
+
+.sfhero__promises {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 30px;
+  margin: 32px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sfhero__promises li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 160px;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.sfhero__promises svg { flex-shrink: 0; }
+
+.sfhero__script {
+  justify-self: end;
+  align-self: start;
+  margin: 12px 4% 0 0;
+  font-family: var(--sf-script);
+  font-size: clamp(1.5rem, 2.2vw, 2.1rem);
+  line-height: 1.12;
+  color: var(--sf-paper);
+  transform: rotate(-8deg);
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.5);
+}
+
+.sfhero__sign {
+  position: absolute;
+  right: var(--fd-gutter);
+  bottom: 22px;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 6px;
   margin: 0;
-  color: #bbf451;
-  font-size: 0.8rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.26em;
   text-transform: uppercase;
+  color: var(--sf-paper);
 }
 
-.fd-hero__cta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 4px;
+/* Tablets: one column. The script and the sign are decoration, and on a
+   narrower photo they would sit on top of the words. */
+@media (max-width: 900px) {
+  .sfhero__inner { grid-template-columns: 1fr; }
+  .sfhero__script,
+  .sfhero__sign { display: none; }
 }
 
-.fd-hero__btn {
-  display: inline-block;
-  padding: 12px 26px;
-  border-radius: 999px;
-  font-size: 15px;
-  font-weight: 800;
-  line-height: 1.2;
-  white-space: nowrap;
-  transition: background 150ms, color 150ms, border-color 150ms;
-}
-
-/* Same lime pill as the merchant strip's "Get started" — the two primary
-   actions on the page should read as the same button. */
-.fd-hero__btn--primary {
-  background: #bbf451;
-  color: #06240f;
-}
-.fd-hero__btn--primary:hover { background: #fff; }
-
-/* Outlined rather than a second fill, so the shopper's action stays the
-   louder of the two. */
-.fd-hero__btn--ghost {
-  border: 1.5px solid rgba(255, 255, 255, 0.6);
-  color: #fff;
-}
-.fd-hero__btn--ghost:hover { border-color: #fff; background: rgba(255, 255, 255, 0.14); }
-
-.fd-hero__btn:focus-visible { outline: 2px solid #bbf451; outline-offset: 3px; }
-
-.fd-hero__toggle {
-  position: absolute;
-  left: 18px;
-  bottom: 16px;
-  z-index: 2;
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: 999px;
-  background: rgba(6, 36, 15, 0.45);
-  color: #fff;
-  cursor: pointer;
-  backdrop-filter: blur(2px);
-  transition: background 150ms, transform 150ms;
-}
-.fd-hero__toggle:hover { background: rgba(6, 36, 15, 0.75); transform: scale(1.06); }
-.fd-hero__toggle:focus-visible { outline: 2px solid #bbf451; outline-offset: 2px; }
-
-/* Phones: a banner this wide is only ~120px tall here, which is far too short
-   to hold the copy. The strip stays a strip and the words move underneath it,
-   so the hero keeps the reference's height without squeezing the text. */
-@media (max-width: 720px) {
-  .fd-hero { margin-bottom: 32px; }
-  .fd-hero__frame { aspect-ratio: 3 / 1; min-height: 0; }
-  .fd-hero__scrim { display: none; }
-
-  .fd-hero__copy {
-    position: static;
-    max-width: none;
-    padding: 16px 0 0;
-    gap: 8px;
+/* Phones: the scrim runs top to bottom instead, since the copy now fills the
+   width and there is no clear side of the photo to leave open. */
+@media (max-width: 600px) {
+  .sfhero__scrim {
+    background: linear-gradient(180deg, rgba(23, 35, 28, 0.6) 0%, rgba(23, 35, 28, 0.9) 100%);
   }
-  .fd-hero__title { font-size: 1.6rem; color: #1a1a1a; }
-  .fd-hero__sub { font-size: 0.95rem; color: #4a5b52; }
-
-  /* The scrim is gone here and the copy sits on the page's own white, so the
-     lime eyebrow and the white-outlined button would both disappear. */
-  .fd-hero__where { color: #1a6b3c; }
-  .fd-hero__cta { margin-top: 8px; }
-  .fd-hero__btn { padding: 11px 22px; font-size: 14.5px; }
-  .fd-hero__btn--ghost { border-color: #cfdad3; color: #1a1a1a; }
-  .fd-hero__btn--ghost:hover { border-color: #1a6b3c; background: transparent; }
-
-  .fd-hero__toggle { left: 12px; bottom: 12px; width: 30px; height: 30px; }
+  .sfhero__promises { gap: 12px; }
+  .sfhero__promises li { max-width: none; flex-basis: 100%; }
 }
 </style>

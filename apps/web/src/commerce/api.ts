@@ -223,7 +223,7 @@ export async function fetchStores(
  * deployment where the difference shows is the one where the two origins are
  * not the same. Which is the mobile app.
  */
-function resolveImageUrl(url: string | null): string | null {
+export function resolveImageUrl(url: string | null): string | null {
   if (url === null || API_BASE === '') return url
   return url.startsWith('/api/') ? `${API_BASE}${url}` : url
 }
@@ -338,8 +338,57 @@ export interface OrderRoute {
   dropoff: { address: string | null; lat: number | null; lng: number | null }
 }
 
+/** What the two parties to a delivery are told about the rider carrying it. */
+export interface RiderProfile {
+  id: string
+  name: string
+  /**
+   * Server-relative — `/api/riders/{id}/avatar?v=…` — or null for a rider who
+   * has not uploaded one. The `v` changes when the photo does, so a replaced
+   * photo is fetched rather than served from cache.
+   */
+  photoUrl: string | null
+  vehicle: RiderVehicle
+  rating: RiderRatingSummary
+}
+
+export interface RiderVehicle {
+  type: string
+  make: string | null
+  model: string | null
+  color: string | null
+  /** The server's sentence — "red Honda Click". Colour first: it reads furthest. */
+  label: string
+  plateNumber: string
+}
+
+export interface RiderRatingSummary {
+  /**
+   * Null, *not* zero, for a rider nobody has rated. Rendering an unrated rider
+   * as 0.0 out of 5 would put the worst possible number on the screen of the
+   * person least able to have earned it.
+   */
+  average: number | null
+  count: number
+}
+
+/** Leave a score for the rider who brought this order. One per delivery. */
+export function rateRider(
+  orderId: string,
+  score: number,
+  comment?: string,
+): Promise<{ rating: { score: number; comment: string | null } }> {
+  return postJson(
+    `/api/customer/orders/${encodeURIComponent(orderId)}/rider-rating`,
+    { score, comment: comment?.trim() || null },
+    'Could not save that rating.',
+  )
+}
+
 export interface TrackedOrder {
   orderId: string
+  /** The shop it was ordered from — what "Message the shop" opens a thread with. */
+  storeId: string
   ticketNumber: string
   status: string
   paymentStatus: string
@@ -359,6 +408,19 @@ export interface TrackedOrder {
    * withheld once the order is handed over — see Order::riderPositionForCustomer.
    */
   riderPosition: RiderPosition | null
+  /**
+   * Who is bringing it: a face, a bike and a score.
+   *
+   * Behind the same stage gate as the phone number and the position, and for
+   * the phone number's reason rather than the position's — this tracking view
+   * is public by UUID and the link is meant to be forwarded, so a photograph
+   * left in the payload after the handover is readable by everyone who was ever
+   * sent it. See Order::riderProfileForCustomer.
+   *
+   * Null for an order a shop handed to somebody it knows: no account, nothing
+   * to describe.
+   */
+  riderProfile: RiderProfile | null
   route: OrderRoute | null
   placedAt: string | null
   items: TrackedOrderItem[]
@@ -593,6 +655,82 @@ export function deleteCustomerPaymentMethod(id: string): Promise<AccountEnvelope
 }
 
 /** Orders placed while signed in. Guest orders are not in here — see the API. */
+// -- Messages --------------------------------------------------------------
+//
+// A signed-in shopper talking to a shop. One conversation per shop, not per
+// order — a message can still name an order, which is how "about #0042" is
+// carried. See CustomerConversationController.
+
+export interface ConversationMessage {
+  id: number
+  from: 'customer' | 'store'
+  body: string
+  order: { id: string; ticketNumber: string } | null
+  createdAt: string
+}
+
+export interface ConversationShop {
+  id: string | null
+  name: string
+  orgSlug: string | null
+  storeCode: string | null
+  imageUrl: string | null
+}
+
+export interface ConversationSummary {
+  id: string
+  store: ConversationShop
+  lastMessage: ConversationMessage | null
+  lastMessageAt: string | null
+  unreadCount: number
+}
+
+export interface ConversationThread {
+  conversation: ConversationSummary
+  messages: ConversationMessage[]
+}
+
+export function fetchConversations(): Promise<{ conversations: ConversationSummary[] }> {
+  return request('/api/customer/conversations', { fallbackError: 'Could not load your messages.' })
+}
+
+/** Reading a thread is what marks it read, server-side. */
+export function fetchConversation(id: string): Promise<ConversationThread> {
+  return request(`/api/customer/conversations/${encodeURIComponent(id)}`, {
+    fallbackError: 'Could not open that conversation.',
+  })
+}
+
+export function fetchUnreadMessageCount(): Promise<{ unread: number }> {
+  return request('/api/customer/conversations/unread')
+}
+
+/**
+ * The first message to a shop — or the next one, if a thread already exists;
+ * the server lands it in the same conversation either way. The shop is named
+ * by the order (`orderId`) or by the storefront's own slug and code.
+ */
+export function startConversation(input: {
+  body: string
+  orderId?: string | null
+  orgSlug?: string
+  storeCode?: string
+}): Promise<ConversationThread> {
+  return postJson('/api/customer/conversations', input, 'Could not send that message.')
+}
+
+export function sendConversationMessage(
+  id: string,
+  body: string,
+  orderId?: string | null,
+): Promise<ConversationThread> {
+  return postJson(
+    `/api/customer/conversations/${encodeURIComponent(id)}/messages`,
+    { body, orderId: orderId ?? null },
+    'Could not send that message.',
+  )
+}
+
 export function fetchCustomerOrders(): Promise<{ orders: TrackedOrder[] }> {
   return request<{ orders: TrackedOrder[] }>('/api/customer/orders', {
     fallbackError: 'Could not load your orders.',

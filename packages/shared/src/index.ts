@@ -185,6 +185,47 @@ export interface OrderItemSummary {
  * the order lands in that person's app, they can hand it back to the board,
  * and their position feeds the live map.
  */
+/**
+ * Customer messages, as the shop's inbox sees them. One conversation per
+ * customer per shop; a message can name an order. See the backend's
+ * SellerConversationController.
+ */
+export interface ConversationMessage {
+  id: number
+  from: 'customer' | 'store'
+  body: string
+  order: { id: string; ticketNumber: string } | null
+  createdAt: string
+  /** First name of the member of staff who wrote a store message. */
+  authorName: string | null
+}
+
+export interface ConversationSummary {
+  id: string
+  /** The customer's name only — their email and phone are theirs to give. */
+  customer: { name: string }
+  lastMessage: ConversationMessage | null
+  lastMessageAt: string | null
+  unreadCount: number
+}
+
+/** One of the customer's recent orders at this shop, beside the thread. */
+export interface ConversationOrderRef {
+  id: string
+  ticketNumber: string
+  status: string | null
+  deliveryStage: string | null
+  fulfillmentMethod: string | null
+  totalCents: number
+  createdAt: string | null
+}
+
+export interface ConversationThread {
+  conversation: ConversationSummary
+  messages: ConversationMessage[]
+  recentOrders: ConversationOrderRef[]
+}
+
 export interface SavedRider {
   id: string
   riderId: string | null
@@ -223,6 +264,28 @@ export interface SavedRiderDirectory {
  * client's clock: a phone with the wrong time would otherwise declare a live
  * rider missing, or a missing one live.
  */
+/** What a shop or a customer is told about the rider carrying an order. */
+export interface RiderVehicleProfile {
+  id: string
+  name: string
+  /** Server-relative, or null for a rider who has not uploaded one. */
+  photoUrl: string | null
+  vehicle: {
+    type: string
+    make: string | null
+    model: string | null
+    color: string | null
+    /** "red Honda Click" — colour first, because it reads furthest. */
+    label: string
+    plateNumber: string
+  }
+  rating: {
+    /** Null, not zero, for a rider nobody has rated yet. */
+    average: number | null
+    count: number
+  }
+}
+
 export interface RiderPosition {
   lat: number
   lng: number
@@ -280,6 +343,15 @@ export interface OrderSummary {
   riderId?: string | null
   /** The rider's last known fix. Null when nobody is reporting one. */
   riderPosition?: RiderPosition | null
+  /**
+   * A face, a bike and a score, for the person at the counter.
+   *
+   * Ungated for the shop, unlike the customer's copy: the shop is a party to
+   * this delivery for its whole life, and counter staff handing over a bag need
+   * to know which of the three people waiting is the one with this order. Null
+   * for a rider typed in at the till — no account, nothing to describe.
+   */
+  riderProfile?: RiderVehicleProfile | null
   /** The two fixed ends of the trip, for the delivery map. */
   route?: OrderRoute | null
   /** Quoted by the API from the drop-off distance; 0 for pickup. */

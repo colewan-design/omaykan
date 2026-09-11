@@ -62,7 +62,7 @@ const reasons = [
   font-size: 1.5rem;
   font-weight: 800;
   letter-spacing: -0.03em;
-  color: #06240f;
+  color: var(--sf-ink);
 }
 
 .fd-why__grid {
@@ -85,22 +85,22 @@ const reasons = [
   height: 42px;
   margin-bottom: 12px;
   border-radius: 999px;
-  background: #eef6f0;
-  color: #1a6b3c;
+  background: var(--sf-sand);
+  color: var(--sf-forest);
 }
 
 .fd-why__h {
   margin: 0 0 5px;
   font-size: 15.5px;
   font-weight: 800;
-  color: #06240f;
+  color: var(--sf-ink);
 }
 
 .fd-why__p {
   margin: 0;
   font-size: 14px;
   line-height: 1.55;
-  color: #5b6b60;
+  color: var(--sf-muted);
 }
 
 @media (max-width: 900px) {
@@ -113,4 +113,5 @@ const reasons = [
   .fd-why__icon { grid-row: span 2; margin-bottom: 0; }
   .fd-why__p { grid-column: 2; }
 }
+.fd-why__title { font-family: var(--sf-serif); font-weight: 700; letter-spacing: 0; }
 </style>

@@ -35,6 +35,11 @@ function entryRouteAliases(): Plugin {
       return
     }
 
+    if (req.url === '/cart' || req.url?.startsWith('/cart?')) {
+      req.url = req.url.replace('/cart', '/cart.html')
+      return
+    }
+
     if (req.url === '/rider' || req.url?.startsWith('/rider?')) {
       req.url = req.url.replace('/rider', '/rider.html')
       return
@@ -121,6 +126,7 @@ export default defineConfig({
         about: path.resolve(__dirname, 'about.html'),
         signup: path.resolve(__dirname, 'signup.html'),
         account: path.resolve(__dirname, 'account.html'),
+        cart: path.resolve(__dirname, 'cart.html'),
         rider: path.resolve(__dirname, 'rider.html'),
         platformAdmin: path.resolve(__dirname, 'platform-admin.html'),
         supportInbox: path.resolve(__dirname, 'support-inbox.html'),

@@ -4,6 +4,7 @@ import AuthPage from '@pos/core/pages/AuthPage.vue'
 import DashboardPage from '@pos/core/pages/DashboardPage.vue'
 import RegisterPage from '@pos/core/pages/RegisterPage.vue'
 import OrdersPage from '@pos/core/pages/OrdersPage.vue'
+import MessagesPage from '@pos/core/pages/MessagesPage.vue'
 import ProductsPage from '@pos/core/pages/ProductsPage.vue'
 import SalesPage from '@pos/core/pages/SalesPage.vue'
 import SettingsPage from '@pos/core/pages/SettingsPage.vue'
@@ -37,6 +38,8 @@ export function createPosRouter() {
       { path: '/dashboard',   name: 'dashboard',   component: DashboardPage, meta: { pageKey: 'dashboard' } },
       { path: '/sales',       name: 'sales',       component: SalesPage, meta: { pageKey: 'sales' } },
       { path: '/orders',      name: 'orders',      component: OrdersPage, meta: { pageKey: 'orders' } },
+      // Behind `orders`, not a key of its own — see MessagesPage for why.
+      { path: '/messages',    name: 'messages',    component: MessagesPage, meta: { pageKey: 'orders' } },
       { path: '/products',    name: 'products',    component: ProductsPage, meta: { pageKey: 'products' } },
       { path: '/customers',   name: 'customers',   component: CustomersPage, meta: { pageKey: 'customers' } },
       { path: '/suppliers',   name: 'suppliers',   component: SuppliersPage, meta: { pageKey: 'suppliers' } },

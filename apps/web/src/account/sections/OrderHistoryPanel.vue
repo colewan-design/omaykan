@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Phone, RefreshCw, Search } from '@lucide/vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { Phone, RefreshCw, Search, Star } from '@lucide/vue'
 import {
   deliveryStageLabel,
   formatCompactDate,
@@ -13,16 +13,22 @@ import LiveDeliveryMap from '@pos/core/components/LiveDeliveryMap.vue'
 import { realtimeAvailable, subscribeToOrder } from '@pos/core/realtime/publicOrderChannel'
 import {
   ApiRequestError,
+  fetchCustomerOrders,
   fetchOrder,
+  rateRider,
+  resolveImageUrl,
   type RiderPosition,
   type TrackedOrder,
 } from '@pos/web/commerce/api'
 import { useStorefrontOrderHistory } from '@pos/web/commerce/orderHistory'
+import { useCustomerAccount } from '@pos/web/commerce/customer'
+import { MESSAGING_ENABLED, RIDER_RATING_ENABLED } from '@pos/web/commerce/features'
 
 // Past orders, and where the current ones have got to.
 //
-// The ids come off this device (commerce/orderHistory.ts) because the API has
-// no "list my orders" — it can only return an order by id. Status is never read
+// The ids come off this device (commerce/orderHistory.ts), joined by the
+// account's own orders from GET /api/customer/orders — a guest order placed
+// before signing in has no account to list it under. Status is never read
 // from that local copy: it is fetched live per order, so an order that moved on
 // while the tab was closed doesn't show yesterday's stage.
 //
@@ -30,20 +36,91 @@ import { useStorefrontOrderHistory } from '@pos/web/commerce/orderHistory'
 // phone can paste the id here and the order joins this browser's list too.
 
 const history = useStorefrontOrderHistory()
+const account = useCustomerAccount()
 
 /** Live status per order id. Absent while loading, null when the fetch failed. */
 const orders = ref<Record<string, TrackedOrder | null>>({})
 const refreshing = ref(false)
+
+/**
+ * Ratings the customer has left in this session, by order id.
+ *
+ * Local rather than fetched: the API deliberately has no "did I rate this"
+ * endpoint, and does not need one — the server refuses a second rating for an
+ * order outright, so the only thing this has to do is stop the form reappearing
+ * under somebody who just used it. On a reload the form comes back and the 422
+ * is what says no, which is one round trip on a rare path rather than a field
+ * on every order payload.
+ */
+const rated = ref<Record<string, number>>({})
+const ratingBusy = ref<Record<string, boolean>>({})
+const ratingError = ref<Record<string, string>>({})
+
+/** Whether this order is in the window where a rating is possible. */
+function canRate(order: TrackedOrder): boolean {
+  return (
+    RIDER_RATING_ENABLED &&
+    order.fulfillmentMethod === 'delivery' &&
+    order.deliveryStage === 'delivered' &&
+    // A rider the shop typed in has no account to attach a score to.
+    !!order.riderName &&
+    rated.value[order.orderId] === undefined
+  )
+}
+
+async function submitRating(order: TrackedOrder, score: number) {
+  const id = order.orderId
+  if (ratingBusy.value[id]) return
+
+  ratingBusy.value = { ...ratingBusy.value, [id]: true }
+  ratingError.value = { ...ratingError.value, [id]: '' }
+
+  try {
+    await rateRider(id, score)
+    rated.value = { ...rated.value, [id]: score }
+  } catch (error) {
+    ratingError.value = {
+      ...ratingError.value,
+      [id]:
+        error instanceof ApiRequestError
+          ? error.message
+          : 'Could not save that rating.',
+    }
+  } finally {
+    ratingBusy.value = { ...ratingBusy.value, [id]: false }
+  }
+}
 
 const lookupId = ref('')
 const lookupError = ref('')
 const lookingUp = ref(false)
 
 async function refresh() {
-  if (history.entries.value.length === 0) return
   refreshing.value = true
+
+  // Signed in, the server also knows the orders placed on this account from
+  // any other device. They join this browser's list, so an order the
+  // dashboard shows is always here when "View details" opens it.
+  const fromServer = new Set<string>()
+  if (account.signedIn.value) {
+    try {
+      for (const order of (await fetchCustomerOrders()).orders) {
+        orders.value[order.orderId] = order
+        fromServer.add(order.orderId)
+        history.remember({
+          orderId: order.orderId,
+          ticketNumber: order.ticketNumber,
+          totalCents: order.totalCents,
+          placedAt: order.placedAt,
+        })
+      }
+    } catch {
+      // Fall back to fetching each remembered order on its own, below.
+    }
+  }
+
   await Promise.all(
-    history.entries.value.map(async (entry) => {
+    history.entries.value.filter((entry) => !fromServer.has(entry.orderId)).map(async (entry) => {
       try {
         orders.value[entry.orderId] = await fetchOrder(entry.orderId)
       } catch {
@@ -55,7 +132,16 @@ async function refresh() {
   refreshing.value = false
 }
 
-onMounted(refresh)
+// The dashboard opens this section with ?order= naming the one it was asked
+// about; bring that card into view once the list is in.
+onMounted(async () => {
+  await refresh()
+  const wanted = new URLSearchParams(window.location.search).get('order')
+  if (wanted) {
+    await nextTick()
+    document.getElementById(`acct-order-${wanted}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+})
 
 async function lookup() {
   const id = lookupId.value.trim()
@@ -227,7 +313,8 @@ function telHref(phone: string): string {
     <div class="acct-head">
       <h1 class="acct-head__title">Order history</h1>
       <p class="acct-head__sub">
-        Orders placed from this browser, with where each one has got to right now.
+        Your account's orders, and any placed from this browser, with where each one has got to
+        right now.
       </p>
     </div>
 
@@ -265,7 +352,12 @@ function telHref(phone: string): string {
         </button>
       </div>
 
-      <article v-for="entry in history.entries.value" :key="entry.orderId" class="acct-card">
+      <article
+        v-for="entry in history.entries.value"
+        :id="`acct-order-${entry.orderId}`"
+        :key="entry.orderId"
+        class="acct-card acct-order"
+      >
         <div class="acct-order__top">
           <div>
             <p class="acct-card__title">Order #{{ entry.ticketNumber }}</p>
@@ -289,6 +381,56 @@ function telHref(phone: string): string {
         <p v-else-if="orders[entry.orderId] === null" class="acct-order__status acct-order__status--stale">
           Status unavailable right now
         </p>
+
+        <!--
+          Who is bringing it.
+
+          Above the map, because "a man in a red Honda Click" is what a customer
+          at a window actually matches against, and the map only says where he
+          is. The whole block disappears the moment the order is delivered —
+          that is the server withholding it, not a v-if here, and it is why a
+          forwarded tracking link does not carry somebody's face forever.
+        -->
+        <div
+          v-if="orders[entry.orderId]?.riderProfile"
+          class="acct-rider"
+        >
+          <img
+            v-if="orders[entry.orderId]!.riderProfile!.photoUrl"
+            class="acct-rider__photo"
+            :src="resolveImageUrl(orders[entry.orderId]!.riderProfile!.photoUrl)!"
+            :alt="`Photo of ${orders[entry.orderId]!.riderProfile!.name}`"
+            loading="lazy"
+          />
+          <span v-else class="acct-rider__photo acct-rider__photo--letter">
+            {{ orders[entry.orderId]!.riderProfile!.name.trim().charAt(0).toUpperCase() || 'R' }}
+          </span>
+
+          <div class="acct-rider__who">
+            <strong>{{ orders[entry.orderId]!.riderProfile!.name }}</strong>
+            <span class="acct-rider__bike">
+              {{ orders[entry.orderId]!.riderProfile!.vehicle.label }}
+              · {{ orders[entry.orderId]!.riderProfile!.vehicle.plateNumber }}
+            </span>
+          </div>
+
+          <!--
+            Only once there are enough of them to mean something. A rider on
+            their third delivery has an average that moves a full point on one
+            bad night, and putting it beside their face invites a judgement the
+            number cannot support.
+          -->
+          <span
+            v-if="
+              orders[entry.orderId]!.riderProfile!.rating.average !== null &&
+              orders[entry.orderId]!.riderProfile!.rating.count >= 5
+            "
+            class="acct-rider__rating"
+          >
+            <Star :size="13" :stroke-width="2" />
+            {{ orders[entry.orderId]!.riderProfile!.rating.average!.toFixed(1) }}
+          </span>
+        </div>
 
         <!--
           The map, for a delivery still on the road. It is under the status
@@ -316,6 +458,42 @@ function telHref(phone: string): string {
           </a>
         </template>
 
+        <!--
+          Rate the ride.
+
+          Only on a delivered delivery that a platform rider carried, and only
+          until it is used — the server refuses a second one outright, so this
+          is about not showing a form that cannot work rather than about
+          enforcing anything.
+
+          Five buttons and no comment box. Most people will tap a number and
+          nothing else, the number is what the average is made of, and a
+          free-text field pointed at a named individual with no moderation
+          behind it is a thing to add deliberately or not at all.
+        -->
+        <div v-if="orders[entry.orderId] && canRate(orders[entry.orderId]!)" class="acct-rate">
+          <span class="acct-rate__ask">How was the rider?</span>
+          <div class="acct-rate__stars">
+            <button
+              v-for="score in 5"
+              :key="score"
+              type="button"
+              class="acct-rate__star"
+              :disabled="ratingBusy[entry.orderId]"
+              :aria-label="`${score} out of 5`"
+              @click="submitRating(orders[entry.orderId]!, score)"
+            >
+              <Star :size="20" :stroke-width="2" />
+            </button>
+          </div>
+          <p v-if="ratingError[entry.orderId]" class="acct-rate__error">
+            {{ ratingError[entry.orderId] }}
+          </p>
+        </div>
+        <p v-else-if="rated[entry.orderId] !== undefined" class="acct-rate__thanks">
+          Thanks — you rated this {{ rated[entry.orderId] }} out of 5.
+        </p>
+
         <ul v-if="orders[entry.orderId]?.items.length" class="acct-order__items">
           <li v-for="item in orders[entry.orderId]!.items" :key="item.productId">
             <span>{{ item.quantity }} × {{ item.name }}</span>
@@ -328,6 +506,15 @@ function telHref(phone: string): string {
         </p>
 
         <div class="acct-actions" style="margin-top: 14px">
+          <!-- Any order on this list, guest ones included: the id is the same
+               capability the tracking link runs on. -->
+          <a
+            v-if="MESSAGING_ENABLED"
+            class="acct-link"
+            :href="`/account?section=messages&order=${encodeURIComponent(entry.orderId)}`"
+          >
+            Message the shop
+          </a>
           <button type="button" class="acct-link acct-link--danger" @click="history.forget(entry.orderId)">
             Remove from this list
           </button>
@@ -338,6 +525,11 @@ function telHref(phone: string): string {
 </template>
 
 <style scoped>
+.acct-order {
+  /* Clear of the sticky header when ?order= scrolls a card into view. */
+  scroll-margin-top: 110px;
+}
+
 .acct-order__map {
   margin-top: 14px;
 }
@@ -442,5 +634,112 @@ function telHref(phone: string): string {
 
 .acct-order__addr {
   margin-top: 10px;
+}
+/* -- Who is bringing it -------------------------------------------------- */
+
+.acct-rider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--separator);
+  border-radius: 12px;
+}
+
+.acct-rider__photo {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+/* The fallback the app draws too: most riders never upload a photo, and an
+   empty disc reads as a broken image rather than as a choice. */
+.acct-rider__photo--letter {
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft, #e3efe7);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.acct-rider__who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.acct-rider__bike {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acct-rider__rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+/* -- Rate the ride ------------------------------------------------------- */
+
+.acct-rate {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.acct-rate__ask {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+}
+
+.acct-rate__stars {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.acct-rate__star {
+  background: none;
+  border: 0;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  line-height: 0;
+}
+
+.acct-rate__star:hover:not(:disabled),
+/* Every star up to the hovered one lights, which is the convention people
+   already read — hovering the fourth means "four", not "the fourth". */
+.acct-rate__stars:hover .acct-rate__star:hover ~ .acct-rate__star {
+  color: var(--warning);
+}
+
+.acct-rate__star:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.acct-rate__error {
+  width: 100%;
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+  color: var(--danger);
+}
+
+.acct-rate__thanks {
+  margin-top: 12px;
+  font-size: 0.88rem;
+  color: var(--text-secondary);
 }
 </style>

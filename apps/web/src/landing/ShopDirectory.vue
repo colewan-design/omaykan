@@ -251,22 +251,22 @@ const brokenImages = reactive(new Set<string>())
   font-size: 1.5rem;
   font-weight: 800;
   letter-spacing: -0.03em;
-  color: #06240f;
+  color: var(--sf-ink);
 }
-.shops__sub { margin: 0; font-size: 14px; color: #5b6b60; }
+.shops__sub { margin: 0; font-size: 14px; color: var(--sf-muted); }
 
 .shops__searchwrap { flex-shrink: 0; }
 .shops__search {
   width: min(300px, 70vw);
   padding: 11px 16px;
-  border: 1px solid #d6e2d9;
+  border: 1px solid var(--sf-rule);
   border-radius: 999px;
   font-size: 14px;
-  color: #06240f;
+  color: var(--sf-ink);
 }
-.shops__search:focus { outline: 2px solid #1a6b3c; outline-offset: 1px; border-color: transparent; }
+.shops__search:focus { outline: 2px solid var(--sf-forest); outline-offset: 1px; border-color: transparent; }
 
-.shops__note { margin: 0; padding: 18px 0; font-size: 14px; color: #5b6b60; }
+.shops__note { margin: 0; padding: 18px 0; font-size: 14px; color: var(--sf-muted); }
 .shops__note--error { color: #b3261e; }
 
 .shops__grid {
@@ -290,18 +290,18 @@ const brokenImages = reactive(new Set<string>())
   gap: 14px;
   height: 100%;
   padding: 14px;
-  border: 1px solid #e2ebe4;
+  border: 1px solid var(--sf-rule);
   border-radius: 12px;
-  background: #fff;
+  background: var(--sf-paper);
   text-decoration: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 .shopcard:hover {
-  border-color: #1a6b3c;
-  box-shadow: 0 10px 24px rgba(6, 36, 15, 0.1);
+  border-color: var(--sf-forest);
+  box-shadow: 0 10px 24px rgba(23, 35, 28, 0.1);
   transform: translateY(-2px);
 }
-.shopcard--current { border-color: #1a6b3c; background: #f5f9f6; }
+.shopcard--current { border-color: var(--sf-forest); background: var(--sf-sand); }
 
 @media (prefers-reduced-motion: reduce) {
   .shopcard, .shopcard:hover { transition: none; transform: none; }
@@ -314,7 +314,7 @@ const brokenImages = reactive(new Set<string>())
   height: 104px;
   border-radius: 10px;
   overflow: hidden;
-  background: #eef6f0;
+  background: var(--sf-sand);
 }
 .shopcard__art img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .shopcard__art-fallback {
@@ -322,7 +322,7 @@ const brokenImages = reactive(new Set<string>())
   place-items: center;
   width: 100%;
   height: 100%;
-  color: #1a6b3c;
+  color: var(--sf-forest);
   font-size: 26px;
   font-weight: 800;
   letter-spacing: 0.02em;
@@ -339,7 +339,7 @@ const brokenImages = reactive(new Set<string>())
 .shopcard__name {
   font-size: 15.5px;
   font-weight: 800;
-  color: #06240f;
+  color: var(--sf-ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -352,14 +352,14 @@ const brokenImages = reactive(new Set<string>())
   flex-wrap: wrap;
   gap: 6px;
   font-size: 13px;
-  color: #5b6b60;
+  color: var(--sf-muted);
 }
 .shopcard__area { font-weight: 600; }
-.shopcard__dist { font-weight: 700; color: #1a6b3c; }
+.shopcard__dist { font-weight: 700; color: var(--sf-forest); }
 .shopcard__area + .shopcard__dist::before {
   content: '·';
   margin-right: 6px;
-  color: #9bb0a3;
+  color: var(--sf-faint);
   font-weight: 400;
 }
 
@@ -369,7 +369,7 @@ const brokenImages = reactive(new Set<string>())
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #1a6b3c;
+  color: var(--sf-forest);
 }
 
 .shopcard__tags {
@@ -386,14 +386,14 @@ const brokenImages = reactive(new Set<string>())
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
-.shopcard__tag--new { background: #e8f7d4; color: #35610a; }
+.shopcard__tag--new { background: #efe3cf; color: var(--sf-forest); }
 /* Amber, not red: the shop is fine, it is just too far to bring to this door. */
 .shopcard__tag--far { background: #fdf1dc; color: #92500e; }
 
 .shopcard__cats {
   font-size: 12.5px;
   line-height: 1.4;
-  color: #6b7a70;
+  color: var(--sf-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -407,9 +407,9 @@ const brokenImages = reactive(new Set<string>())
   margin-top: auto;
   padding-top: 10px;
   font-size: 12.5px;
-  color: #6b7a70;
+  color: var(--sf-muted);
 }
-.shopcard__go { font-weight: 800; color: #1a6b3c; white-space: nowrap; }
+.shopcard__go { font-weight: 800; color: var(--sf-forest); white-space: nowrap; }
 .shopcard:hover .shopcard__go { text-decoration: underline; }
 
 /* Over the photo rather than the card corner — on a horizontal card the top
@@ -420,8 +420,8 @@ const brokenImages = reactive(new Set<string>())
   bottom: 0;
   width: 100%;
   padding: 3px 6px;
-  background: #bbf451;
-  color: #06240f;
+  background: var(--sf-gold);
+  color: var(--sf-ink);
   font-size: 9.5px;
   font-weight: 800;
   letter-spacing: 0.04em;
@@ -446,4 +446,5 @@ const brokenImages = reactive(new Set<string>())
   white-space: nowrap;
   border: 0;
 }
+.shops__title { font-family: var(--sf-serif); font-weight: 700; letter-spacing: 0; }
 </style>

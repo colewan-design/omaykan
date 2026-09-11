@@ -1,30 +1,48 @@
 <script setup lang="ts">
-import { Bike, ShoppingBag } from '@lucide/vue'
+import {
+  ArrowRight,
+  Bike,
+  CalendarClock,
+  Check,
+  HeartHandshake,
+  Leaf,
+  MapPin,
+  Store,
+  Tag,
+  Users,
+  Wallet,
+} from '@lucide/vue'
 import FdHeader from '@pos/web/landing/FdHeader.vue'
 import FdFooter from '@pos/web/landing/FdFooter.vue'
 import { vReveal } from '@pos/web/landing/reveal'
-import { SUPPORT_EMAIL, supportMailto } from '@pos/shared/index'
-import {
-  DELIVERY_BASE_FEE_CENTS,
-  DELIVERY_BASE_KM,
-  DELIVERY_MAX_KM,
-  DELIVERY_PER_KM_CENTS,
-} from '@pos/web/commerce/delivery'
+import { supportMailto } from '@pos/shared/index'
 
 // The page someone opens when they want to know who they would be dealing
-// with — and, more to the point, why a shop's prices here are the same as the
-// prices on its shelf. Everything on it is a claim we have to be able to stand
-// behind, so the copy is drawn from documentation/positioning.md rather than
-// written fresh.
+// with. Built to the approved About mockup: a tab strip, a split hero, then
+// full-bleed bands that alternate ground colour rather than being divided by
+// rules. Every claim on it is one we have to be able to stand behind, so the
+// copy tracks documentation/positioning.md.
 //
-// Laid out as a centred editorial column — a tab strip, then alternating bands
-// of a heading, a photograph and a short paragraph, rules between them. It is
-// the shape a grocer's about page takes because it works: someone skimming for
-// one answer can find it without reading the rest.
+// The hero film is shared with the landing page. The supporting photography is
+// kept in public/about with descriptive filenames so each crop can be tuned
+// independently without coupling the page to download-folder filenames.
 //
 // Every link back to shopping is a real navigation home — this is a separate
 // Vite entry, not a route, so #shop anchors would resolve against this page.
 const SHOP_HREF = '/'
+
+const ABOUT_NAV_CATEGORIES = [
+  { id: 'groceries', name: 'Groceries' },
+  { id: 'produce', name: 'Produce' },
+  { id: 'dairy', name: 'Dairy' },
+  { id: 'snacks', name: 'Snacks' },
+  { id: 'meat-seafood', name: 'Meat & Seafood' },
+  { id: 'bakery', name: 'Bakery' },
+  { id: 'frozen', name: 'Frozen' },
+  { id: 'international', name: 'International' },
+  { id: 'ready-to-cook', name: 'Ready to Cook' },
+  { id: 'ready-to-eat', name: 'Ready to Eat' },
+]
 
 // The strip under the header. Four surfaces that actually exist: this page,
 // the merchant onboarding entry (signup.html), the rider portal (rider.html),
@@ -41,40 +59,121 @@ function search(term: string) {
   window.location.href = term ? `/?q=${encodeURIComponent(term)}` : '/'
 }
 
-// Quoted from the same constants the checkout charges from, so the page can't
-// promise one fee while the cart bills another. Whole pesos: these are round
-// figures and "₱49.00" reads like a receipt, not a promise.
-const peso = (cents: number) => `₱${cents / 100}`
-const baseFee = peso(DELIVERY_BASE_FEE_CENTS)
-const perKm = peso(DELIVERY_PER_KM_CENTS)
+// The three reassurances under the hero buttons.
+const HERO_MARKS = [
+  { icon: Store, lines: ['Support', 'local shops'] },
+  { icon: Leaf, lines: ['Fresh and', 'quality products'] },
+  { icon: Users, lines: ['Stronger', 'communities'] },
+]
+
+const STEPS = [
+  {
+    n: '1',
+    title: 'Shop nearby',
+    body: 'Browse shops near you and add your favorite items to your cart.',
+    image: '/about/shop-nearby.webp',
+    alt: 'A shopper browsing fresh market produce on a phone in Baguio',
+    width: 1672,
+    height: 941,
+  },
+  {
+    n: '2',
+    title: 'Store prepares your order',
+    body: 'Your chosen shop carefully packs your items fresh.',
+    image: '/about/prepare-order.webp',
+    alt: 'A local shopkeeper packing fresh vegetables into a paper bag',
+    width: 1672,
+    height: 941,
+  },
+  {
+    n: '3',
+    title: 'Delivered locally',
+    body: 'A rider from your area delivers it to your door, supporting local livelihoods.',
+    image: '/about/deliver-locally.webp',
+    alt: 'A local delivery rider traveling between Baguio and La Trinidad',
+    width: 1672,
+    height: 941,
+  },
+]
+
+// What a shop switches on the day it signs up.
+const SELLER_FEATURES = [
+  'Easy online storefront',
+  'Simple product management',
+  'Hassle-free order management',
+  'Reach more local customers',
+  'No percentage-based sales commission',
+]
+
+const RIDER_BENEFITS = [
+  { icon: Wallet, title: 'Keep the full delivery fee', body: '100% goes to you.' },
+  { icon: CalendarClock, title: 'Flexible, local deliveries', body: 'Work around your schedule.' },
+  {
+    icon: HeartHandshake,
+    title: 'Help your community',
+    body: 'Be part of a stronger, more connected Baguio.',
+  },
+]
 </script>
 
 <template>
-  <div class="landing fd">
-    <FdHeader :shop-href="SHOP_HREF" @search="search" />
+  <div class="landing fd ab-root">
+    <FdHeader
+      :shop-href="SHOP_HREF"
+      :fallback-categories="ABOUT_NAV_CATEGORIES"
+      @search="search"
+    />
 
     <main class="ab">
-      <div class="ab__col">
-        <h1 class="ab__pagetitle">About Us</h1>
+      <!-- ── Tab strip ────────────────────────────────────────────────── -->
+      <div class="ab-band ab-band--tabs">
+        <div class="ab-wrap">
+          <nav class="ab-tabs" aria-label="About Omaykan">
+            <a
+              v-for="tab in TABS"
+              :key="tab.label"
+              :href="tab.href"
+              class="ab-tabs__item"
+              :class="{ 'ab-tabs__item--current': tab.current }"
+              :aria-current="tab.current ? 'page' : undefined"
+            >
+              {{ tab.label }}
+            </a>
+          </nav>
+        </div>
+      </div>
 
-        <!-- ── Section tabs ───────────────────────────────────────────── -->
-        <nav class="ab-tabs" aria-label="About Omaykan">
-          <a
-            v-for="tab in TABS"
-            :key="tab.label"
-            :href="tab.href"
-            class="ab-tabs__item"
-            :class="{ 'ab-tabs__item--current': tab.current }"
-            :aria-current="tab.current ? 'page' : undefined"
-          >
-            {{ tab.label }}
-          </a>
-        </nav>
+      <!-- ── Hero ─────────────────────────────────────────────────────── -->
+      <section class="ab-band ab-band--hero">
+        <div class="ab-wrap ab-hero">
+          <div v-reveal class="ab-hero__copy">
+            <span class="ab-eyebrow">Our story</span>
+            <h1 class="ab-hero__title">
+              Your neighborhood market, <span class="ab-hero__accent">online.</span>
+            </h1>
+            <p class="ab-hero__lede">
+              Omaykan connects you with nearby groceries, sari-sari stores, wet-market vendors, and
+              local shops in Baguio and La Trinidad. Real shops. Real people. Delivered to your
+              door.
+            </p>
+            <div class="ab-hero__actions">
+              <a :href="SHOP_HREF" class="ab-btn ab-btn--solid">
+                Start shopping<ArrowRight :size="17" :stroke-width="2.5" />
+              </a>
+              <a href="/signup" class="ab-btn ab-btn--outline">
+                Sell on Omaykan<ArrowRight :size="17" :stroke-width="2.5" />
+              </a>
+            </div>
+            <ul class="ab-marks">
+              <li v-for="mark in HERO_MARKS" :key="mark.lines[1]">
+                <component :is="mark.icon" :size="26" :stroke-width="1.75" />
+                <span>{{ mark.lines[0] }}<br />{{ mark.lines[1] }}</span>
+              </li>
+            </ul>
+          </div>
 
-        <!-- ── Lede film ──────────────────────────────────────────────── -->
-        <section class="ab-sec ab-sec--tight">
           <video
-            v-reveal
+            v-reveal="60"
             class="ab-film"
             poster="/delivery/hero-market-poster.webp"
             preload="metadata"
@@ -83,495 +182,758 @@ const perKm = peso(DELIVERY_PER_KM_CENTS)
           >
             <source src="/delivery/hero-market.mp4" type="video/mp4" />
           </video>
-          <p v-reveal="60" class="ab-copy ab-copy--lede">
-            Omaykan is a commission-free ordering channel for the shops of Baguio. You order from a
-            neighbourhood store, someone at that store packs it, a rider from your own area brings
-            it over, and you pay the person who hands it to you. We take nothing out of that
-            order — not from the shop, not from the rider, and not from you.
-          </p>
-        </section>
+        </div>
+      </section>
 
-        <hr class="ab-rule" />
+      <!-- ── How it works ─────────────────────────────────────────────── -->
+      <section id="delivery" class="ab-band ab-band--mint">
+        <div class="ab-wrap">
+          <header class="ab-head">
+            <span v-reveal class="ab-eyebrow">How it works</span>
+            <h2 v-reveal class="ab-h2">Grocery Delivery in 3 Simple Steps</h2>
+            <p v-reveal="40" class="ab-sub">
+              From your favorite local shops to your door — it's that easy.
+            </p>
+          </header>
 
-        <!-- ── Three steps ────────────────────────────────────────────── -->
-        <section id="delivery" class="ab-sec">
-          <h2 v-reveal class="ab-h2">Grocery Delivery In 3 Simple Steps</h2>
-          <div class="ab-trio">
-            <figure v-reveal="40" class="ab-trio__item">
+          <div class="ab-steps">
+            <figure
+              v-for="(step, i) in STEPS"
+              :key="step.n"
+              v-reveal="40 + i * 50"
+              class="ab-step"
+            >
               <img
-                src="/card-shop-online.webp"
-                alt="The Omaykan storefront open on a phone, showing a shop's aisles"
+                :src="step.image"
+                :alt="step.alt"
+                :width="step.width"
+                :height="step.height"
                 loading="lazy"
               />
               <figcaption>
-                Shop a real neighbourhood store from the web or your phone — its own shelf, at the
-                price it charges over the counter.
-              </figcaption>
-            </figure>
-            <figure v-reveal="90" class="ab-trio__item">
-              <img
-                src="/card-register.webp"
-                alt="A shopkeeper ringing up an order on the counter till"
-                loading="lazy"
-              />
-              <figcaption>
-                Your order lands on that shop's own till, in the same queue as its walk-in
-                customers. Nobody relays it through a call centre.
-              </figcaption>
-            </figure>
-            <figure v-reveal="140" class="ab-trio__item">
-              <img
-                src="/card-riders.webp"
-                alt="A delivery rider checking their phone for the next drop"
-                loading="lazy"
-              />
-              <figcaption>
-                A rider working your area collects it and brings it to your door. Pay cash or GCash
-                when it reaches you — or collect it yourself for free.
+                <h3><span class="ab-step__num">{{ step.n }}</span>{{ step.title }}</h3>
+                <p>{{ step.body }}</p>
               </figcaption>
             </figure>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <hr class="ab-rule" />
+      <!-- ── Our promise ──────────────────────────────────────────────── -->
+      <section class="ab-band ab-band--white">
+        <div class="ab-wrap">
+          <header class="ab-head">
+            <span v-reveal class="ab-eyebrow">Our promise</span>
+            <h2 v-reveal class="ab-h2">A marketplace designed differently</h2>
+            <p v-reveal="40" class="ab-sub">
+              We're built to give more value to local shops, riders, and communities.
+            </p>
+          </header>
 
-        <!-- ── Our promise ────────────────────────────────────────────── -->
-        <section class="ab-sec">
-          <h2 v-reveal class="ab-h2">Our Promise</h2>
-          <p v-reveal="40" class="ab-copy">
-            Delivery apps take 20–30% from the shop, revise the rider's rate downward, and hand you
-            a menu marked up to survive both. Everyone in that transaction ends up worse off than
-            they were before the app arrived. Our promise is the three lines that undo it — and
-            every one of them is something you can check for yourself.
-          </p>
           <div class="ab-promise">
             <article v-reveal="60" class="ab-promise__card">
-              <span class="ab-promise__figure">0%</span>
-              <h3>Commission from the shop</h3>
-              <p>
-                Not on the first order, not on the thousandth. The shop keeps the whole of what you
-                pay it. We charge a flat monthly subscription, and that is the entirety of what we
-                ever take.
-              </p>
+              <div class="ab-promise__top">
+                <Store :size="38" :stroke-width="1.6" />
+                <div class="ab-promise__fig">
+                  <span class="ab-promise__num">0%</span>
+                  <span class="ab-promise__label">Seller commission</span>
+                </div>
+              </div>
+              <p>Keep more of what you earn. We don't take a percentage of your sales.</p>
             </article>
-            <article v-reveal="110" class="ab-promise__card">
-              <span class="ab-promise__figure">100%</span>
-              <h3>Of the delivery fee to the rider</h3>
-              <p>
-                The fee for delivery is the rider's, in full. We take no cut of it and we do not
-                quietly revise their rate. They see exactly what they earned on every drop.
-              </p>
+
+            <article v-reveal="110" class="ab-promise__card ab-promise__card--cream">
+              <div class="ab-promise__top">
+                <Bike :size="38" :stroke-width="1.6" />
+                <div class="ab-promise__fig">
+                  <span class="ab-promise__num">100%</span>
+                  <span class="ab-promise__label">Delivery fee goes to the rider</span>
+                </div>
+              </div>
+              <p>The full delivery fee is paid to the rider — no cuts and no deductions.</p>
             </article>
+
             <article v-reveal="160" class="ab-promise__card">
-              <span class="ab-promise__figure ab-promise__figure--word">In-store</span>
-              <h3>Prices for you</h3>
-              <p>
-                What the shop charges at its counter is what you see here. No inflated menu, no
-                service fee, no small-order fee — the shop's price, and a delivery fee stated
-                plainly.
-              </p>
+              <div class="ab-promise__top">
+                <Tag :size="38" :stroke-width="1.6" />
+                <div class="ab-promise__fig">
+                  <span class="ab-promise__label">Prices set by the shop</span>
+                </div>
+              </div>
+              <p>Shops control their own prices, just like their physical stores.</p>
             </article>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <hr class="ab-rule" />
+      <!-- ── Fair for everyone ────────────────────────────────────────── -->
+      <section class="ab-band ab-band--parity">
+        <img
+          v-reveal
+          class="ab-parity__img"
+          src="/about/market-community.webp"
+          alt="A busy Baguio market filled with locally grown produce"
+          width="1672"
+          height="941"
+          loading="lazy"
+        />
+        <div v-reveal="60" class="ab-parity__copy">
+          <span class="ab-eyebrow">Fair for everyone</span>
+          <h2 class="ab-h2">Local shops stay in control of their prices.</h2>
+          <p>
+            Unlike other platforms, we do not set or change shop prices. What you see on Omaykan is
+            the price set by each shop — the same fair prices you'd find in their physical stores.
+          </p>
+          <a href="#for-shops" class="ab-btn ab-btn--outline">
+            Learn more about our approach<ArrowRight :size="17" :stroke-width="2.5" />
+          </a>
+        </div>
+      </section>
 
-        <!-- ── The covenant ───────────────────────────────────────────── -->
-        <section class="ab-sec">
-          <h2 v-reveal class="ab-h2">The Price You See Is The Price In The Shop</h2>
+      <!-- ── For shops ────────────────────────────────────────────────── -->
+      <section id="for-shops" class="ab-band ab-band--mint-pale">
+        <div class="ab-wrap ab-tri">
+          <div v-reveal class="ab-tri__copy">
+            <span class="ab-eyebrow">Omaykan for shops</span>
+            <h2 class="ab-h2">Built for local businesses</h2>
+            <p>
+              Whether you run a sari-sari store, a market stall, or a specialty shop, Omaykan gives
+              you a simple way to sell online and reach more customers in your area.
+            </p>
+            <a href="/signup" class="ab-btn ab-btn--solid">
+              Become a seller<ArrowRight :size="17" :stroke-width="2.5" />
+            </a>
+          </div>
+
           <img
-            v-reveal="40"
-            class="ab-banner"
-            src="/pos-counter-wide.png"
-            alt="A shop counter with the Omaykan till open on it"
+            v-reveal="60"
+            class="ab-tri__img ab-tri__img--seller"
+            src="/about/shop-owner.webp"
+            alt="A local sari-sari store owner standing proudly in his shop"
+            width="1536"
+            height="1024"
             loading="lazy"
           />
-          <p v-reveal="60" class="ab-copy">
-            This is the whole of what makes us different, so we did not leave it to good intentions.
-            A shop's till and its storefront read the same product record — there is no second price
-            to set, and no screen anywhere that a markup could be typed into. If a shop cannot sell
-            it to you at the counter for what it says here, it is not sold here either. Find an item
-            priced above its shelf and tell us; that is not a support ticket, it is the one rule.
-          </p>
-        </section>
 
-        <hr class="ab-rule" />
+          <ul v-reveal="110" class="ab-tri__panel ab-checks">
+            <li v-for="feature in SELLER_FEATURES" :key="feature">
+              <span class="ab-checks__tick"><Check :size="12" :stroke-width="3.5" /></span>
+              <span>{{ feature }}</span>
+            </li>
+          </ul>
+        </div>
+      </section>
 
-        <!-- ── Two promises with icons ────────────────────────────────── -->
-        <section class="ab-sec">
-          <div class="ab-duo">
-            <div v-reveal class="ab-duo__item">
-              <span class="ab-duo__icon"><ShoppingBag :size="30" :stroke-width="1.75" /></span>
-              <h3 class="ab-duo__title">Pickup Is Always Free</h3>
-              <p>
-                Every shop on Omaykan takes pickup orders. Reserve what you want, walk over when it
-                is packed, pay nothing for delivery — and still at the counter price. On a small
-                basket it is very often the right answer, so we say so.
-              </p>
-              <a :href="SHOP_HREF" class="ab-duo__link">Shop Now &gt;</a>
-            </div>
-            <div v-reveal="80" class="ab-duo__item">
-              <span class="ab-duo__icon"><Bike :size="30" :stroke-width="1.75" /></span>
-              <h3 class="ab-duo__title">A Delivery Fee That Goes To The Rider</h3>
-              <p>
-                Flat {{ baseFee }} for the first {{ DELIVERY_BASE_KM }} km, then {{ perKm }} for
-                each kilometre after that, out to {{ DELIVERY_MAX_KM }} km. Stated before you order,
-                unchanged at the door, and paid in full to the person who carried it.
-              </p>
-              <a href="/rider" class="ab-duo__link">Ride With Omaykan &gt;</a>
-            </div>
+      <!-- ── Ready to shop ────────────────────────────────────────────── -->
+      <section class="ab-band ab-cta">
+        <div class="ab-wrap ab-cta__inner">
+          <div class="ab-cta__copy">
+            <h2 v-reveal class="ab-cta__title">Ready to shop local?</h2>
+            <p v-reveal="40" class="ab-cta__sub">
+              Discover great prices, fresh finds, and support the shops in your neighborhood.
+            </p>
+            <a v-reveal="80" href="/" class="ab-btn ab-btn--lime">
+              Browse nearby shops<ArrowRight :size="17" :stroke-width="2.5" />
+            </a>
           </div>
-        </section>
 
-        <hr class="ab-rule" />
+          <div class="ab-cta__art" aria-hidden="true">
+            <img src="/about/market-community.webp" alt="" width="1672" height="941" loading="lazy" />
+          </div>
+        </div>
+      </section>
 
-        <!-- ── For shops ──────────────────────────────────────────────── -->
-        <section id="for-shops" class="ab-sec">
-          <h2 v-reveal class="ab-h2">Omaykan For Shops</h2>
+      <!-- ── Ride with Omaykan ────────────────────────────────────────── -->
+      <section class="ab-band ab-band--white">
+        <div class="ab-wrap ab-tri">
+          <div v-reveal class="ab-tri__copy">
+            <span class="ab-eyebrow">Ride with Omaykan</span>
+            <h2 class="ab-h2">Deliver with purpose</h2>
+            <p>
+              Be your own boss and earn on your own terms. Help your community get the essentials
+              they need, while keeping 100% of the delivery fee.
+            </p>
+            <a href="/rider" class="ab-btn ab-btn--solid">
+              Become a rider<ArrowRight :size="17" :stroke-width="2.5" />
+            </a>
+          </div>
+
           <img
-            v-reveal="40"
-            class="ab-banner"
-            src="/hero-merchant.webp"
-            alt="A shop owner behind the counter of their store"
+            v-reveal="60"
+            class="ab-tri__img ab-tri__img--rider"
+            src="/about/rider-city.webp"
+            alt="A local delivery rider overlooking Baguio City"
+            width="1536"
+            height="1024"
             loading="lazy"
           />
-          <p v-reveal="60" class="ab-copy">
-            A storefront, a register for the counter, and riders — all three switch on the day a
-            shop signs up, for one flat monthly fee and no commission on anything sold. Orders from
-            this site land in the same queue as the walk-ins, priced from the same catalog, so there
-            is no second system to keep in step. The customers stay the shop's own.
-            <a href="/signup">Put your shop on Omaykan &gt;</a>
-          </p>
-        </section>
 
-        <!-- ── Ready to shop ──────────────────────────────────────────── -->
-        <a v-reveal href="/" class="ab-cta">
-          <img src="/delivery/hero-market-poster.webp" alt="" loading="lazy" />
-          <span class="ab-cta__copy">
-            <span class="ab-cta__title">Ready to shop?</span>
-            <span class="ab-cta__sub">Start with the shops near you. &gt;</span>
-          </span>
-        </a>
+          <ul v-reveal="110" class="ab-tri__panel ab-perks">
+            <li v-for="perk in RIDER_BENEFITS" :key="perk.title">
+              <span class="ab-perks__icon">
+                <component :is="perk.icon" :size="20" :stroke-width="1.9" />
+              </span>
+              <span>
+                <strong>{{ perk.title }}</strong>
+                <em>{{ perk.body }}</em>
+              </span>
+            </li>
+          </ul>
+        </div>
+      </section>
 
-        <hr class="ab-rule" />
+      <!-- ── Our home ─────────────────────────────────────────────────── -->
+      <section class="ab-band ab-band--mint">
+        <div class="ab-wrap">
+          <div v-reveal class="ab-home">
+            <div class="ab-home__copy">
+              <span class="ab-eyebrow">Our home</span>
+              <h2 class="ab-h2">Starting in Baguio and La Trinidad</h2>
+              <p>
+                Omaykan is beginning in Baguio and La Trinidad, home to vibrant markets and
+                resilient local businesses. We're growing community by community, with the goal of
+                bringing the convenience of local shopping to more cities across the Philippines.
+              </p>
+            </div>
 
-        <!-- ── Riding with us ─────────────────────────────────────────── -->
-        <section class="ab-sec">
-          <h2 v-reveal class="ab-h2">Riding With Omaykan</h2>
-          <div class="ab-duo-img">
-            <img
-              v-reveal="40"
-              src="/delivery/hero-rider.webp"
-              alt="A rider carrying two bags of groceries"
-              loading="lazy"
-            />
-            <img
-              v-reveal="90"
-              src="/card-riders.webp"
-              alt="A rider on a motorbike checking the next drop"
-              loading="lazy"
-            />
+            <!-- Holds the illustration's space and its one piece of real
+                 content until the artwork itself is wired in. -->
+            <div class="ab-home__art" role="img" aria-label="Baguio and La Trinidad, where Omaykan is starting">
+              <img src="/about/deliver-locally.webp" alt="" width="1672" height="941" loading="lazy" />
+              <span class="ab-home__pin"><MapPin :size="28" :stroke-width="2" /></span>
+              <span class="ab-home__place">Baguio<br />&amp; La Trinidad</span>
+            </div>
           </div>
-          <p v-reveal="60" class="ab-copy">
-            A rider keeps every peso of the fee on every drop they make, sees what a job pays before
-            they accept it, and works across every shop on the platform rather than for one. We take
-            no cut and we do not set your rate for you. Apply with a licence and a plate, and you
-            can be on the board once you are cleared.
-            <a href="/rider">Apply to ride &gt;</a>
-          </p>
-        </section>
-
-        <hr class="ab-rule" />
-
-        <!-- ── Where we are ───────────────────────────────────────────── -->
-        <section class="ab-sec ab-sec--last">
-          <h2 v-reveal class="ab-h2">We Are Starting In Baguio</h2>
-          <p v-reveal="40" class="ab-copy">
-            One city, and one neighbourhood at a time. Ten shops on the same few streets is worth
-            more than a hundred scattered across Luzon: it is what lets a rider stack drops instead
-            of idling, what keeps the fee low enough to be worth paying, and what carries word of
-            mouth down a street. We would rather be genuinely useful where you live than thinly
-            available everywhere. A problem with an order, a shop you would like to see on here, or
-            a question about any of the above — write to
-            <a :href="supportMailto('Omaykan hello')">{{ SUPPORT_EMAIL }}</a> and a person will
-            answer you.
-          </p>
-        </section>
-      </div>
+        </div>
+      </section>
     </main>
 
-    <FdFooter :shop-href="SHOP_HREF" />
+    <FdFooter
+      :shop-href="SHOP_HREF"
+      :show-back-to-top="false"
+      :fallback-categories="ABOUT_NAV_CATEGORIES"
+    />
   </div>
 </template>
 
 <style scoped>
-/* A centred editorial column on white — the whole page is one measure, and
-   every band inside it lines up on the same left and right edge. */
-.ab { background: #fff; padding: 0 var(--fd-gutter) 64px; }
-.ab__col { max-width: 1040px; margin: 0 auto; }
+/* Palette taken off the approved mockup rather than the marketing tokens: this
+   page runs a deeper forest green and a near-black ink than the landing page,
+   and a lime that appears nowhere else. Scoped so none of it leaks. */
+.ab-root {
+  --ab-ink: #0b1220;
+  --ab-body: #4b5563;
+  --ab-green: #04663a;
+  --ab-green-hover: #035430;
+  --ab-lime: #d9ff58;
+  --ab-line: #e4ebe6;
+  font-family: 'Nunito', var(--font-sans);
+}
 
-.ab__pagetitle {
-  margin: 0;
-  padding: 22px 0 14px;
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--text-primary);
+.ab { background: #fff; }
+
+.ab-band { padding: 72px 0; }
+.ab-band--tabs { padding: 26px 0 0; background: #fff; }
+.ab-band--hero { padding: 44px 0 64px; background: #f9fcfa; }
+.ab-band--white { background: #fff; }
+.ab-band--mint { background: #f1f7f3; }
+.ab-band--mint-pale { background: #f7fbf8; }
+
+.ab-wrap {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 32px;
 }
 
 /* ── Tab strip ─────────────────────────────────────────────────────── */
+/* A centred group of four rather than a full-width row: the strip is
+   navigation, not a section, and it should read as one object. */
 .ab-tabs {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
 }
 .ab-tabs__item {
-  padding: 13px 16px;
-  border: 1px solid var(--separator-strong);
-  border-radius: 4px;
+  min-width: 200px;
+  padding: 13px 20px;
+  border: 1px solid var(--ab-line);
+  border-radius: 8px;
+  background: #fff;
   font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-weight: 700;
+  text-align: center;
+  color: var(--ab-ink);
   transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
-.ab-tabs__item:hover { border-color: var(--accent-pressed); color: var(--accent-pressed); }
-/* The current page reads as a filled tab with an accent edge, so the strip
-   says where you are as well as where you can go. */
+.ab-tabs__item:hover { border-color: var(--ab-green); color: var(--ab-green); }
 .ab-tabs__item--current {
-  background: var(--accent-light);
-  border-color: var(--accent-border);
-  border-left: 4px solid var(--accent-pressed);
-  color: var(--accent-deep);
-  font-weight: 700;
+  background: #d1e6d5;
+  border-color: #bcdcc4;
+  color: var(--ab-green);
 }
 
-/* ── Section rhythm ────────────────────────────────────────────────── */
-.ab-sec { padding: 44px 0; text-align: center; }
-.ab-sec--tight { padding-top: 32px; }
-.ab-sec--last { padding-bottom: 8px; }
-
-.ab-rule {
-  height: 0;
-  margin: 0;
-  border: 0;
-  border-top: 1px solid var(--separator);
-}
-
-.ab-h2 {
-  margin: 0 0 26px;
-  font-size: clamp(1.35rem, 2.2vw, 1.75rem);
+/* ── Shared type ───────────────────────────────────────────────────── */
+.ab-eyebrow {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 12px;
   font-weight: 800;
-  letter-spacing: -0.025em;
-  line-height: 1.2;
-  color: var(--text-primary);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ab-green);
 }
+.ab-h2 {
+  margin: 0 0 16px;
+  font-size: clamp(1.75rem, 2.6vw, 2.125rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  color: var(--ab-ink);
+}
+.ab-sub {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ab-body);
+}
+.ab-head { max-width: 720px; margin: 0 auto 40px; text-align: center; }
+.ab-head .ab-eyebrow { margin-bottom: 8px; }
 
-/* Centred, and held to a readable measure rather than the full column. */
-.ab-copy {
-  max-width: 760px;
-  margin: 24px auto 0;
-  font-size: 14px;
-  line-height: 1.75;
-  color: var(--text-secondary);
-}
-.ab-copy--lede { font-size: 15px; }
-.ab-copy a {
-  color: var(--accent-deep);
+/* ── Buttons ───────────────────────────────────────────────────────── */
+.ab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 24px;
+  border-radius: 999px;
+  font-size: 15px;
   font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  letter-spacing: -0.01em;
   white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.15s;
 }
-.ab-copy a:hover { color: var(--accent-pressed); }
+.ab-btn:active { transform: translateY(1px); }
+.ab-btn--solid { background: var(--ab-green); color: #fff; }
+.ab-btn--solid:hover { background: var(--ab-green-hover); }
+.ab-btn--outline {
+  border: 1.5px solid var(--ab-green);
+  background: #fff;
+  color: var(--ab-green);
+}
+.ab-btn--outline:hover { background: #eff7f1; }
+/* Lime on the dark band: near-black ink, because white on #d9ff58 is ~1.2:1. */
+.ab-btn--lime { background: var(--ab-lime); color: #0f2b16; }
+.ab-btn--lime:hover { background: #c9f43f; }
 
-/* ── Lede film ─────────────────────────────────────────────────────── */
+/* ── Hero ──────────────────────────────────────────────────────────── */
+.ab-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 0.86fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 56px;
+}
+.ab-hero__title {
+  margin: 0 0 18px;
+  font-size: clamp(2.125rem, 3.4vw, 2.875rem);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+  color: var(--ab-ink);
+}
+.ab-hero__accent { color: var(--ab-green); }
+.ab-hero__lede {
+  margin: 0;
+  max-width: 44ch;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--ab-body);
+}
+.ab-hero__actions { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 26px; }
+
+.ab-marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 30px;
+  margin: 34px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.ab-marks li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--ab-ink);
+}
+.ab-marks svg { flex: none; color: var(--ab-green); }
+
 .ab-film {
   display: block;
   width: 100%;
-  max-width: 840px;
-  margin: 0 auto;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 16 / 10;
   object-fit: cover;
   background: #0b3a1f;
-  border-radius: 6px;
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(4, 48, 27, 0.12);
 }
 
-/* ── Three steps ───────────────────────────────────────────────────── */
-.ab-trio {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 22px;
-}
-.ab-trio__item { margin: 0; }
-.ab-trio__item img {
-  width: 100%;
-  height: 210px;
-  object-fit: cover;
-  border-radius: 6px;
-  background: var(--bg-elevated);
-}
-.ab-trio__item figcaption {
-  margin-top: 14px;
-  font-size: 13px;
-  line-height: 1.65;
-  color: var(--text-secondary);
-}
-
-/* ── Promise cards ─────────────────────────────────────────────────── */
-.ab-promise {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 18px;
-  margin-top: 30px;
-}
-.ab-promise__card {
-  padding: 26px 22px;
-  background: var(--bg-base);
-  border: 1px solid var(--separator);
-  border-radius: 8px;
-}
-.ab-promise__figure {
-  display: block;
-  font-size: 40px;
-  font-weight: 800;
-  letter-spacing: -0.04em;
-  line-height: 1;
-  color: var(--accent-pressed);
-}
-/* "In-store" is a word where the others are a number; drop it a size so the
-   three sit on the same optical line instead of one wrapping. */
-.ab-promise__figure--word { font-size: 29px; }
-.ab-promise__card h3 {
-  margin: 14px 0 8px;
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-.ab-promise__card p {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.65;
-  color: var(--text-secondary);
-}
-
-/* ── Wide banners ──────────────────────────────────────────────────── */
-.ab-banner {
-  width: 100%;
-  height: 260px;
-  object-fit: cover;
-  border-radius: 6px;
-  background: var(--bg-elevated);
-}
-
-/* ── Icon duo ──────────────────────────────────────────────────────── */
-.ab-duo {
+/* ── Steps ─────────────────────────────────────────────────────────── */
+.ab-steps {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 44px;
+  gap: 26px;
 }
-.ab-duo__item { max-width: 420px; margin: 0 auto; }
-.ab-duo__icon {
-  display: grid;
-  place-items: center;
-  width: 62px;
-  height: 62px;
-  margin: 0 auto 16px;
-  border-radius: 50%;
-  background: var(--accent-pressed);
-  color: #fff;
-}
-.ab-duo__title {
-  margin: 0 0 12px;
-  font-size: 19px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--text-primary);
-}
-.ab-duo__item p {
+.ab-step {
   margin: 0;
-  font-size: 13px;
-  line-height: 1.7;
-  color: var(--text-secondary);
-}
-.ab-duo__link {
-  display: inline-block;
-  margin-top: 12px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--accent-deep);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-.ab-duo__link:hover { color: var(--accent-pressed); }
-
-/* ── Ready-to-shop banner ──────────────────────────────────────────── */
-.ab-cta {
-  position: relative;
-  display: block;
-  margin: 12px 0 44px;
-  border-radius: 6px;
+  background: #fff;
+  border-radius: 14px;
   overflow: hidden;
+  box-shadow: 0 1px 2px rgba(11, 18, 32, 0.05);
 }
-.ab-cta img {
+.ab-step img {
+  display: block;
   width: 100%;
-  height: 230px;
+  height: auto;
+  aspect-ratio: 16 / 9;
   object-fit: cover;
 }
-/* Scrim: the market photo is bright across the middle, which is exactly where
-   the words sit. */
-.ab-cta::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, rgba(6,36,15,0.62), rgba(6,36,15,0.34));
+.ab-step:nth-child(1) img { object-position: center 54%; }
+.ab-step:nth-child(2) img { object-position: center 44%; }
+.ab-step:nth-child(3) img { object-position: center 56%; }
+.ab-step figcaption { padding: 18px 22px 24px; }
+.ab-step h3 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 8px;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--ab-ink);
+}
+.ab-step__num {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--ab-green);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+}
+/* Indented to the title's text, not the badge, so the card reads as one block. */
+.ab-step p {
+  margin: 0;
+  padding-left: 38px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ab-body);
+}
+
+/* ── Promise ───────────────────────────────────────────────────────── */
+.ab-promise {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+}
+.ab-promise__card {
+  padding: 30px 26px 28px;
+  border-radius: 14px;
+  background: #eff7f1;
+  text-align: center;
+}
+.ab-promise__card--cream { background: #fdf8e7; }
+.ab-promise__top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 62px;
+  margin-bottom: 16px;
+  color: var(--ab-green);
+}
+.ab-promise__num {
+  display: block;
+  font-size: 44px;
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 1;
+  color: var(--ab-green);
+}
+.ab-promise__label {
+  display: block;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  color: var(--ab-green);
+}
+.ab-promise__num + .ab-promise__label { margin-top: 6px; }
+.ab-promise__card p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ab-body);
+}
+
+/* ── Fair for everyone ─────────────────────────────────────────────── */
+/* The photograph runs to the page edge; the copy still stops on the same
+   right-hand line as every other band, hence the computed padding. */
+.ab-band--parity {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  padding: 0;
+  background: #fff;
+}
+.ab-parity__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 340px;
+  object-fit: cover;
+  object-position: center 58%;
+}
+.ab-parity__copy {
+  padding: 64px max(24px, calc((100vw - 1280px) / 2)) 64px 56px;
+}
+.ab-parity__copy p {
+  margin: 0 0 26px;
+  max-width: 52ch;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--ab-body);
+}
+
+/* ── Three-column bands (shops, riders) ────────────────────────────── */
+.ab-tri {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.95fr) minmax(0, 0.92fr);
+  align-items: center;
+  gap: 26px;
+}
+.ab-tri__copy p {
+  margin: 0;
+  max-width: 44ch;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--ab-body);
+}
+.ab-tri__copy .ab-btn { margin-top: 26px; }
+/* The ratio is the mockup's, and it is what sets the row's height — left to
+   its intrinsic size a portrait photograph drags the whole band tall. */
+.ab-tri__img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+  border-radius: 14px;
+}
+.ab-tri__img--seller { object-position: center 42%; }
+.ab-tri__img--rider { object-position: center 48%; }
+.ab-tri__panel {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 18px;
+  margin: 0;
+  padding: 28px 26px;
+  border: 1px solid var(--ab-line);
+  border-radius: 14px;
+  background: #fff;
+  list-style: none;
+}
+
+.ab-checks li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ab-ink);
+}
+.ab-checks__tick {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--ab-green);
+  color: #fff;
+}
+
+.ab-perks li { display: flex; align-items: flex-start; gap: 13px; }
+.ab-perks__icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: #eff7f1;
+  color: var(--ab-green);
+}
+.ab-perks strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--ab-ink);
+}
+.ab-perks em {
+  display: block;
+  margin-top: 3px;
+  font-size: 13px;
+  font-style: normal;
+  line-height: 1.5;
+  color: var(--ab-body);
+}
+
+/* ── Ready to shop ─────────────────────────────────────────────────── */
+/* Dark on the left where the words are, opening into the market photograph on
+   the right so the call to action keeps its contrast at every width. */
+.ab-cta {
+  padding: 0;
+  background: #124c2b;
+}
+.ab-cta__inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 0.78fr);
+  align-items: stretch;
+  min-height: 230px;
 }
 .ab-cta__copy {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  flex-direction: column;
+  padding: 46px 52px 46px 0;
+}
+.ab-cta__art {
+  position: relative;
+  align-self: stretch;
+  margin-right: -32px;
+  overflow: hidden;
+}
+.ab-cta__art::after {
   position: absolute;
   inset: 0;
-  z-index: 1;
-  display: grid;
-  align-content: center;
-  justify-items: center;
-  gap: 10px;
-  text-align: center;
-  padding: 0 20px;
+  content: '';
+  background: linear-gradient(90deg, #124c2b 0%, rgba(18, 76, 43, 0.62) 24%, transparent 72%);
+}
+.ab-cta__art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 52%;
 }
 .ab-cta__title {
-  font-size: clamp(1.75rem, 4vw, 2.75rem);
+  margin: 0 0 10px;
+  font-size: clamp(1.75rem, 2.8vw, 2.25rem);
   font-weight: 800;
   letter-spacing: -0.03em;
   color: #fff;
-  text-shadow: 0 2px 18px rgba(0,0,0,0.35);
 }
 .ab-cta__sub {
+  margin: 0 0 24px;
+  max-width: 44ch;
   font-size: 15px;
-  font-weight: 600;
-  color: rgba(255,255,255,0.94);
-  text-decoration: underline;
-  text-underline-offset: 4px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.9);
 }
 
-/* ── Rider pair ────────────────────────────────────────────────────── */
-.ab-duo-img {
+/* ── Our home ──────────────────────────────────────────────────────── */
+.ab-home {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 22px;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 40px;
+  padding: 44px 48px;
+  border-radius: 18px;
+  background: #fff;
 }
-.ab-duo-img img {
+.ab-home__copy p {
+  margin: 0;
+  max-width: 54ch;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--ab-body);
+}
+.ab-home__art {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  min-height: 190px;
+  padding: 24px 28px;
+  overflow: hidden;
+  border-radius: 14px;
+}
+.ab-home__art::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  background: linear-gradient(90deg, transparent 20%, rgba(8, 45, 25, 0.72) 100%);
+}
+.ab-home__art img {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  height: 240px;
+  height: 100%;
   object-fit: cover;
-  object-position: center 30%;
-  border-radius: 6px;
-  background: var(--bg-elevated);
+  object-position: center 52%;
+}
+.ab-home__pin,
+.ab-home__place { position: relative; z-index: 1; }
+.ab-home__pin { color: #ffb11b; }
+.ab-home__place {
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+
+@media (max-width: 900px) {
+  .ab-tri { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  /* The panel drops to a full-width row under the copy and the photograph. */
+  .ab-tri__panel { grid-column: 1 / -1; }
+  .ab-checks, .ab-perks { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+}
+
+@media (max-width: 900px) {
+  .ab-band { padding: 56px 0; }
+  .ab-hero { grid-template-columns: 1fr; gap: 34px; }
+  .ab-hero__lede { max-width: none; }
+  .ab-band--parity { grid-template-columns: 1fr; }
+  .ab-parity__img { min-height: 260px; }
+  .ab-parity__copy { padding: 40px 24px 56px; }
+  .ab-home { grid-template-columns: 1fr; padding: 32px 28px; }
+  .ab-cta__inner { grid-template-columns: 1fr; }
+  .ab-cta__copy { padding: 46px 0; }
+  .ab-cta__art { min-height: 190px; margin: 0 -24px; border-width: 1px 0 0; }
 }
 
 @media (max-width: 760px) {
-  .ab-sec { padding: 34px 0; }
-  .ab-trio__item img { height: 180px; }
-  .ab-banner { height: 200px; }
-  .ab-cta img { height: 190px; }
-  .ab-duo-img img { height: 200px; }
-  .ab-duo { gap: 34px; }
+  .ab-wrap { padding: 0 16px; }
+  .ab-band { padding: 46px 0; }
+  .ab-tabs__item { min-width: 0; flex: 1 1 44%; }
+  .ab-tri { grid-template-columns: 1fr; }
+  .ab-tri__img { min-height: 220px; }
+  .ab-marks { gap: 20px; }
+  .ab-cta { padding: 0; }
+  .ab-cta__copy { padding: 42px 0; }
+  .ab-cta__art { min-height: 180px; margin: 0 -16px; }
 }
 </style>

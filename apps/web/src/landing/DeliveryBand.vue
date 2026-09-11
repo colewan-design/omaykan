@@ -73,9 +73,9 @@ const note = computed(() => {
   gap: 14px;
   margin-bottom: 40px;
   padding: 16px 20px;
-  border: 1px solid #dcebe1;
+  border: 1px solid var(--sf-rule);
   border-radius: 12px;
-  background: #f2f8f4;
+  background: var(--sf-sand);
 }
 
 .fd-near__pin {
@@ -85,8 +85,8 @@ const note = computed(() => {
   width: 38px;
   height: 38px;
   border-radius: 999px;
-  background: #1a6b3c;
-  color: #bbf451;
+  background: var(--sf-forest);
+  color: var(--sf-gold);
 }
 
 .fd-near__copy { flex: 1; min-width: 0; }
@@ -96,14 +96,14 @@ const note = computed(() => {
   font-size: 1.05rem;
   font-weight: 800;
   letter-spacing: -0.01em;
-  color: #06240f;
+  color: var(--sf-ink);
 }
 
 .fd-near__note {
   margin: 2px 0 0;
   font-size: 13.5px;
   line-height: 1.45;
-  color: #4a5b52;
+  color: var(--sf-muted);
 }
 
 .fd-near__fee {
@@ -113,22 +113,22 @@ const note = computed(() => {
   gap: 8px;
   margin: 0;
   padding: 0 16px;
-  border-left: 1px solid #d6e6dc;
+  border-left: 1px solid var(--sf-rule);
   font-size: 13px;
   line-height: 1.4;
-  color: #4a5b52;
+  color: var(--sf-muted);
   max-width: 320px;
 }
-.fd-near__fee svg { flex-shrink: 0; color: #1a6b3c; }
-.fd-near__fee strong { color: #06240f; font-weight: 800; }
+.fd-near__fee svg { flex-shrink: 0; color: var(--sf-forest); }
+.fd-near__fee strong { color: var(--sf-ink); font-weight: 800; }
 
 .fd-near__btn {
   flex-shrink: 0;
   padding: 10px 20px;
-  border: 1.5px solid #1a6b3c;
+  border: 1.5px solid var(--sf-forest);
   border-radius: 999px;
   background: none;
-  color: #1a6b3c;
+  color: var(--sf-forest);
   /* Longhands: `inherit` is only legal as the shorthand's entire value, so
      `font: 800 14px/1.2 inherit` is dropped whole and the element renders at
      the inherited 17px/400 instead. Same trap as .fd-totop in FdFooter. */
@@ -139,8 +139,8 @@ const note = computed(() => {
   cursor: pointer;
   transition: background 150ms, color 150ms;
 }
-.fd-near__btn:hover { background: #1a6b3c; color: #fff; }
-.fd-near__btn:focus-visible { outline: 2px solid #1a6b3c; outline-offset: 2px; }
+.fd-near__btn:hover { background: var(--sf-forest); color: #fff; }
+.fd-near__btn:focus-visible { outline: 2px solid var(--sf-forest); outline-offset: 2px; }
 
 /* On a phone this is the only way to set a delivery location, so it keeps its
    button rather than collapsing to text — it just stacks. */
@@ -157,9 +157,10 @@ const note = computed(() => {
     max-width: none;
     padding: 12px 0 0;
     border-left: none;
-    border-top: 1px solid #d6e6dc;
+    border-top: 1px solid var(--sf-rule);
   }
   .fd-near__title { font-size: 0.98rem; }
   .fd-near__btn { width: 100%; }
 }
+.fd-near__title { font-family: var(--sf-serif); font-weight: 700; letter-spacing: 0; }
 </style>

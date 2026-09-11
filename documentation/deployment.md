@@ -158,10 +158,44 @@ sudo -u www-data env HOME=/tmp php artisan ...
 
 ### 3.3 Rollback
 
-Directory swaps are reversible. The current rollback point is
-`backend.bak-20260909-224036-storefront-landing-rework` and
-`web.bak-20260909-224036-storefront-landing-rework`. Swap them back and restart
-the two daemons. A database dump taken immediately before that deploy is at
+Directory swaps are reversible.
+
+**Updated 2026-09-11, 23:02.** Two deploys went out that day, both
+**frontend only**: the customer account and cart redesign at 16:30, then the
+aisle-listing redesign (`e497096`) at 23:02. Neither touched the backend, so
+the rollback point stays split:
+
+| | Roll back to | Holds |
+|---|---|---|
+| Frontend | `web.bak-20260911-230200-aisle-listing` | the 16:30 account and cart build |
+| Backend | `backend.bak-20260909-224036-storefront-landing-rework` | unchanged since 2026-09-09 |
+
+Reverting the frontend alone is `mv web web.bad && mv web.bak-20260911-230200-aisle-listing web`
+plus `systemctl reload nginx` — **no daemon restart and no dump**: no backend
+code, no migration, no schema. Two older generations are still on disk behind
+it: `web.bak-20260911-163000-storefront-account-cart` (the 2026-09-10 About-page
+build) and `web.bak-20260910-221835-about-page-rework`.
+
+`e497096` is also the first commit to hold the web as it ships: the 2026-09-10
+and 16:30 builds went out from an uncommitted working tree. The aisle listing
+needed no nginx change — it is the landing page's `?category=` face, served
+by `index.html`.
+
+The 16:30 deploy also added the one nginx line the new `/cart` entry needs —
+`location = /cart { try_files /cart.html =404; }`, beside the `/account` rules.
+The pre-edit config is at `/root/nginx-omaykan.bak-20260911-163000`. Rolling
+the web back leaves that line harmless: `/cart` then 404s instead of opening a
+page the old build does not have.
+
+The frontend now runs **ahead of the backend**. The web tree carries shopper
+messaging and rider ratings, whose endpoints are only in the undeployed
+backend, so `.env.production` builds with `VITE_FEATURE_MESSAGES=false` and
+`VITE_FEATURE_RIDER_RATING=false` (see `apps/web/src/commerce/features.ts`).
+When the backend that serves them goes out, delete both lines and rebuild —
+otherwise the features stay hidden behind a backend that supports them.
+
+To roll the backend back as well, swap its directory too and restart the two
+daemons. A database dump taken immediately before the 2026-09-09 deploy is at
 `/root/db-backups/omaykan-predeploy-20260909-224036.dump` (`pg_restore` format).
 
 That release was frontend-heavy — a landing page rework — plus one controller

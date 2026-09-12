@@ -129,7 +129,10 @@ async function ensureSession() {
   }
 
   try {
-    const response = await fetch('/api/platform/me', {
+    // /api/platform-admin, not /api/platform. This page had the same wrong
+    // prefix the operator portal did — see apps/web/src/platform-admin/api.ts
+    // — so every call here 404'd and the session check never passed.
+    const response = await fetch('/api/platform-admin/me', {
       headers: authHeaders(),
     })
     const data = await parseJson(response)
@@ -158,8 +161,12 @@ async function loadList(selectMessageId?: string) {
   successMessage.value = ''
 
   try {
-    const response = await fetch('/api/platform/inbox?limit=30', {
-      headers: authHeaders(),
+    // POST with a body, not GET with a query: the listing reaches out to IMAP
+    // and the route takes its limit in the request.
+    const response = await fetch('/api/platform-admin/inbox', {
+      method: 'POST',
+      headers: authHeaders(true),
+      body: JSON.stringify({ limit: 30 }),
     })
     const data = await parseJson(response)
 
@@ -197,7 +204,7 @@ async function openMessage(messageId: string) {
   replyError.value = ''
 
   try {
-    const response = await fetch(`/api/platform/inbox/${messageId}`, {
+    const response = await fetch(`/api/platform-admin/inbox/${messageId}`, {
       headers: authHeaders(),
     })
     const data = await parseJson(response)
@@ -244,7 +251,7 @@ async function sendReply() {
   replyError.value = ''
 
   try {
-    const response = await fetch(`/api/platform/inbox/${selected.value.id}/reply`, {
+    const response = await fetch(`/api/platform-admin/inbox/${selected.value.id}/reply`, {
       method: 'POST',
       headers: authHeaders(true),
       body: JSON.stringify({ subject, message }),

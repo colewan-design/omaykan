@@ -160,7 +160,47 @@ sudo -u www-data env HOME=/tmp php artisan ...
 
 Directory swaps are reversible.
 
-**Updated 2026-09-12, 08:52.** Two **frontend-only** deploys that morning, both
+**Updated 2026-09-12, 09:59.** The first **backend** deploy since 2026-09-09,
+and the first release of the day that is not frontend-only. The operator
+portal at `/platform-admin` was rebuilt around nine screens and given five new
+read endpoints plus one writable one; four migrations went with it. Rollback
+is no longer split:
+
+| | Roll back to | Holds |
+|---|---|---|
+| Frontend | `web.bak-20260912-095912-portal-reskin` | the 09:54 build — same portal, two screens unstyled |
+| Backend | `backend.bak-20260912-095050-operator-portal` | the 2026-09-09 storefront landing rework |
+| Database | `/root/db-backups/omaykan-predeploy-20260912-095050.dump` | taken immediately before the swap |
+
+**The backend can be rolled back without the dump.** All four migrations are
+additive — three new tables (`platform_settings`, `rider_ratings`,
+`conversations` + `conversation_messages`) and five nullable columns on
+`riders`, which had no rows. The 2026-09-09 code ignores every one of them, so
+swapping the directory back and restarting the two daemons is the whole
+procedure. The dump is there for the case where something has *written* to the
+new tables and you want the state before that; restoring it would lose every
+order taken since, so prefer fixing forward.
+
+Rolling the frontend back alone is safe in either direction: the portal's
+bundle is the only thing that calls the new endpoints, and the endpoints
+ignore a client that never arrives.
+
+### What made this release necessary
+
+The portal could not sign anyone in, and had not been able to since it was
+written. It called `/api/platform/*` throughout; the backend has only ever
+served `/api/platform-admin/*`, so production answered *"The route
+api/platform/login could not be found"* on every attempt. Two screens also
+used `GET` where the route takes `POST`. The same bug sat in the standalone
+`/support-inbox` page, which could not get past its session check.
+
+Nothing would have reported this. There is no monitoring (§6), the portal is
+linked from nowhere, and a 404 on a fetch renders as an error message inside a
+page that otherwise looks fine. It was found by opening the page.
+
+### 3.3.1 The earlier frontend deploys of 2026-09-12
+
+Two **frontend-only** deploys that morning, both
 the same change: the listing banner became a photograph. 08:47 shipped
 `HighlandBanner.vue` — its generated SVG ridges replaced by an `<img>` — plus
 the new `apps/web/public/storefront/listing-highland.webp` it points at. 08:52
@@ -196,16 +236,13 @@ and the `.webp` are unstaged in `main` as of 08:52. That is the state `e497096`
 was meant to end (see below); until they are committed, nothing in git
 describes what is live, and the two deploys are indistinguishable in history.
 
-Behind the rollback point sit five more generations —
-`web.bak-20260912-084722-listing-hero-photo`,
-`web.bak-20260911-230200-aisle-listing` (the 16:30 account and cart build),
-`web.bak-20260911-163000-storefront-account-cart` (the 2026-09-10 About-page
-build), `web.bak-20260910-221835-about-page-rework` and
-`web.bak-20260909-224036-storefront-landing-rework` — plus
-`web.bak-20260908-230835-rider-map-staff-auth`, kept deliberately for the
-reason given further down. Seven web generations, 203M, against the "keep one"
-rule below; the box is at 9% of 96G, so nothing forces the issue, but nothing
-prunes them on its own either.
+As of 2026-09-12 there are **nine** web generations on disk (265M) and three
+backend ones, against the "keep one" rule below: four of the nine were made on
+2026-09-12 alone, because four separate swaps went out that day. The box is at
+9% of 96G so nothing forces the issue, but nothing prunes them either — and
+`*-20260908-230835-rider-map-staff-auth` is kept deliberately, for the reason
+given further down. `ls -d /var/www/omaykan/*.bak-*` is the inventory; trust it
+over this paragraph, which is a snapshot.
 
 `e497096` is also the first commit to hold the web as it ships: the 2026-09-10
 and 16:30 builds went out from an uncommitted working tree. The aisle listing
@@ -322,6 +359,20 @@ recorded as applied rather than trying to recreate an existing table. The row
 for `2026_08_26_000400_add_payment_confirmed_by_role_to_orders` still points at
 a file that no longer exists — left deliberately, because the column it
 describes is still there.
+
+**Updated 2026-09-12.** Four more migrations applied cleanly with the operator
+portal: `platform_settings`, `rider_ratings`, the two `conversations` tables,
+and five nullable columns on `riders`. All additive; none of them touches
+`platform_admins` or `orders`, so **everything below is still true** — the
+drift is untouched, only re-confirmed for the fourth time.
+
+One observation that makes the drift concrete rather than theoretical.
+`platform-admin:create --disable` writes `disabled_at` and leaves
+`platform_admins.status` alone, so after disabling an operator the table reads
+`status = 'active'` for an account that cannot sign in. `status` is the
+branch's column, which `main` has no code for; `disabled_at` is the one that
+was added by hand because `main` requires it. **Check `disabled_at`, not
+`status`** — reading the wrong one says the opposite of the truth.
 
 **Updated 2026-09-08.** That deploy found production two releases behind, not
 one: the whole customer Google sign-in commit had never gone out, so seven

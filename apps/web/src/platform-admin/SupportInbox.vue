@@ -379,17 +379,26 @@ void loadList()
 </template>
 
 <style scoped>
+/*
+ * This screen was drawn for the old operator portal, which was dark. It is now
+ * one of nine screens in a cream one, and a single dark panel among eight pale
+ * ones reads as a different product rather than a different page.
+ *
+ * The whole re-skin is these eleven values: the rest of the block below is
+ * written against them, so pointing them at the portal's palette restyles the
+ * screen without touching a line of its layout.
+ */
 .si-page {
-  --si-bg: #18181b;
-  --si-surface: #1f2024;
-  --si-surface-strong: #24252a;
-  --si-border: rgba(255, 255, 255, 0.08);
-  --si-border-strong: rgba(255, 255, 255, 0.12);
-  --si-text: #f5f7fb;
-  --si-muted: #a0a6b2;
-  --si-subtle: #6f7685;
-  --si-success: #71d49f;
-  --si-danger: #ff8d84;
+  --si-bg: var(--sf-paper);
+  --si-surface: var(--sf-paper);
+  --si-surface-strong: var(--sf-sand);
+  --si-border: var(--sf-rule);
+  --si-border-strong: var(--sf-sand-deep);
+  --si-text: var(--sf-ink);
+  --si-muted: var(--sf-muted);
+  --si-subtle: var(--sf-faint);
+  --si-success: #0a6b0a;
+  --si-danger: #9c2626;
   display: grid;
 }
 

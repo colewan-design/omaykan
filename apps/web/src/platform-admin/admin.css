@@ -9,7 +9,7 @@
  * this is not; keep the two lists of hexes in step.
  *
  * The chart colours are the exception: they are not brand colours and were not
- * chosen by eye. See `--adm-chart-*` below.
+ * chosen by eye. See the status and ramp blocks below.
  */
 
 .adm {
@@ -348,4 +348,215 @@
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* ── The two screens that predate the portal ─────────────────────────── */
+
+/*
+ * Rider review and the support inbox were written for the old operator page,
+ * and they lean on a handful of class names and tokens that lived in it. That
+ * page is gone, so these are defined here instead — in the portal's palette,
+ * which is the point: re-pointing the names is what puts those screens in the
+ * same product as the other seven.
+ *
+ * Not scoped to a component because the markup using them is spread across two
+ * files that own their own scoped blocks. Prefixed `pa-` and unique enough not
+ * to collide with anything the portal itself uses.
+ *
+ * The alternative was importing the POS app's whole stylesheet for four rules,
+ * which is how rider review came to render as a bare browser table when that
+ * import was dropped.
+ */
+
+.adm {
+  /* Named by the legacy markup; mapped onto the portal's own values. */
+  --text-secondary: var(--sf-muted);
+  --bg-canvas: var(--sf-sand);
+  --accent: var(--sf-clay);
+}
+
+.adm .surface-panel {
+  background: var(--sf-paper);
+  border: 1px solid var(--sf-rule);
+  border-radius: var(--adm-radius);
+  box-shadow: 0 1px 2px rgba(35, 29, 24, 0.04);
+}
+
+.adm .pa-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.adm .pa-title {
+  margin: 0;
+  font-family: var(--sf-serif);
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--sf-ink);
+}
+
+.adm .pa-copy {
+  margin: 6px 0 0;
+  max-width: 68ch;
+  color: var(--sf-muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.adm .pa-slug {
+  color: var(--sf-faint);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.adm .pa-table-wrap {
+  overflow-x: auto;
+}
+
+.adm .pa-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.adm .pa-table th {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--sf-rule);
+  color: var(--sf-muted);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.adm .pa-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--sf-rule);
+  vertical-align: top;
+}
+
+.adm .pa-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.adm .pa-empty {
+  padding: 32px 14px;
+  color: var(--sf-muted);
+  text-align: center;
+}
+
+.adm .pa-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--sf-sand);
+  color: var(--sf-muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.adm .pa-badge--danger {
+  background: rgba(208, 59, 59, 0.13);
+  color: #9c2626;
+}
+
+.adm .pa-link-button {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--sf-clay);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.adm .pa-link-button:hover:not(:disabled) {
+  color: var(--sf-clay-deep);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.adm .pa-link-button:disabled {
+  color: var(--sf-faint);
+  cursor: default;
+}
+
+.adm .auth-error {
+  margin: 0 0 12px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  background: rgba(208, 59, 59, 0.1);
+  color: #9c2626;
+  font-size: 13px;
+}
+
+.adm .field {
+  display: block;
+  width: 100%;
+  padding: 8px 11px;
+  border: 1px solid var(--sf-rule);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--sf-ink);
+  font: inherit;
+  font-size: 13.5px;
+}
+
+.adm .field:focus {
+  outline: none;
+  border-color: var(--sf-forest-soft);
+  box-shadow: 0 0 0 3px rgba(43, 63, 51, 0.12);
+}
+
+/* The licence viewer. Deliberately dark behind the photograph — a scanned
+   document reads better on black than on cream — but framed like the rest. */
+.adm .pa-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(23, 35, 28, 0.55);
+}
+
+.adm .pa-modal {
+  width: min(860px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 20px;
+  border: 1px solid var(--sf-rule);
+  border-radius: var(--adm-radius);
+  background: var(--sf-paper);
+}
+
+.adm .pa-modal__title {
+  margin: 0 0 4px;
+  font-family: var(--sf-serif);
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.adm .pa-modal__copy {
+  margin: 0;
+  color: var(--sf-muted);
+  font-size: 13.5px;
+}
+
+.adm .pa-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
 }

@@ -160,21 +160,52 @@ sudo -u www-data env HOME=/tmp php artisan ...
 
 Directory swaps are reversible.
 
-**Updated 2026-09-11, 23:02.** Two deploys went out that day, both
-**frontend only**: the customer account and cart redesign at 16:30, then the
-aisle-listing redesign (`e497096`) at 23:02. Neither touched the backend, so
-the rollback point stays split:
+**Updated 2026-09-12, 08:52.** Two **frontend-only** deploys that morning, both
+the same change: the listing banner became a photograph. 08:47 shipped
+`HighlandBanner.vue` — its generated SVG ridges replaced by an `<img>` — plus
+the new `apps/web/public/storefront/listing-highland.webp` it points at. 08:52
+swapped that asset for a different photograph and moved the crop from 45% to
+60%. Neither touched the backend, so the rollback point stays split:
 
 | | Roll back to | Holds |
 |---|---|---|
-| Frontend | `web.bak-20260911-230200-aisle-listing` | the 16:30 account and cart build |
+| Frontend | `web.bak-20260912-085248-listing-hero-terraces` | the 08:47 build, same code, first photograph |
 | Backend | `backend.bak-20260909-224036-storefront-landing-rework` | unchanged since 2026-09-09 |
 
-Reverting the frontend alone is `mv web web.bad && mv web.bak-20260911-230200-aisle-listing web`
+Reverting the frontend alone is `mv web web.bad && mv web.bak-20260912-085248-listing-hero-terraces web`
 plus `systemctl reload nginx` — **no daemon restart and no dump**: no backend
-code, no migration, no schema. Two older generations are still on disk behind
-it: `web.bak-20260911-163000-storefront-account-cart` (the 2026-09-10 About-page
-build) and `web.bak-20260910-221835-about-page-rework`.
+code, no migration, no schema. It needed no nginx change: the banner is part of
+the landing page's `?category=` face, already served by `index.html`. One step
+further back, `web.bak-20260912-084722-listing-hero-photo`, is the 2026-09-11
+23:02 aisle-listing build — the last one without a photograph at all.
+
+**The banner asset is not content-hashed.** It lives in `public/`, so it ships
+under its own name and a second photograph reuses the path the first one had —
+only the `main` chunk's hash moves. nginx serves `/storefront/` with an ETag
+and no `Cache-Control`, so browsers revalidate and pick the new file up; had
+that path been given a long `max-age`, the 08:52 deploy would have left the old
+photograph on every screen that had already seen it. Check the bytes on the
+server rather than trusting the filename:
+
+```bash
+ssh omaykan "sha256sum /var/www/omaykan/web/storefront/listing-highland.webp"
+```
+
+Both builds went out from an **uncommitted working tree** — `HighlandBanner.vue`
+and the `.webp` are unstaged in `main` as of 08:52. That is the state `e497096`
+was meant to end (see below); until they are committed, nothing in git
+describes what is live, and the two deploys are indistinguishable in history.
+
+Behind the rollback point sit five more generations —
+`web.bak-20260912-084722-listing-hero-photo`,
+`web.bak-20260911-230200-aisle-listing` (the 16:30 account and cart build),
+`web.bak-20260911-163000-storefront-account-cart` (the 2026-09-10 About-page
+build), `web.bak-20260910-221835-about-page-rework` and
+`web.bak-20260909-224036-storefront-landing-rework` — plus
+`web.bak-20260908-230835-rider-map-staff-auth`, kept deliberately for the
+reason given further down. Seven web generations, 203M, against the "keep one"
+rule below; the box is at 9% of 96G, so nothing forces the issue, but nothing
+prunes them on its own either.
 
 `e497096` is also the first commit to hold the web as it ships: the 2026-09-10
 and 16:30 builds went out from an uncommitted working tree. The aisle listing
@@ -204,7 +235,7 @@ added **no migration**, so `migrate --force` reported "Nothing to migrate" and
 rolling back to it is a directory swap alone, with no dump to restore.
 
 The generation before it, `*-20260908-230835-rider-map-staff-auth`, is still on
-disk (the box is at 8% of 96G). §3.3's "keep one generation" says to prune it;
+disk (the box is at 9% of 96G). §3.3's "keep one generation" says to prune it;
 it was left deliberately, because rolling back *past* 2026-09-08 needs the dump
 restored as well and having the directory costs nothing while disk is this free.
 

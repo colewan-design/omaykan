@@ -384,6 +384,11 @@ class SellerOrderController extends Controller
             // delivered. The rider only reports while carrying something, so
             // "after delivery" is a stale fix, not a live trace.
             'riderPosition' => $order->rider?->positionArray(),
+            // Ungated for the same reason the position above is: the shop is a
+            // party to this delivery for its whole life, and the counter staff
+            // handing over a bag need to know which of the three people waiting
+            // is the one with this order. Null for a rider typed in at the till.
+            'riderProfile' => $order->rider?->toPublicArray(),
             'route' => $order->routeEndpointsArray(),
             'deliveryFeeCents' => (int) ($order->delivery_fee_cents ?? 0),
             'voidedAt' => $order->deleted_at?->toIso8601String(),

@@ -90,8 +90,13 @@ async function load() {
   loading.value = true
   errorMessage.value = ''
   try {
-    const response = await fetch('/api/platform/riders', {
-      headers: authHeaders(false),
+    // POST to /api/rider-review — the rider queue sits beside the operator
+    // tools rather than under their path prefix, and its listing takes a body.
+    // This used to GET `/api/platform/riders`, which has never existed.
+    const response = await fetch('/api/rider-review', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: '{}',
     })
     const data = await response.json().catch(() => ({}))
     if (response.status === 401 || response.status === 403) {
@@ -123,7 +128,7 @@ async function decide(rider: ReviewRider, status: 'approved' | 'rejected' | 'sus
   errorMessage.value = ''
 
   try {
-    const data = await post(`/api/platform/riders/${rider.id}/decision`, { status, note: note || null })
+    const data = await post(`/api/rider-review/${rider.id}/decision`, { status, note: note || null })
     riders.value = riders.value.map((row) => (row.id === rider.id ? data.rider : row))
     notes.value[rider.id] = ''
   } catch (err) {
@@ -135,7 +140,7 @@ async function decide(rider: ReviewRider, status: 'approved' | 'rejected' | 'sus
 
 /** Fetches one document as a blob, because it is a POST behind the token. */
 async function fetchDocument(riderId: string, document: 'license' | 'plate'): Promise<string> {
-  const response = await fetch(`/api/platform/riders/${riderId}/document/${document}`, {
+  const response = await fetch(`/api/rider-review/${riderId}/document/${document}`, {
     headers: authHeaders(false),
   })
 

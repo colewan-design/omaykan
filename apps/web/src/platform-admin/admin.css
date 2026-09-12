@@ -1,0 +1,351 @@
+/*
+ * The operator portal's palette and shared primitives, scoped to the `.adm`
+ * wrapper the whole portal renders inside.
+ *
+ * The palette is the storefront's — the same values landing.css sets on `.fd`,
+ * because an operator and a shopper are looking at one product and it should
+ * not change colour when you sign in. They are restated rather than imported
+ * because landing.css also styles `body` and `a` for a marketing page, which
+ * this is not; keep the two lists of hexes in step.
+ *
+ * The chart colours are the exception: they are not brand colours and were not
+ * chosen by eye. See `--adm-chart-*` below.
+ */
+
+.adm {
+  --sf-forest: #1f2e25;
+  --sf-forest-deep: #17231c;
+  --sf-forest-soft: #2b3f33;
+  --sf-cream: #f6f1e8;
+  --sf-paper: #fbf8f3;
+  --sf-sand: #ede5d8;
+  --sf-sand-deep: #e2d7c5;
+  --sf-clay: #b4532a;
+  --sf-clay-deep: #93401d;
+  --sf-gold: #d9a35b;
+  --sf-ink: #231d18;
+  --sf-muted: #6f665c;
+  --sf-faint: #9a9086;
+  --sf-rule: #e4dacb;
+
+  --sf-serif: 'Libre Caslon Text', Georgia, 'Times New Roman', serif;
+
+  --adm-sidebar: 232px;
+  --adm-radius: 14px;
+  --adm-gutter: 26px;
+
+  /*
+   * Order progress. Fixed, and not part of the brand palette: these four were
+   * picked with the palette validator (OKLab CVD separation against the cream
+   * surface, in the order cancelled → processing → shipped → completed) rather
+   * than by eye, because red/green adjacency is exactly what deuteranopia
+   * collapses. Every use pairs them with the word, never colour alone.
+   */
+  --adm-cancelled: #d03b3b;
+  --adm-processing: #c98500;
+  --adm-shipped: #256abf;
+  --adm-completed: #0ca30c;
+
+  /*
+   * One hue, light → dark, for "compare magnitude" charts. Monotonic in
+   * lightness so it survives greyscale and print.
+   */
+  --adm-ramp-1: #cfe0d4;
+  --adm-ramp-2: #a8c6b1;
+  --adm-ramp-3: #7fab8d;
+  --adm-ramp-4: #58906c;
+  --adm-ramp-5: #3b7552;
+  --adm-ramp-6: #2a5b3f;
+  --adm-ramp-7: #1f4330;
+
+  --adm-grid: rgba(35, 29, 24, 0.1);
+  --adm-axis: #9a9086;
+
+  color: var(--sf-ink);
+  font-family: var(--font-sans);
+}
+
+/* ── Surfaces ────────────────────────────────────────────────────────── */
+
+.adm-card {
+  background: var(--sf-paper);
+  border: 1px solid var(--sf-rule);
+  border-radius: var(--adm-radius);
+  box-shadow: 0 1px 2px rgba(35, 29, 24, 0.04);
+}
+
+.adm-h2 {
+  margin: 0;
+  font-family: var(--sf-serif);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: var(--sf-ink);
+}
+
+.adm-eyebrow {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--sf-faint);
+}
+
+/* ── Controls ────────────────────────────────────────────────────────── */
+
+.adm-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 12px;
+  height: 38px;
+  border: 1px solid var(--sf-rule);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--sf-muted);
+}
+
+.adm-field:focus-within {
+  border-color: var(--sf-forest-soft);
+  box-shadow: 0 0 0 3px rgba(43, 63, 51, 0.12);
+}
+
+.adm-field input,
+.adm-field select {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: none;
+  color: var(--sf-ink);
+  font: inherit;
+  font-size: 14px;
+}
+
+.adm-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--sf-clay);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur-fast, 150ms) ease;
+}
+
+.adm-btn:hover:not(:disabled) {
+  background: var(--sf-clay-deep);
+}
+
+.adm-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.adm-btn--quiet {
+  background: #fff;
+  border-color: var(--sf-rule);
+  color: var(--sf-ink);
+}
+
+.adm-btn--quiet:hover:not(:disabled) {
+  background: var(--sf-sand);
+}
+
+/* Filter tabs: "All orders / Processing / Shipped …". */
+.adm-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--sf-rule);
+}
+
+.adm-tab {
+  position: relative;
+  padding: 9px 14px 12px;
+  border: none;
+  background: none;
+  color: var(--sf-muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.adm-tab--on {
+  color: var(--sf-forest);
+}
+
+.adm-tab--on::after {
+  content: '';
+  position: absolute;
+  inset: auto 10px -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--sf-clay);
+}
+
+.adm-tab__count {
+  margin-left: 6px;
+  color: var(--sf-faint);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Tables ──────────────────────────────────────────────────────────── */
+
+/*
+ * Every listing on the portal is one of these. Wrapped in `.adm-tablewrap`,
+ * which is the only thing allowed to scroll sideways — the page itself never
+ * does, however many columns a table grows.
+ */
+.adm-tablewrap {
+  overflow-x: auto;
+}
+
+.adm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.adm-table th {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--sf-rule);
+  color: var(--sf-muted);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.adm-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--sf-rule);
+  vertical-align: middle;
+}
+
+.adm-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.adm-table tbody tr:hover td {
+  background: rgba(237, 229, 216, 0.45);
+}
+
+.adm-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.adm-right {
+  text-align: right;
+}
+
+/* ── Pills ───────────────────────────────────────────────────────────── */
+
+.adm-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* The dot carries the colour; the word carries the meaning. */
+.adm-pill__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+.adm-pill--processing { background: rgba(201, 133, 0, 0.14); color: #7a5100; }
+.adm-pill--shipped { background: rgba(37, 106, 191, 0.13); color: #1c5090; }
+.adm-pill--completed { background: rgba(12, 163, 12, 0.13); color: #0a6b0a; }
+.adm-pill--cancelled { background: rgba(208, 59, 59, 0.13); color: #9c2626; }
+.adm-pill--neutral { background: var(--sf-sand); color: var(--sf-muted); }
+
+/* ── States ──────────────────────────────────────────────────────────── */
+
+.adm-note {
+  margin: 0;
+  padding: 28px 14px;
+  color: var(--sf-muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+.adm-note--error {
+  color: var(--sf-clay-deep);
+}
+
+/*
+ * Empty is the normal state of a marketplace that has not launched, not an
+ * error — so it gets a sentence that says what will fill it, never a shrug.
+ */
+.adm-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 44px 20px;
+  text-align: center;
+}
+
+.adm-empty__title {
+  margin: 0;
+  font-family: var(--sf-serif);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.adm-empty__copy {
+  margin: 0;
+  max-width: 42ch;
+  color: var(--sf-muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.adm-skeleton {
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--sf-sand) 25%, var(--sf-sand-deep) 37%, var(--sf-sand) 63%);
+  background-size: 400% 100%;
+  animation: adm-shimmer 1.4s ease infinite;
+}
+
+@keyframes adm-shimmer {
+  from { background-position: 100% 50%; }
+  to { background-position: 0 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .adm-skeleton {
+    animation: none;
+  }
+}
+
+.adm-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

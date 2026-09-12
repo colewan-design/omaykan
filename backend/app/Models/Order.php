@@ -167,6 +167,38 @@ class Order extends Model
     }
 
     /**
+     * Who is bringing it: a face, a bike, and a score.
+     *
+     * Behind the same stage gate as the phone number and the position, and for
+     * the phone number's reason rather than the position's. The tracking view
+     * is public by UUID and that link is meant to be forwarded, so anything
+     * left in this payload after the handover is readable by everyone who was
+     * ever sent it, permanently. A photograph of a rider's face is the single
+     * most personal thing this application could leave there.
+     *
+     * That the gate also makes the feature *work* is a coincidence worth
+     * noting: a customer needs to know what the rider looks like and what they
+     * are riding in exactly the window where the answer is on its way to them,
+     * and has no use for either once the food is on the table.
+     *
+     * Null for an order a shop handed to somebody it knows — no `rider_id`, no
+     * account, nothing to describe. The client keeps drawing what it drew
+     * before there were rider accounts at all.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function riderProfileForCustomer(): ?array
+    {
+        if (! in_array($this->delivery_stage, self::RIDER_CONTACTABLE_STAGES, true)) {
+            return null;
+        }
+
+        $rider = $this->relationLoaded('rider') ? $this->getRelation('rider') : $this->rider;
+
+        return $rider?->toPublicArray();
+    }
+
+    /**
      * The two fixed ends of the trip: the shop, and the door.
      *
      * Both go to the customer. The shop's address and coordinates are already
@@ -218,6 +250,9 @@ class Order extends Model
 
         return [
             'orderId' => $this->id,
+            // Which shop to message about it. Not a disclosure: the store's id
+            // is already in its public image URL.
+            'storeId' => $this->store_id,
             'ticketNumber' => $this->ticket_number,
             'status' => $this->order_status,
             'paymentStatus' => $this->payment_status,
@@ -232,6 +267,7 @@ class Order extends Model
             'riderName' => $this->rider_name,
             'riderPhone' => $this->riderPhoneForCustomer(),
             'riderPosition' => $this->riderPositionForCustomer(),
+            'riderProfile' => $this->riderProfileForCustomer(),
             'route' => $this->routeEndpointsArray(),
             'placedAt' => $this->created_at?->toIso8601String(),
             'items' => $this->items->map(fn ($item) => [

@@ -7,19 +7,26 @@ use App\Http\Controllers\Api\AppReleaseController;
 use App\Http\Controllers\Api\CustomerAccountController;
 use App\Http\Controllers\Api\CustomerAddressController;
 use App\Http\Controllers\Api\CustomerAuthController;
+use App\Http\Controllers\Api\CustomerConversationController;
 use App\Http\Controllers\Api\CustomerOrderController;
 use App\Http\Controllers\Api\CustomerPaymentMethodController;
 use App\Http\Controllers\Api\OnlineOrderController;
 use App\Http\Controllers\Api\PlatformAdminAuthController;
 use App\Http\Controllers\Api\PlatformAdminController;
 use App\Http\Controllers\Api\PlatformAdminInboxController;
+use App\Http\Controllers\Api\PlatformAnalyticsController;
 use App\Http\Controllers\Api\PlatformCustomerController;
+use App\Http\Controllers\Api\PlatformOrderController;
+use App\Http\Controllers\Api\PlatformOverviewController;
+use App\Http\Controllers\Api\PlatformProductController;
+use App\Http\Controllers\Api\PlatformSettingsController;
 use App\Http\Controllers\Api\RiderAccountController;
 use App\Http\Controllers\Api\RiderAuthController;
 use App\Http\Controllers\Api\RiderDeliveryController;
 use App\Http\Controllers\Api\RiderEarningsController;
 use App\Http\Controllers\Api\RiderPositionController;
 use App\Http\Controllers\Api\RiderReviewController;
+use App\Http\Controllers\Api\SellerConversationController;
 use App\Http\Controllers\Api\SellerOrderController;
 use App\Http\Controllers\Api\SellerRiderController;
 use App\Http\Controllers\Api\SignupController;
@@ -27,6 +34,9 @@ use App\Http\Controllers\Api\StaffRoleController;
 use App\Http\Controllers\Api\StaffAuthController;
 use App\Http\Controllers\Api\StaffUserController;
 use App\Http\Controllers\Api\StoreDirectoryController;
+use App\Http\Controllers\Api\RiderAvatarController;
+use App\Http\Controllers\Api\RiderRatingController;
+use App\Http\Controllers\Api\RiderSupportController;
 use App\Http\Controllers\Api\StoreImageController;
 use App\Http\Controllers\Api\StorefrontCatalogController;
 use App\Http\Controllers\Api\ShiftController;
@@ -79,6 +89,17 @@ Route::get('/stores', [StoreDirectoryController::class, 'index'])
 Route::get('/stores/{store}/image', [StoreImageController::class, 'show'])
     ->middleware('throttle:240,1');
 
+/*
+ * A rider's photograph.
+ *
+ * Public in the same sense the shop photo above is: no token, but the URL
+ * carries an unguessable UUID and is only ever handed out inside an order
+ * payload that the shop and the customer on that delivery already receive.
+ * See RiderAvatarController::show.
+ */
+Route::get('/riders/{rider}/avatar', [RiderAvatarController::class, 'show'])
+    ->name('riders.avatar');
+
 // The update check for sideloaded apps. Public because the Android app asks it
 // on launch, before a shopper has done anything at all. A 404 means "nothing
 // published", which is a real answer and not an error — see the controller.
@@ -128,6 +149,23 @@ Route::middleware(['auth:platform', 'platform.active', 'throttle:60,1'])->group(
      */
     Route::get('/platform-admin/customers', [PlatformCustomerController::class, 'index']);
     Route::get('/platform-admin/customers/{customer}', [PlatformCustomerController::class, 'show']);
+
+    /*
+     * The marketplace looked at as a whole: what it took, what is moving, what
+     * is listed, and what it calls itself.
+     *
+     * All read-only but the last. An order belongs to the shop that took it
+     * and a product to the shop that listed it, so this portal shows both and
+     * changes neither — see PlatformOrderController for the argument. Settings
+     * is writable because the marketplace is the one record here that has no
+     * other owner.
+     */
+    Route::get('/platform-admin/overview', PlatformOverviewController::class);
+    Route::get('/platform-admin/orders', [PlatformOrderController::class, 'index']);
+    Route::get('/platform-admin/products', [PlatformProductController::class, 'index']);
+    Route::get('/platform-admin/analytics', PlatformAnalyticsController::class);
+    Route::get('/platform-admin/settings', [PlatformSettingsController::class, 'show']);
+    Route::put('/platform-admin/settings', [PlatformSettingsController::class, 'update']);
 
     /*
      * Rider review. Same operator, same guard — and the only way to see a
@@ -188,6 +226,25 @@ Route::middleware('auth:customer')->prefix('customer')->group(function () {
 
     Route::get('/orders', [CustomerOrderController::class, 'index']);
     Route::get('/orders/{order}', [CustomerOrderController::class, 'show']);
+
+    // One per delivered order, enforced by a unique index as well as by the
+    // controller. See RiderRatingController for the four conditions.
+    Route::post('/orders/{order}/rider-rating', [RiderRatingController::class, 'store']);
+
+    /*
+     * Messages with shops. One conversation per shop — see
+     * CustomerConversationController. The two writes are throttled because
+     * each one lands in a shop's inbox; the reads are what the portal polls.
+     */
+    Route::get('/conversations', [CustomerConversationController::class, 'index']);
+    Route::get('/conversations/unread', [CustomerConversationController::class, 'unread']);
+    Route::post('/conversations', [CustomerConversationController::class, 'start'])
+        ->middleware('throttle:20,1');
+    Route::get('/conversations/{conversation}', [CustomerConversationController::class, 'show'])
+        ->whereUuid('conversation');
+    Route::post('/conversations/{conversation}/messages', [CustomerConversationController::class, 'reply'])
+        ->whereUuid('conversation')
+        ->middleware('throttle:30,1');
 });
 
 /*
@@ -234,6 +291,16 @@ Route::middleware('auth:rider')->prefix('rider')->group(function () {
     Route::patch('/me', [RiderAccountController::class, 'update']);
     Route::patch('/password', [RiderAccountController::class, 'updatePassword']);
 
+    // Outside the gate with them: a rider waiting on review filling in their
+    // profile is the normal case, and a photo is shown to nobody until they
+    // are carrying an order, which the gate itself prevents.
+    Route::post('/avatar', [RiderAvatarController::class, 'update']);
+    Route::delete('/avatar', [RiderAvatarController::class, 'destroy']);
+
+    // Outside the gate deliberately: a rejected rider who does not understand
+    // why is the person most in need of somebody to ask.
+    Route::get('/support', [RiderSupportController::class, 'show']);
+
     Route::middleware('rider.approved')->group(function () {
         Route::get('/board', [RiderDeliveryController::class, 'board']);
         Route::get('/deliveries', [RiderDeliveryController::class, 'mine']);
@@ -244,6 +311,11 @@ Route::middleware('auth:rider')->prefix('rider')->group(function () {
         // Behind the gate: earnings are a fact about work, and an account that
         // has never been allowed to work has none to report.
         Route::get('/earnings', [RiderEarningsController::class, 'summary']);
+
+        // Behind the gate for the same reason earnings are: a score is a fact
+        // about work, and an account that has never been allowed to work has
+        // none.
+        Route::get('/ratings', [RiderRatingController::class, 'index']);
 
         // Where the rider is. Throttled well above the app's ten-second
         // cadence so a brief burst after a tunnel does not lock a rider out of
@@ -296,6 +368,14 @@ Route::middleware(['auth:sanctum', 'merchant.token'])->group(function () {
     // The till publishing its own shop's photo. Scoped to the calling
     // device's store, like the sync and seller-order endpoints above.
     Route::put('/seller/store-image', [StoreImageController::class, 'update']);
+    // Customer messages, answered by whoever is signed in to the shop. A shop
+    // replies but never starts one — see SellerConversationController.
+    Route::get('/seller/conversations', [SellerConversationController::class, 'index']);
+    Route::get('/seller/conversations/unread', [SellerConversationController::class, 'unread']);
+    Route::get('/seller/conversations/{conversation}', [SellerConversationController::class, 'show'])
+        ->whereUuid('conversation');
+    Route::post('/seller/conversations/{conversation}/messages', [SellerConversationController::class, 'reply'])
+        ->whereUuid('conversation');
     Route::get('/staff-roles', [StaffRoleController::class, 'index']);
     Route::put('/staff-roles', [StaffRoleController::class, 'sync']);
     Route::get('/staff-users', [StaffUserController::class, 'index']);

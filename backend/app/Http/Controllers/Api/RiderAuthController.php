@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password as PasswordRule;
 use Illuminate\Validation\ValidationException;
 
@@ -47,6 +48,21 @@ class RiderAuthController extends Controller
             'password' => ['required', 'confirmed', PasswordRule::min(8)],
             'licenseNumber' => ['required', 'string', 'max:60'],
             'plateNumber' => ['required', 'string', 'max:20'],
+            /*
+             * The bike. Constrained when sent, but not required: the web rider
+             * portal registered accounts for months before this column
+             * existed, and a client that has not been updated must keep
+             * working rather than start 422-ing on a field it has never heard
+             * of. The column's own default carries those — see the migration.
+             *
+             * The three descriptive fields are optional for a different
+             * reason: a rider signing up at a junction should not be blocked
+             * on remembering what their scooter is officially called.
+             */
+            'vehicleType' => ['sometimes', 'required', 'string', Rule::in(Rider::VEHICLE_TYPES)],
+            'vehicleMake' => ['nullable', 'string', 'max:60'],
+            'vehicleModel' => ['nullable', 'string', 'max:60'],
+            'vehicleColor' => ['nullable', 'string', 'max:40'],
             // `image` rather than `mimes`: it checks the actual decoded image,
             // so a .jpg that is really a PHP file does not get through.
             'licenseImage' => ['required', 'image', 'mimes:jpeg,jpg,png,webp', 'max:'.self::MAX_IMAGE_KB],
@@ -81,6 +97,10 @@ class RiderAuthController extends Controller
                 'plate_number' => $plate,
                 'license_image_path' => $licensePath,
                 'plate_image_path' => $platePath,
+                'vehicle_type' => $data['vehicleType'] ?? 'motorcycle',
+                'vehicle_make' => $this->cleanOrNull($data['vehicleMake'] ?? null),
+                'vehicle_model' => $this->cleanOrNull($data['vehicleModel'] ?? null),
+                'vehicle_color' => $this->cleanOrNull($data['vehicleColor'] ?? null),
                 'status' => Rider::STATUS_PENDING,
             ]));
         } catch (\Throwable $e) {
@@ -221,6 +241,23 @@ class RiderAuthController extends Controller
     private function storeDocument(UploadedFile $file): string
     {
         return $file->store(self::DOCUMENT_DIRECTORY, 'local');
+    }
+
+    /**
+     * Trim a free-text field, and treat whitespace as absence.
+     *
+     * A vehicle colour of `" "` is not a colour, and storing it would make
+     * `vehicleLabel()` render a stray space between the make and the model.
+     */
+    private function cleanOrNull(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $trimmed = trim($value);
+
+        return $trimmed === '' ? null : $trimmed;
     }
 
     private function sessionResponse(Rider $rider, int $status = 200): JsonResponse

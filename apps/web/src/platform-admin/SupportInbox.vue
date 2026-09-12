@@ -108,8 +108,14 @@ async function loadList(selectMessageId?: string) {
   successMessage.value = ''
 
   try {
-    const response = await fetch('/api/platform/inbox?limit=30', {
-      headers: authHeaders(false),
+    // POST, not GET: the inbox listing reaches out to IMAP, and the route it
+    // is behind takes its `limit` in a body. It was called as a GET against
+    // `/api/platform/inbox` — wrong verb and wrong prefix — so it 404'd on
+    // every load. See api.ts for how the prefix came to be wrong everywhere.
+    const response = await fetch('/api/platform-admin/inbox', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ limit: 30 }),
     })
     const data = await parseJson(response)
 
@@ -149,7 +155,7 @@ async function openMessage(messageId: string) {
   replyError.value = ''
 
   try {
-    const response = await fetch(`/api/platform/inbox/${messageId}`, {
+    const response = await fetch(`/api/platform-admin/inbox/${messageId}`, {
       headers: authHeaders(false),
     })
     const data = await parseJson(response)
@@ -196,7 +202,7 @@ async function sendReply() {
   replyError.value = ''
 
   try {
-    const response = await fetch(`/api/platform/inbox/${selected.value.id}/reply`, {
+    const response = await fetch(`/api/platform-admin/inbox/${selected.value.id}/reply`, {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify({ subject, message }),

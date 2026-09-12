@@ -7,6 +7,7 @@ use App\Models\Rider;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password as PasswordRule;
 use Illuminate\Validation\ValidationException;
 
@@ -55,6 +56,17 @@ class RiderAccountController extends Controller
              * that disagreement is the signal.
              */
             'plateNumber' => ['sometimes', 'required', 'string', 'max:20'],
+            /*
+             * The bike, editable for exactly the reason the plate above is:
+             * riders change bikes, and a description that no longer matches
+             * what is at the kerb is worse than none — it sends a customer to
+             * the wrong scooter. Unlike the plate, none of this was ever
+             * reviewed by an operator, so there is nothing to invalidate.
+             */
+            'vehicleType' => ['sometimes', 'required', 'string', Rule::in(Rider::VEHICLE_TYPES)],
+            'vehicleMake' => ['sometimes', 'nullable', 'string', 'max:60'],
+            'vehicleModel' => ['sometimes', 'nullable', 'string', 'max:60'],
+            'vehicleColor' => ['sometimes', 'nullable', 'string', 'max:40'],
         ]);
 
         if (array_key_exists('name', $data)) {
@@ -67,6 +79,20 @@ class RiderAccountController extends Controller
 
         if (array_key_exists('plateNumber', $data)) {
             $rider->plate_number = strtoupper(trim($data['plateNumber']));
+        }
+
+        if (array_key_exists('vehicleType', $data)) {
+            $rider->vehicle_type = $data['vehicleType'];
+        }
+
+        // `array_key_exists` rather than isset throughout, so that sending an
+        // explicit null clears a field. A rider who repainted a bike must be
+        // able to remove "red", not only replace it.
+        foreach (['vehicleMake' => 'vehicle_make', 'vehicleModel' => 'vehicle_model', 'vehicleColor' => 'vehicle_color'] as $input => $column) {
+            if (array_key_exists($input, $data)) {
+                $value = $data[$input] === null ? null : trim($data[$input]);
+                $rider->{$column} = $value === '' ? null : $value;
+            }
         }
 
         $rider->save();

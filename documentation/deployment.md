@@ -160,6 +160,62 @@ sudo -u www-data env HOME=/tmp php artisan ...
 
 Directory swaps are reversible.
 
+**Updated 2026-09-13, 18:20.** Frontend-only, and the fourth deploy of the
+day: the Google button on the staff sign-in card. No backend, no migration, no
+schema — the 09:26 backend release below is still what is running.
+
+| | Roll back to | Holds |
+|---|---|---|
+| Frontend | `web.bak-20260913-180226-staff-google-signin` | the 09:43 build, sign-in with no Google button |
+| Backend | `backend.bak-20260913-092614-product-gallery` | unchanged since 09:26 |
+
+**Nothing needed deploying on the backend, and that is the point of this
+release.** `POST /api/staff/auth/google` has been served since the operator
+portal went out on 2026-09-12 (`1900ec8`), and `GOOGLE_CLIENT_ID` has been in
+the server's `.env` since 2026-09-08 — §3.2 records appending it. The endpoint
+verified tokens and refused them for want of anyone pressing a button. The only
+thing missing was the button, which is bundle, which is why a directory swap is
+the whole deploy. Both preconditions were checked against production before the
+build rather than assumed:
+
+```bash
+curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"credential":"not.a.jwt"}' https://omaykan.com/api/staff/auth/google
+```
+
+A 404 would mean the route is not deployed. *"Google sign-in is not configured
+on this server."* would mean the `.env` key is missing. What it must say is
+*"That Google sign-in could not be read."* — the verifier got past its config
+check and rejected the junk on its merits.
+
+**Two swaps went out for this, 18:02 and 18:20, and the bundles are
+byte-identical** — verified by checksumming both trees, not by comparing
+filenames. The second was run without knowing the first had happened. It was
+harmless because the bytes matched, but it cost a generation:
+`web.bak-20260913-182017-staff-google-signin` holds a copy of what is live and
+is worth nothing as a rollback point. **The name is not the content.** These
+directories are named for the deploy that *displaced* them, so a backup labelled
+`staff-google-signin` is the build from *before* that release — which is why the
+table above rolls back to `...-180226-staff-google-signin` and not to the
+later-numbered one. Check for the chunk rather than reading the label:
+
+```bash
+ls /var/www/omaykan/<generation>/assets/google-*.js   # absent = pre-Google build
+```
+
+Rolling the frontend back alone is safe and is the whole procedure —
+`mv web web.bad && mv web.bak-20260913-180226-staff-google-signin web` plus
+`systemctl reload nginx`, no daemon restart and no dump. The endpoint simply
+goes back to being unreachable, which is what it was for its first day alive.
+
+This is also the deploy that made the **staff** Google endpoint's first tests
+exist. It had none: the customer one was covered from the day it shipped, and
+the staff one went out inside a release named for something else and was never
+pressed. Twelve tests now sign real JWTs against the fixture key in
+`backend/tests/Fixtures`, so the production verifier runs its true signature
+check. They ship with the backend but are inert there — `composer install
+--no-dev` per §3.2 — so they changed nothing about what is running.
+
 **Updated 2026-09-13, 09:43.** Frontend-only, and the second deploy of the
 day: the product page's own width. No backend, no migration, no schema — the
 09:26 backend release below is still what is running.
@@ -288,9 +344,11 @@ and the `.webp` are unstaged in `main` as of 08:52. That is the state `e497096`
 was meant to end (see below); until they are committed, nothing in git
 describes what is live, and the two deploys are indistinguishable in history.
 
-As of 2026-09-12 there are **nine** web generations on disk (265M) and three
-backend ones, against the "keep one" rule below: four of the nine were made on
-2026-09-12 alone, because four separate swaps went out that day. The box is at
+As of 2026-09-13, 18:20 there are **thirteen** web generations on disk and four
+backend ones, 767M across the lot, against the "keep one" rule below: four were
+made on 2026-09-12 and four more on 2026-09-13, because that many separate
+swaps went out on each of those days. Two of the four from 2026-09-13 hold the
+same bytes — see the 18:20 entry. The box is at
 9% of 96G so nothing forces the issue, but nothing prunes them either — and
 `*-20260908-230835-rider-map-staff-auth` is kept deliberately, for the reason
 given further down. `ls -d /var/www/omaykan/*.bak-*` is the inventory; trust it

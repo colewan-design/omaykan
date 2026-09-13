@@ -160,6 +160,20 @@ sudo -u www-data env HOME=/tmp php artisan ...
 
 Directory swaps are reversible.
 
+**Updated 2026-09-13, 09:43.** Frontend-only, and the second deploy of the
+day: the product page's own width. No backend, no migration, no schema — the
+09:26 backend release below is still what is running.
+
+| | Roll back to | Holds |
+|---|---|---|
+| Frontend | `web.bak-20260913-094313-pdp-width` | the 09:26 build, same page at 1140px |
+| Backend | `backend.bak-20260913-092614-product-gallery` | unchanged since 09:26 |
+
+`mv web web.bad && mv web.bak-20260913-094313-pdp-width web` plus
+`systemctl reload nginx` — no daemon restart and no dump. One step further
+back, `web.bak-20260913-092614-product-gallery`, is the 2026-09-12 portal
+reskin, which predates the rebuilt product page entirely.
+
 **Updated 2026-09-13, 09:26.** Backend and frontend both, for the product page
 rebuild and the gallery behind it. One migration,
 `2026_09_13_000100_add_product_gallery_and_pack_fields`: three nullable columns

@@ -493,6 +493,11 @@ function addToCart() {
           </li>
         </ul>
 
+        <!-- The last two cards sit side by side while the column is wide
+             enough for them. Stacking everything left a tall ladder of cards
+             down one side of the page and nothing down the other. -->
+        <div class="pdp__pair">
+
         <!-- Who you are buying from. A card and not a fact row: a shopper who
              has never been to this counter is handing cash to a rider on its
              behalf, so who and where it is has to read as a statement about
@@ -562,6 +567,8 @@ function addToCart() {
             </div>
           </dl>
         </section>
+
+        </div>
       </div>
     </div>
 
@@ -579,7 +586,16 @@ function addToCart() {
 </template>
 
 <style scoped>
-.pdp { margin-bottom: 56px; }
+/* The one capped, centred face of the storefront. Everywhere else runs
+   full-bleed inside the gutter, which suits a shelf — more columns is more
+   goods. This page is a single decision, and a 1900px-wide row of facts about
+   one tin of kimchi is mostly whitespace with a sentence at each end. The cap
+   is on the whole section, so the related shelf underneath lines up with the
+   product above it rather than running out past both edges of it. */
+.pdp {
+  max-width: 1440px;
+  margin: 0 auto 56px;
+}
 
 .pdp__crumbs {
   display: flex;
@@ -594,15 +610,15 @@ function addToCart() {
 .pdp__crumbs a:hover { color: var(--sf-forest); }
 .pdp__here { color: var(--sf-muted); font-weight: 600; }
 
-/* Capped rather than full-bleed: the artwork is a square, so on a wide screen
-   two free-growing columns give a 660px photo with the buy controls stranded
-   at the top of an equally tall column of nothing. */
+/* 42/58. The photograph is a square and stops being more informative once it
+   is big enough to read a label off, so the spare width goes to the column
+   that has rows to lay out — which is what lets the three benefit cards sit
+   three across at a comfortable width instead of wrapping every heading. */
 .pdp__body {
   display: grid;
-  grid-template-columns: minmax(0, 0.78fr) minmax(0, 1fr);
-  gap: 40px;
+  grid-template-columns: minmax(0, 42fr) minmax(0, 58fr);
+  gap: 44px;
   align-items: start;
-  max-width: 1140px;
   margin-bottom: 64px;
 }
 
@@ -755,7 +771,15 @@ function addToCart() {
 
 /* ── The buy column ───────────────────────────────────────────────────── */
 
-.pdp__info { padding-top: 4px; }
+/* A query container, so the cards inside answer to the width of this column
+   and not to the window's. The two are no longer the same thing: at 58% of a
+   1440px page this column is ~810px on a wide screen and ~400px on a laptop,
+   and the trust strip has to fold on the second while the window is still
+   nowhere near a phone. */
+.pdp__info {
+  container-type: inline-size;
+  padding-top: 4px;
+}
 
 .pdp__eyebrow {
   display: inline-block;
@@ -930,8 +954,31 @@ function addToCart() {
 .pdp__trusttitle { margin: 0; font-size: 13.5px; font-weight: 800; line-height: 1.3; color: var(--sf-ink); }
 .pdp__trustnote { margin: 3px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--sf-muted); }
 
+/* Side by side while both fit, one under the other when they don't. auto-fit
+   rather than a breakpoint, because what decides it is whether a 320px card
+   still fits in this column — not how wide the window happens to be. 320
+   because a 1280px laptop leaves this column 684px, and 360 missed that by a
+   hair and dropped the commonest desktop width back to a stacked ladder. */
+.pdp__pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+/* The cards carry their own top margin from the shared rule above, which
+   inside a gapped grid would double the space between the rows. The pair
+   owns the spacing now. */
+.pdp__pair { margin-top: 20px; }
+.pdp__pair > * { margin-top: 0; }
+
 .pdp__shop {
+  /* Its own container, so the row inside answers to the card's width: in the
+     pair it is half a column, which is narrow while the column is still wide.
+     Note an element cannot query the container it establishes, so the wrap
+     below is unconditional and only the children are queried. */
+  container-type: inline-size;
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 14px;
   padding: 18px;
@@ -953,7 +1000,9 @@ function addToCart() {
 }
 .pdp__shopmark img { width: 100%; height: 100%; object-fit: cover; }
 
-.pdp__shopwho { flex: 1; min-width: 0; }
+/* Enough to hold "Store location" and its value on one line; below that the
+   actions take their own row rather than crushing the address to two words. */
+.pdp__shopwho { flex: 1 1 190px; min-width: 0; }
 
 .pdp__shoplabel {
   margin: 0;
@@ -971,7 +1020,14 @@ function addToCart() {
 .pdp__shopfacts dt { min-width: 96px; flex: none; color: var(--sf-faint); }
 .pdp__shopfacts dd { margin: 0; min-width: 0; color: var(--sf-ink); font-weight: 600; }
 
-.pdp__shopacts { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.pdp__shopacts {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
 
 .pdp__shopbtn {
   display: inline-flex;
@@ -1011,29 +1067,41 @@ function addToCart() {
 .pdp__facts dt { min-width: 132px; flex: none; color: var(--sf-muted); }
 .pdp__facts dd { margin: 0; min-width: 0; color: var(--sf-ink); font-weight: 600; overflow-wrap: anywhere; }
 
-/* ── Narrower screens ─────────────────────────────────────────────────── */
+/* ── Narrower columns and screens ─────────────────────────────────────── */
 
-@media (max-width: 1080px) {
+/* Keyed on the buy column, not the window. */
+@container (max-width: 720px) {
   .pdp__trust { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  /* The third starts a new row, so it loses the rule to its left and takes
-     one above instead. */
-  .pdp__trust li:nth-child(3) { border-left: none; border-top: 1px solid var(--sf-rule); }
+  /* Three into two leaves a hole in the second row. The last one takes the
+     whole row instead: a full-width cell reads as the end of the list, an
+     empty half reads as a card that failed to load. It also loses the rule to
+     its left and takes one above. */
+  .pdp__trust li:nth-child(3) {
+    grid-column: 1 / -1;
+    border-left: none;
+    border-top: 1px solid var(--sf-rule);
+  }
+}
+
+@container (max-width: 440px) {
+  .pdp__trust { grid-template-columns: minmax(0, 1fr); }
+  .pdp__trust li { border-left: none; border-top: 1px solid var(--sf-rule); }
+  .pdp__trust li:first-child { border-top: none; }
+  .pdp__facts dt { min-width: 104px; }
+}
+
+/* Children of the shop card, on the card's own width — it is half the buy
+   column once the pair is side by side. */
+@container (max-width: 430px) {
+  .pdp__shopacts { flex-direction: row; align-items: center; width: 100%; margin-left: 0; }
 }
 
 @media (max-width: 900px) {
   .pdp__body { grid-template-columns: minmax(0, 1fr); gap: 28px; margin-bottom: 48px; }
-  /* Sticky only pays when there is a second column to stay level with. */
+  /* Sticky only pays when there is a second column to stay level with, and
+     unpinned the photo should not grow to the width of the whole page. */
   .pdp__gallery { position: static; max-width: 460px; }
   .pdp__add { min-width: 0; }
-}
-
-@media (max-width: 620px) {
-  .pdp__trust { grid-template-columns: minmax(0, 1fr); }
-  .pdp__trust li { border-left: none; border-top: 1px solid var(--sf-rule); }
-  .pdp__trust li:first-child { border-top: none; }
-  .pdp__shop { flex-wrap: wrap; }
-  .pdp__shopacts { flex-direction: row; align-items: center; width: 100%; }
-  .pdp__facts dt { min-width: 104px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

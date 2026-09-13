@@ -2310,9 +2310,23 @@ button {
   font: var(--type-caption);
 }
 
-.auth-guest {
+.auth-guest,
+.auth-alternatives {
   display: grid;
   gap: var(--space-4);
+}
+
+/* Google's button is an iframe and brings its own everything — all this does is
+   centre it and stop a second press landing while a sign-in is already away. */
+.auth-google {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+}
+
+.auth-google--busy {
+  pointer-events: none;
+  opacity: 0.55;
 }
 
 .auth-divider {

@@ -6,7 +6,7 @@ import {
   googleSignInAvailable,
   releaseGoogleButton,
   renderGoogleButton,
-} from '@pos/web/commerce/google'
+} from '@pos/core/services/google'
 
 /*
  * The storefront's sign-in card.

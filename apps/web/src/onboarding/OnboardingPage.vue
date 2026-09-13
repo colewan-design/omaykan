@@ -4,7 +4,7 @@ import { onBeforeUnmount, reactive, ref, watch } from 'vue'
 import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import BrandLogo from '@pos/core/components/BrandLogo.vue'
 import { businessModeLabel, SUPPORT_EMAIL, supportMailto, type BusinessMode } from '@pos/shared/index'
-import { googleSignInAvailable, releaseGoogleButton, renderGoogleButton } from '@pos/web/commerce/google'
+import { googleSignInAvailable, releaseGoogleButton, renderGoogleButton } from '@pos/core/services/google'
 import { writePendingInitialSettings, writeStaffTenant } from '@pos/web/tenantBinding'
 import MerchantFooter from './MerchantFooter.vue'
 import MerchantHeader from './MerchantHeader.vue'
@@ -414,7 +414,7 @@ onBeforeUnmount(() => releaseGoogleButton(signInWithGoogle))
                   </button>
 
                   <!-- Absent entirely on a build with no client id, rather than
-                       a dead button: see commerce/google.ts. -->
+                       a dead button: see services/google.ts. -->
                   <div v-if="googleAvailable" ref="googleButton" class="onboarding-google"></div>
                 </template>
               </form>

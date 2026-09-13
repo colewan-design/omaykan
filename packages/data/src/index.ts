@@ -151,6 +151,17 @@ export interface PosRepository {
   loadUsers(): Promise<UserAccount[]>
   saveUsers(users: UserAccount[]): Promise<void>
   loginUser(username: string, password: string): Promise<{ user: UserAccount; session: AuthSession } | null>
+  /**
+   * Sign in with a Google ID token instead of a password.
+   *
+   * Online-sync only, and null when the till isn't in it: the token is proof
+   * for the backend to check, and there is nothing local that can check it. It
+   * never creates an account — a staff account is a claim on a shop, so it is
+   * made by that shop. See StaffAuthController::google.
+   */
+  loginUserWithGoogle(credential: string): Promise<{ user: UserAccount; session: AuthSession } | null>
+  /** Whether sign-in can reach the backend at all — false on a local-only till. */
+  remoteAuthAvailable(): Promise<boolean>
   registerUser(input: {
     fullName: string
     username: string
@@ -1355,6 +1366,19 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     }
 
     if (!response.ok) {
+      // A password refusal falls through to the local user list below, because
+      // an account created on this till before it was ever paired is a real
+      // case. Google has no such fallback — there is no local Google account to
+      // check against — so the server's 422 is the whole answer here (an
+      // unverified address, a spent credential, a client id that doesn't match
+      // the one the backend was configured with) and it has to be repeated to
+      // the person rather than turning into "incorrect username or password".
+      if ('googleCredential' in credentials) {
+        throw new RemoteAuthError(
+          await responseMessage(response, 'Google could not sign you in. Try again.'),
+        )
+      }
+
       return null
     }
 
@@ -2525,40 +2549,35 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       return { user, session }
     },
 
-    async registerUser(input) {
-      if (await isOnlineSyncEnabled()) {
-        try {
-          const response = await fetch(`${syncConfig?.apiBaseUrl}/api/staff-register`, {
-            method: 'POST',
-            headers: {
-              'Accept': 'application/json',
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              organizationSlug: syncConfig?.organizationSlug,
-              storeCode: syncConfig?.storeCode,
-              fullName: input.fullName,
-              username: input.username,
-              password: input.password,
-            }),
-          })
+    async loginUserWithGoogle(credential) {
+      if (!(await isOnlineSyncEnabled())) {
+        return null
+      }
 
-          if (response.ok) {
-            const body = await response.json() as {
-              user: UserAccount
-              session: AuthSession
-            }
-            const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
-            await store.write(storageKeys.users, [
-              body.user,
-              ...existingUsers.filter((entry) => entry.id !== body.user.id),
-            ])
-            await store.write(storageKeys.session, body.session)
-            return body
-          }
-        } catch {
-          // Fall back to local registration below.
-        }
+      return signInRemotely({ googleCredential: credential })
+    },
+
+    async remoteAuthAvailable() {
+      return isOnlineSyncEnabled()
+    },
+
+    async registerUser(input) {
+      // No self-registration against a backend. This used to POST
+      // /api/staff-register, which went when pairing did: a register that could
+      // mint its own staff account is exactly the hole retiring the shop code
+      // closed, because anyone who could open the till could add themselves to
+      // the shop. An account is made by the shop now — at signup for an owner,
+      // or by an admin in Staff for everybody else.
+      //
+      // Thrown rather than returned null, and thrown *before* the local branch
+      // below. That branch is still right for a till that has never been
+      // online, but reaching it from an online till would write an account into
+      // IndexedDB that no other device and no backend has ever heard of, and
+      // hand back a session that looks exactly like a real one.
+      if (await isOnlineSyncEnabled()) {
+        throw new RemoteAuthError(
+          'This register is connected to a shop, so accounts are added by an admin in Staff — ask yours to add you, then sign in.',
+        )
       }
 
       const users = await store.read<UserAccount[]>(storageKeys.users, [])

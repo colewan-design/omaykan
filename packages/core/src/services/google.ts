@@ -5,13 +5,19 @@
  * GIS is a script tag and a `window.google` — no npm package, because the
  * bundled version would go stale against a login endpoint Google keeps moving.
  * It is loaded lazily and only when a client id is configured, so a build with
- * `VITE_GOOGLE_CLIENT_ID` blank ships no third-party script at all and the
- * storefront's sign-in card simply has no Google button on it.
+ * `VITE_GOOGLE_CLIENT_ID` blank ships no third-party script at all and every
+ * sign-in card simply has no Google button on it.
+ *
+ * Three cards use this, against three endpoints, all verifying the same way:
+ * the storefront's shopper sign-in (POST /api/customer/auth/google), signup
+ * (POST /api/signup), and the staff sign-in the register and admin app share
+ * (POST /api/staff/auth/google). It lives in core rather than next to any one
+ * of them because it is shared by all three.
  *
  * What the button gives back is an ID token — a JWT Google has signed. It is
- * not a session and it is not trusted here: it goes straight to
- * POST /api/customer/auth/google, which checks the signature, the audience and
- * the expiry before it will say who anyone is. See GoogleIdentityVerifier.
+ * not a session and it is not trusted here: it goes straight to the backend,
+ * which checks the signature, the audience and the expiry before it will say
+ * who anyone is. See GoogleIdentityVerifier.
  */
 
 /** Blank switches the whole feature off, on this build, everywhere. */
@@ -117,6 +123,7 @@ let pending: ((credential: string) => void) | null = null
 export async function renderGoogleButton(
   parent: HTMLElement,
   onCredential: (credential: string) => void,
+  appearance: { shape?: 'rectangular' | 'pill' } = {},
 ): Promise<void> {
   if (!googleSignInAvailable()) {
     throw new Error('Google sign-in is not configured for this build.')
@@ -149,7 +156,11 @@ export async function renderGoogleButton(
     theme: 'outline',
     size: 'large',
     text: 'continue_with',
-    shape: 'rectangular',
+    // Google's own shapes are the only ones on offer — the button is an iframe,
+    // so a border-radius from our stylesheet clips the frame without rounding
+    // what it draws. 'pill' is here for the staff sign-in card, whose own
+    // buttons are pills; the storefront's are rectangles and take the default.
+    shape: appearance.shape ?? 'rectangular',
     logo_alignment: 'left',
     width: Math.round(Math.min(400, Math.max(200, parent.clientWidth || 320))),
   })

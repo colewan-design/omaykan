@@ -24,7 +24,7 @@ import {
   type SubstitutionPreference,
 } from '@pos/web/commerce/api'
 import { customerToken, setCustomerToken } from '@pos/web/commerce/session'
-import { forgetGoogleSession } from '@pos/web/commerce/google'
+import { forgetGoogleSession } from '@pos/core/services/google'
 
 /*
  * The signed-in shopper.

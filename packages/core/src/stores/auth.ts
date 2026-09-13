@@ -77,6 +77,13 @@ export const useAuthStore = defineStore('auth', () => {
   const session = ref<AuthSession | null>(null)
   const isReady = ref(false)
   const authError = ref('')
+  /**
+   * Whether sign-in can reach the backend. Read once at [initialize] and used
+   * to decide whether to offer Google at all: on a local-only register the
+   * button would load Google's script, take a real sign-in off the person, and
+   * then have nowhere to send it.
+   */
+  const remoteAuthReady = ref(false)
 
   const guestAccount = computed<UserAccount | null>(() => {
     const guestRole = roles.value.find((role) => role.id === 'guest')
@@ -136,12 +143,14 @@ export const useAuthStore = defineStore('auth', () => {
       return
     }
 
-    const [savedUsers, savedRoles, savedSession] = await Promise.all([
+    const [savedUsers, savedRoles, savedSession, remoteAuth] = await Promise.all([
       repository.loadUsers(),
       repository.loadRoles(),
       repository.loadSession(),
+      repository.remoteAuthAvailable(),
     ])
 
+    remoteAuthReady.value = remoteAuth
     users.value = savedUsers
     roles.value = mergeRoles(savedRoles.length > 0 ? savedRoles : defaultRoles)
     session.value = savedSession
@@ -194,6 +203,37 @@ export const useAuthStore = defineStore('auth', () => {
     return true
   }
 
+  /**
+   * Sign in with a Google ID token.
+   *
+   * Unlike [login] there is no local fallback and no account created on the
+   * way in: the token only means anything to the backend, and the backend only
+   * returns a session for an account that already has a membership at this
+   * shop. That makes every refusal it gives worth repeating word for word —
+   * "ask an admin to add you in Staff" is an instruction the person can act on,
+   * and flattening it to "incorrect username or password" would strand them.
+   */
+  async function loginWithGoogle(credential: string) {
+    clearAuthError()
+    let result: Awaited<ReturnType<typeof repository.loginUserWithGoogle>>
+
+    try {
+      result = await repository.loginUserWithGoogle(credential)
+    } catch (err) {
+      authError.value = err instanceof Error ? err.message : 'Unable to sign you in.'
+      return false
+    }
+
+    if (!result) {
+      authError.value = 'Google sign-in needs online sync turned on for this register.'
+      return false
+    }
+
+    users.value = await repository.loadUsers()
+    session.value = result.session
+    return true
+  }
+
   async function register(input: {
     fullName: string
     username: string
@@ -215,7 +255,20 @@ export const useAuthStore = defineStore('auth', () => {
       return false
     }
 
-    const result = await repository.registerUser({ fullName, username, password })
+    // Thrown, not returned null, when the till is online: there is no
+    // self-registration route behind a shop any more, and the refusal names
+    // the way in that does exist. Repeated word for word for the same reason
+    // [loginWithGoogle] repeats its own — "ask an admin to add you in Staff"
+    // is an instruction, and "unable to create that account" is a dead end.
+    let result: Awaited<ReturnType<typeof repository.registerUser>>
+
+    try {
+      result = await repository.registerUser({ fullName, username, password })
+    } catch (err) {
+      authError.value = err instanceof Error ? err.message : 'Unable to create that account.'
+      return false
+    }
+
     if (!result) {
       authError.value = 'Unable to create that account.'
       return false
@@ -403,6 +456,7 @@ export const useAuthStore = defineStore('auth', () => {
     session,
     isReady,
     authError,
+    remoteAuthReady,
     currentUser,
     currentRole,
     hasUsers,
@@ -415,6 +469,7 @@ export const useAuthStore = defineStore('auth', () => {
     clearAuthError,
     canAccess,
     login,
+    loginWithGoogle,
     register,
     loginAsGuest,
     logout,

@@ -579,6 +579,17 @@ export function createDemoPosRepository(): PosRepository {
       return { user, session }
     },
 
+    // The landing page never talks to the backend, and a Google token is only
+    // meaningful to the backend. Null keeps the button off the demo card rather
+    // than offering a visitor a sign-in that cannot go anywhere.
+    async loginUserWithGoogle() {
+      return null
+    },
+
+    async remoteAuthAvailable() {
+      return false
+    },
+
     async registerUser(input) {
       const fullName = input.fullName.trim()
       const username = input.username.trim().toLowerCase()

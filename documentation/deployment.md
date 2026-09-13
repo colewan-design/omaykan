@@ -160,6 +160,44 @@ sudo -u www-data env HOME=/tmp php artisan ...
 
 Directory swaps are reversible.
 
+**Updated 2026-09-13, 09:26.** Backend and frontend both, for the product page
+rebuild and the gallery behind it. One migration,
+`2026_09_13_000100_add_product_gallery_and_pack_fields`: three nullable columns
+on `products` (`photo_urls` json, `brand`, `packaging_type`) and `image_url`
+widened from `varchar(255)` to `text`.
+
+| | Roll back to | Holds |
+|---|---|---|
+| Frontend | `web.bak-20260913-092614-product-gallery` | the 2026-09-12 09:59 portal-reskin build |
+| Backend | `backend.bak-20260913-092614-product-gallery` | the 2026-09-12 operator portal release |
+| Database | `/root/db-backups/omaykan-predeploy-20260913-092614.dump` | taken immediately before the swap |
+
+**Neither half needs the dump.** The three columns are new and nullable and the
+2026-09-12 code selects named columns, so it never sees them; the widening is
+in the safe direction, and at deploy time the longest `image_url` in 528 rows
+was 236 characters, so nothing had grown past what the old column could hold.
+Rolling back is a directory swap plus the two daemon restarts.
+
+Rolling the **frontend** back alone is safe. The new fields are additive on
+`GET /api/storefront/catalog`, and the old bundle ignores keys it does not read.
+Rolling the **backend** back alone is also safe: the new bundle reads
+`photoUrls` through `?? []`, so a catalog that stops sending it renders one
+photo and no thumbnail strip, and the Brand and Packaging rows hide themselves.
+That is the same graceful path a product with no gallery already takes.
+
+`storage/app/` held only its three `.gitignore` files at this deploy — no
+`store-images/`, no `rider-documents/`, and no store row with an `image_path`.
+The rsync in §3.2 still ran and still matters for the next one.
+
+This release also fixes a **silent data-loss bug on the sync seam**, which is
+worth knowing about when reading older rows: `applyProductEvent` wrote none of
+a product's presentation fields and `enqueueProductEvent` sent none of them, so
+`image_url`, `unit_label` and `compare_at_price_cents` set at a till never
+reached the server. Products created in the POS before 2026-09-13 have none of
+those server-side even where the merchant filled them in, and no backfill was
+run — the till's own copy is the only place that data ever existed. Same seam
+and same shape as the `business_modes` bug of 2026-08-27.
+
 **Updated 2026-09-12, 09:59.** The first **backend** deploy since 2026-09-09,
 and the first release of the day that is not frontend-only. The operator
 portal at `/platform-admin` was rebuilt around nine screens and given five new

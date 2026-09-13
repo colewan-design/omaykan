@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api;
 
+use App\Http\Controllers\Api\StoreImageController;
 use App\Models\Category;
 use App\Models\InventoryLevel;
 use App\Models\OrganizationMembership;
@@ -39,6 +40,45 @@ class StorefrontCatalogApiTest extends TestCase
             ->assertJsonPath('categories.0.name', 'Beverages');
     }
 
+    /**
+     * The product page draws image_url first and these after it. A product with
+     * one photo — almost all of them — must come back with an empty array and
+     * not a null the client has to widen.
+     */
+    public function test_returns_the_products_extra_photos_and_pack_facts(): void
+    {
+        $this->seed();
+
+        Product::query()->firstOrFail()->forceFill([
+            'image_url' => 'https://cdn.example/espresso-front.png',
+            'photo_urls' => ['https://cdn.example/espresso-back.png', '  ', 'https://cdn.example/espresso-label.png'],
+            'brand' => 'Capri',
+            'packaging_type' => 'Can',
+        ])->save();
+
+        $this->get_catalog()
+            ->assertOk()
+            ->assertJsonPath('products.0.imageUrl', 'https://cdn.example/espresso-front.png')
+            // Blanks are dropped and the merchant's order is kept.
+            ->assertJsonPath('products.0.photoUrls', [
+                'https://cdn.example/espresso-back.png',
+                'https://cdn.example/espresso-label.png',
+            ])
+            ->assertJsonPath('products.0.brand', 'Capri')
+            ->assertJsonPath('products.0.packagingType', 'Can');
+    }
+
+    public function test_a_product_with_one_photo_has_an_empty_gallery_not_a_null(): void
+    {
+        $this->seed();
+
+        $this->get_catalog()
+            ->assertOk()
+            ->assertJsonPath('products.0.photoUrls', [])
+            ->assertJsonPath('products.0.brand', null)
+            ->assertJsonPath('products.0.packagingType', null);
+    }
+
     public function test_returns_the_shop_behind_the_shelf(): void
     {
         $this->seed();
@@ -48,6 +88,32 @@ class StorefrontCatalogApiTest extends TestCase
             ->assertJsonPath('store.name', 'Main Branch')
             ->assertJsonPath('store.ownerName', 'Admin User')
             ->assertJsonPath('store.address', '12 Session Road, Baguio City');
+    }
+
+    /**
+     * The storefront draws this behind the mark on products the merchant never
+     * photographed, so that a shelf of stand-ins still looks like this shop's
+     * shelf. Without it on the catalog payload the listing had nothing but the
+     * plain panel to fall back to — the directory could show a shop's photo and
+     * its own storefront could not.
+     */
+    public function test_returns_the_shops_own_photo_when_its_owner_uploaded_one(): void
+    {
+        $this->seed();
+
+        $store = Store::query()->firstOrFail();
+        $store->forceFill(['image_path' => 'store-images/a-real-path.jpg'])->save();
+
+        $this->get_catalog()
+            ->assertOk()
+            ->assertJsonPath('store.imageUrl', StoreImageController::urlFor($store->refresh()));
+    }
+
+    public function test_shop_photo_is_null_for_a_shop_that_uploaded_none(): void
+    {
+        $this->seed();
+
+        $this->get_catalog()->assertOk()->assertJsonPath('store.imageUrl', null);
     }
 
     public function test_shop_owner_is_the_founding_admin_not_one_promoted_later(): void

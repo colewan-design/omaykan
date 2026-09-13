@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ImagePlus, Trash2, X } from '@lucide/vue'
+import { ImagePlus, Star, Trash2, X } from '@lucide/vue'
 import { computed, reactive, ref, watch } from 'vue'
 import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import ToggleSwitch from '@pos/core/components/ToggleSwitch.vue'
@@ -27,7 +27,14 @@ const form = reactive({
   kind: 'standard' as 'standard' | 'weighted',
   unitLabel: '/ kg',
   businessModes: [] as BusinessMode[],
-  imageUrl: '',
+  /**
+   * The gallery, in the order the storefront shows it. Index 0 is the primary
+   * shot — the one every card, order line and directory tile reads — and the
+   * rest are the extra views a shopper flicks through on the product page.
+   */
+  photos: [] as string[],
+  brand: '',
+  packagingType: '',
   barcode: '',
   outOfStock: false,
   taxRate: 0.12,
@@ -36,8 +43,10 @@ const form = reactive({
   lowStockThreshold: 5,
 })
 
-const imagePreview = ref('')
 const imageSizeWarning = ref('')
+
+/** Enough for a pack front, back, nutrition panel and a size reference. */
+const MAX_PHOTOS = 6
 
 watch(
   () => props.product,
@@ -50,14 +59,17 @@ watch(
       form.kind = p.kind
       form.unitLabel = p.unitLabel ?? '/ kg'
       form.businessModes = [...p.businessModes]
-      form.imageUrl = p.imageUrl ?? ''
+      // The primary shot has always lived on its own field; the gallery is
+      // that one first, then the rest.
+      form.photos = [p.imageUrl ?? '', ...(p.photoUrls ?? [])].filter((url) => url !== '')
+      form.brand = p.brand ?? ''
+      form.packagingType = p.packagingType ?? ''
       form.barcode = p.barcode
       form.outOfStock = p.outOfStock ?? false
       form.taxRate = p.taxRate
       form.trackInventory = p.stockQty !== undefined
       form.stockQty = p.stockQty ?? 0
       form.lowStockThreshold = p.lowStockThreshold ?? 5
-      imagePreview.value = p.imageUrl ?? ''
     } else {
       form.name = ''
       form.categoryId = store.categories[0]?.id ?? ''
@@ -66,14 +78,15 @@ watch(
       form.kind = 'standard'
       form.unitLabel = '/ kg'
       form.businessModes = [store.settings.businessMode]
-      form.imageUrl = ''
+      form.photos = []
+      form.brand = ''
+      form.packagingType = ''
       form.barcode = ''
       form.outOfStock = false
       form.taxRate = 0.12
       form.trackInventory = false
       form.stockQty = 0
       form.lowStockThreshold = 5
-      imagePreview.value = ''
     }
     confirmDelete.value = false
     imageSizeWarning.value = ''
@@ -115,23 +128,65 @@ function toggleMode(mode: BusinessMode) {
   }
 }
 
+const canAddPhotos = computed(() => form.photos.length < MAX_PHOTOS)
+
+/**
+ * Reads each picked file into the gallery. Multiple at once, because a
+ * merchant photographing a pack takes the front, the back and the label in one
+ * go and should not have to open the picker three times.
+ */
 function handleImageFile(event: Event) {
-  const file = (event.target as HTMLInputElement).files?.[0]
-  if (!file) return
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  if (files.length === 0) return
 
   imageSizeWarning.value = ''
 
-  if (file.size > 200_000) {
-    imageSizeWarning.value = `Image is ${(file.size / 1024).toFixed(0)} KB — large images reduce localStorage space.`
+  const room = MAX_PHOTOS - form.photos.length
+  const taking = files.slice(0, room)
+
+  if (files.length > room) {
+    imageSizeWarning.value = `Only ${MAX_PHOTOS} photos per product — the rest were skipped.`
   }
 
-  const reader = new FileReader()
-  reader.onload = (e) => {
-    const dataUrl = e.target?.result as string
-    form.imageUrl = dataUrl
-    imagePreview.value = dataUrl
+  const heavy = taking.filter((file) => file.size > 200_000)
+  if (heavy.length > 0 && imageSizeWarning.value === '') {
+    const biggest = Math.max(...heavy.map((file) => file.size))
+    imageSizeWarning.value = `Largest is ${(biggest / 1024).toFixed(0)} KB — large images reduce localStorage space.`
   }
-  reader.readAsDataURL(file)
+
+  // Read them all, then append in the order they were picked: FileReader is
+  // async per file, so appending from each onload would order the gallery by
+  // whichever small file happened to decode first.
+  Promise.all(
+    taking.map(
+      (file) =>
+        new Promise<string>((resolve) => {
+          const reader = new FileReader()
+          reader.onload = (e) => resolve((e.target?.result as string) ?? '')
+          reader.onerror = () => resolve('')
+          reader.readAsDataURL(file)
+        }),
+    ),
+  ).then((dataUrls) => {
+    form.photos.push(...dataUrls.filter((url) => url !== ''))
+  })
+
+  // Same file twice in a row is a real case — retaking one shot — and without
+  // this the input holds the old value and fires no change event.
+  input.value = ''
+}
+
+function removePhoto(index: number) {
+  form.photos.splice(index, 1)
+  imageSizeWarning.value = ''
+}
+
+/** Promotes a shot to primary: the one every card and order line will show. */
+function makePrimary(index: number) {
+  if (index === 0) return
+  const [photo] = form.photos.splice(index, 1)
+  form.photos.unshift(photo)
 }
 
 async function save() {
@@ -157,7 +212,10 @@ async function save() {
     taxRate: form.taxRate,
     kind: form.kind,
     unitLabel: form.kind === 'weighted' ? form.unitLabel.trim() : undefined,
-    imageUrl: form.imageUrl || undefined,
+    imageUrl: form.photos[0] || undefined,
+    photoUrls: form.photos.slice(1),
+    brand: form.brand.trim() || undefined,
+    packagingType: form.packagingType.trim() || undefined,
     outOfStock: form.trackInventory ? form.stockQty === 0 : form.outOfStock,
     stockQty: form.trackInventory ? form.stockQty : undefined,
     lowStockThreshold: form.trackInventory ? form.lowStockThreshold : undefined,
@@ -219,31 +277,51 @@ function handleKeydown(e: KeyboardEvent) {
             <!-- ── Left column: core details ─────────────────────────── -->
             <div class="product-sheet__col">
 
-              <!-- Image -->
+              <!-- Photos. The first is the primary shot — the one the cards,
+                   the order lines and the shop directory all read — and the
+                   rest are the extra views the product page lets a shopper
+                   flick through. -->
               <div class="ps-field">
-                <p class="section-label">Image</p>
-                <div class="product-sheet__image-row">
-                  <div class="product-sheet__preview">
-                    <img v-if="imagePreview" :src="imagePreview" alt="Product preview" />
-                    <ImagePlus v-else :size="24" />
-                  </div>
-                  <div class="product-sheet__image-actions">
-                    <label class="segment-button product-sheet__upload-label">
-                      Upload
-                      <input type="file" accept="image/*" class="sr-only" @change="handleImageFile" />
-                    </label>
+                <p class="section-label">
+                  Photos
+                  <span class="section-label--optional">{{ form.photos.length }}/{{ MAX_PHOTOS }}</span>
+                </p>
+                <ul class="ps-gallery">
+                  <li v-for="(photo, index) in form.photos" :key="`${index}-${photo.slice(-24)}`" class="ps-shot">
+                    <img :src="photo" :alt="`Photo ${index + 1}`" />
+                    <span v-if="index === 0" class="ps-shot__main">Main</span>
                     <button
-                      v-if="imagePreview"
-                      class="plain-danger"
+                      v-else
+                      class="ps-shot__promote"
                       type="button"
-                      aria-label="Remove image"
-                      @click="form.imageUrl = ''; imagePreview = ''"
+                      :aria-label="`Make photo ${index + 1} the main one`"
+                      @click="makePrimary(index)"
                     >
-                      <Trash2 :size="14" />
+                      <Star :size="12" />
                     </button>
-                  </div>
-                </div>
+                    <button
+                      class="ps-shot__remove"
+                      type="button"
+                      :aria-label="`Remove photo ${index + 1}`"
+                      @click="removePhoto(index)"
+                    >
+                      <Trash2 :size="12" />
+                    </button>
+                  </li>
+
+                  <li v-if="canAddPhotos">
+                    <label class="ps-shot ps-shot--add">
+                      <ImagePlus :size="20" />
+                      <span>{{ form.photos.length === 0 ? 'Add photos' : 'Add' }}</span>
+                      <input type="file" accept="image/*" multiple class="sr-only" @change="handleImageFile" />
+                    </label>
+                  </li>
+                </ul>
                 <p v-if="imageSizeWarning" class="product-sheet__size-warning">{{ imageSizeWarning }}</p>
+                <p v-else-if="form.photos.length > 1" class="ps-hint">
+                  The main photo is what shows on shelves and receipts. The rest appear on the
+                  product page.
+                </p>
               </div>
 
               <!-- Name -->
@@ -256,6 +334,13 @@ function handleKeydown(e: KeyboardEvent) {
                   placeholder="Product name"
                   required
                 />
+              </div>
+
+              <!-- Brand -->
+              <div class="ps-field">
+                <p class="section-label">Brand <span class="section-label--optional">optional</span></p>
+                <input v-model="form.brand" class="sheet-input" type="text" placeholder="Capri" />
+                <p class="ps-hint">The name on the pack, if it is not already in the product name.</p>
               </div>
 
               <!-- Category -->
@@ -354,6 +439,12 @@ function handleKeydown(e: KeyboardEvent) {
               <div class="ps-field">
                 <p class="section-label">Barcode <span class="section-label--optional">(optional)</span></p>
                 <input v-model="form.barcode" class="sheet-input" type="text" placeholder="Auto-generated" />
+              </div>
+
+              <!-- Packaging type -->
+              <div class="ps-field">
+                <p class="section-label">Packaging <span class="section-label--optional">(optional)</span></p>
+                <input v-model="form.packagingType" class="sheet-input" type="text" placeholder="Can, sachet, bottle…" />
               </div>
 
               <!-- Divider -->

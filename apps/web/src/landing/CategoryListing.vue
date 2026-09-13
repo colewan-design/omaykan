@@ -44,6 +44,12 @@ const props = defineProps<{
   search: string
   /** The shop's town, for each card's location line. Blank hides it. */
   place: string
+  /**
+   * The shop's own photo, if its owner uploaded one. Not shown as a product
+   * photo — a card with no photograph of its own carries it dimmed behind the
+   * aisle glyph. See productArt.ts.
+   */
+  merchantImageUrl?: string
 }>()
 
 const emit = defineEmits<{
@@ -60,6 +66,13 @@ const aisles = computed(() =>
     count: props.products.filter((product) => product.categoryId === category.id).length,
   })),
 )
+
+/**
+ * Aisle names by id, for the cards. A product with no photograph is drawn with
+ * its aisle's glyph, and the glyph is keyed on the aisle's *name* — ids here
+ * are uuids the icon set knows nothing about.
+ */
+const aisleNames = computed(() => new Map(props.categories.map((c) => [c.id, c.name])))
 
 const results = computed(() => applyListing(props.products, props.filters))
 const pageCount = computed(() => Math.max(1, Math.ceil(results.value.length / PAGE_SIZE)))
@@ -279,7 +292,14 @@ function clearSideFilters() {
         <template v-else-if="paged.length > 0">
           <ul class="lst__items" :class="`lst__items--${view}`">
             <li v-for="product in paged" :key="product.id">
-              <ListingCard :product="product" :place="place" :view="view" @select="emit('select', $event)" />
+              <ListingCard
+                :product="product"
+                :place="place"
+                :view="view"
+                :category-name="aisleNames.get(product.categoryId) ?? ''"
+                :merchant-image-url="merchantImageUrl"
+                @select="emit('select', $event)"
+              />
             </li>
           </ul>
 

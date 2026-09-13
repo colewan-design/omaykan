@@ -54,6 +54,11 @@ a {
   --sf-clay: #b4532a;
   --sf-clay-deep: #93401d;
   --sf-gold: #d9a35b;
+  /* The one green that is not chrome: "in stock", the aisle eyebrow over a
+     product title, the tick on a trust note. Forest is too dark to read as a
+     signal at 13px and reads as furniture wherever the header already is. */
+  --sf-leaf: #1a7a45;
+  --sf-leaf-wash: #eaf3ed;
   --sf-ink: #231d18;
   --sf-muted: #6f665c;
   --sf-faint: #9a9086;

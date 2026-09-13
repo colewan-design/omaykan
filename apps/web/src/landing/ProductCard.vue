@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { discountPercent, formatCurrency, type Product } from '@pos/shared/index'
 import { useStorefrontCart } from '@pos/web/commerce/cart'
 import { useSavedProducts } from '@pos/web/commerce/favorites'
+import ProductArt from './ProductArt.vue'
 
 // One product tile: photo, sale flag, add button, name, price, savings.
 //
@@ -18,7 +19,16 @@ import { useSavedProducts } from '@pos/web/commerce/favorites'
 // land on the same product; only the plain left-click is handled in page.
 // The + button still adds one straight from the card, without the detour.
 
-const props = defineProps<{ product: Product }>()
+const props = withDefaults(
+  defineProps<{
+    product: Product
+    /** The product's aisle, so a product with no photo gets its aisle's glyph. */
+    categoryName?: string
+    /** The shop's own photo, if its owner uploaded one. See ProductArt. */
+    merchantImageUrl?: string
+  }>(),
+  { categoryName: '', merchantImageUrl: '' },
+)
 
 const emit = defineEmits<{ select: [productId: string] }>()
 
@@ -75,8 +85,12 @@ function toggleSaved(event: Event) {
            price said the same thing twice, in two different treatments, and
            the second one sat where the eye was looking for the price. -->
       <span v-if="discount !== null" class="fdcard__flag">SALE {{ discount }}%</span>
-      <img v-if="product.imageUrl" :src="product.imageUrl" :alt="product.name" loading="lazy" />
-      <div v-else class="fdcard__placeholder" aria-hidden="true">🛒</div>
+      <ProductArt
+        :product="product"
+        :category-name="categoryName"
+        :merchant-image-url="merchantImageUrl"
+        :size="40"
+      />
       <button
         type="button"
         class="fdcard__save"
@@ -171,15 +185,12 @@ function toggleSaved(event: Event) {
 }
 
 /* The whole card is a link now, so it has to answer the pointer. */
-.fdcard__art img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-  transition: transform 240ms ease;
-}
-.fdcard:hover .fdcard__art img { transform: scale(1.05); }
-.fdcard__placeholder { display: grid; place-items: center; height: 100%; font-size: 30px; }
+/* :deep, because the art is ProductArt's element now — the photo and the
+   stand-in alike. Only the photograph zooms on hover: a glyph is line art at
+   a fixed weight and scaling it just softens it. */
+.fdcard__art :deep(.part__photo) { transition: transform 240ms ease; }
+.fdcard:hover .fdcard__art :deep(.part__photo) { transform: scale(1.05); }
+.fdcard:hover .fdcard__art :deep(.part__mark) { opacity: 0.9; transform: translateY(-1px); }
 
 .fdcard__flag {
   position: absolute;
@@ -337,6 +348,8 @@ function toggleSaved(event: Event) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fdcard__art img, .fdcard:hover .fdcard__art img { transition: none; transform: none; }
+  .fdcard__art :deep(.part__photo),
+  .fdcard:hover .fdcard__art :deep(.part__photo),
+  .fdcard:hover .fdcard__art :deep(.part__mark) { transition: none; transform: none; }
 }
 </style>

@@ -4,6 +4,7 @@ import { MapPin, ShoppingCart } from '@lucide/vue'
 import { discountPercent, formatCurrency, type Product } from '@pos/shared/index'
 import { useStorefrontCart } from '@pos/web/commerce/cart'
 import { useSavedProducts } from '@pos/web/commerce/favorites'
+import ProductArt from './ProductArt.vue'
 
 // One product on the aisle listing, drawn to the listing redesign: a framed
 // card with the photo edge to edge, the name, the price, where it comes from,
@@ -21,8 +22,12 @@ const props = withDefaults(
     /** The town the product comes from. Blank hides the line. */
     place?: string
     view?: 'grid' | 'list'
+    /** The product's aisle, so a product with no photo gets its aisle's glyph. */
+    categoryName?: string
+    /** The shop's own photo, if its owner uploaded one. See ProductArt. */
+    merchantImageUrl?: string
   }>(),
-  { place: '', view: 'grid' },
+  { place: '', view: 'grid', categoryName: '', merchantImageUrl: '' },
 )
 
 const emit = defineEmits<{ select: [productId: string] }>()
@@ -67,8 +72,12 @@ function toggleSaved(event: Event) {
   <a :href="href" class="lcard" :class="`lcard--${view}`" @click="open">
     <div class="lcard__art">
       <span v-if="discount !== null" class="lcard__flag">SALE {{ discount }}%</span>
-      <img v-if="product.imageUrl" :src="product.imageUrl" :alt="product.name" loading="lazy" />
-      <div v-else class="lcard__placeholder" aria-hidden="true">🛒</div>
+      <ProductArt
+        :product="product"
+        :category-name="categoryName"
+        :merchant-image-url="merchantImageUrl"
+        :size="view === 'list' ? 34 : 52"
+      />
       <button
         type="button"
         class="lcard__save"
@@ -171,15 +180,12 @@ function toggleSaved(event: Event) {
   overflow: hidden;
   background: var(--sf-sand);
 }
-.lcard__art img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 300ms ease;
-}
-.lcard:hover .lcard__art img { transform: scale(1.05); }
-.lcard__placeholder { display: grid; place-items: center; height: 100%; font-size: 30px; }
+/* :deep, because the art is ProductArt's element now — the photo and the
+   stand-in alike. Only the photograph zooms on hover: a glyph is line art at
+   a fixed weight and scaling it just softens it. */
+.lcard__art :deep(.part__photo) { transition: transform 300ms ease; }
+.lcard:hover .lcard__art :deep(.part__photo) { transform: scale(1.05); }
+.lcard:hover .lcard__art :deep(.part__mark) { opacity: 0.9; transform: translateY(-1px); }
 
 .lcard__flag {
   position: absolute;
@@ -366,6 +372,10 @@ function toggleSaved(event: Event) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lcard, .lcard:hover, .lcard__art img, .lcard:hover .lcard__art img { transition: none; transform: none; }
+  .lcard,
+  .lcard:hover,
+  .lcard__art :deep(.part__photo),
+  .lcard:hover .lcard__art :deep(.part__photo),
+  .lcard:hover .lcard__art :deep(.part__mark) { transition: none; transform: none; }
 }
 </style>

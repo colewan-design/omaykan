@@ -3302,44 +3302,79 @@ button {
   border-top: 1px solid var(--separator);
 }
 
-/* Image row */
-.product-sheet__image-row {
+/* Photo gallery. The first tile is the primary shot; the rest are extra
+   views, and each carries its own promote and remove controls rather than a
+   shared toolbar that would need a selected-tile concept to act on. */
+.ps-gallery {
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.product-sheet__preview {
-  flex: none;
+.ps-shot {
+  position: relative;
   display: grid;
   place-items: center;
-  width: 64px;
-  height: 64px;
+  width: 76px;
+  height: 76px;
   border-radius: var(--radius-lg);
   overflow: hidden;
   background: var(--fill);
   color: var(--text-tertiary);
 }
 
-.product-sheet__preview img {
+.ps-shot img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.product-sheet__image-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
+/* The add tile is a <label> wrapping a hidden file input, so the whole square
+   is the picker's target rather than a button beside a preview. */
+.ps-shot--add {
+  gap: 2px;
+  border: 1px dashed var(--separator);
+  background: transparent;
+  cursor: pointer;
+  font: var(--type-caption);
+  text-align: center;
+}
+.ps-shot--add:hover { border-color: var(--accent); color: var(--accent); }
+
+.ps-shot__main {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  padding: 2px 6px;
+  border-radius: 0 var(--radius-sm) 0 0;
+  background: var(--accent);
+  color: #fff;
+  font: var(--type-caption);
+  font-weight: 700;
 }
 
-.product-sheet__upload-label {
-  display: inline-flex;
-  align-items: center;
+.ps-shot__promote,
+.ps-shot__remove {
+  position: absolute;
+  top: 4px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
   cursor: pointer;
-  min-height: 36px;
 }
+.ps-shot__promote { left: 4px; }
+.ps-shot__remove { right: 4px; }
+.ps-shot__promote:hover { background: var(--accent); }
+.ps-shot__remove:hover { background: var(--danger, #b3261e); }
 
 .product-sheet__size-warning {
   width: 100%;

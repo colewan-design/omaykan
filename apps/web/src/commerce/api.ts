@@ -96,6 +96,9 @@ interface ApiProduct {
   taxRate: number
   kind: 'standard' | 'weighted'
   imageUrl: string | null
+  photoUrls: string[] | null
+  brand: string | null
+  packagingType: string | null
   unitLabel: string | null
   businessModes: string[]
   outOfStock: boolean
@@ -108,6 +111,7 @@ interface ApiShop {
   businessTypeLabel: string | null
   ownerName: string | null
   address: string | null
+  imageUrl: string | null
 }
 
 /**
@@ -122,6 +126,12 @@ export interface StorefrontShop {
   ownerName?: string
   /** Street line, as the owner typed it into Settings. */
   address?: string
+  /**
+   * The shop's own photo, if its owner uploaded one in Settings. Not a picture
+   * of anything on the shelf — the listing only ever uses it dimmed, behind
+   * the mark on a product that has no photo of its own.
+   */
+  imageUrl?: string
 }
 
 export interface StorefrontCatalog {
@@ -150,6 +160,10 @@ function toProduct(product: ApiProduct): Product {
     taxRate: Number(product.taxRate),
     kind: product.kind === 'weighted' ? 'weighted' : 'standard',
     imageUrl: product.imageUrl ?? undefined,
+    // Older API builds send no gallery at all; an absent one is one photo.
+    photoUrls: (product.photoUrls ?? []).filter((url) => typeof url === 'string' && url.trim() !== ''),
+    brand: product.brand?.trim() || undefined,
+    packagingType: product.packagingType?.trim() || undefined,
     unitLabel: product.unitLabel ?? undefined,
     businessModes: (product.businessModes ?? []) as Product['businessModes'],
     outOfStock: product.outOfStock,
@@ -236,6 +250,9 @@ function toShop(shop: ApiShop | null | undefined): StorefrontShop | null {
     businessTypeLabel: shop.businessTypeLabel?.trim() || undefined,
     ownerName: shop.ownerName?.trim() || undefined,
     address: shop.address?.trim() || undefined,
+    // The API serves this one itself, so it needs the base put back in front
+    // of it on the deployment where the page and the API are not same-origin.
+    imageUrl: resolveImageUrl(shop.imageUrl ?? null) ?? undefined,
   }
 }
 

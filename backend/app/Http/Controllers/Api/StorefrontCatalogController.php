@@ -102,6 +102,14 @@ class StorefrontCatalogController extends Controller
                 'taxRate' => (float) $product->tax_rate,
                 'kind' => $product->product_type === 'weighted' ? 'weighted' : 'standard',
                 'imageUrl' => $product->image_url,
+                // The extra shots, after the primary one. The detail page
+                // draws image_url first and these after it, in this order.
+                'photoUrls' => array_values(array_filter(
+                    $product->photo_urls ?? [],
+                    fn ($url) => is_string($url) && trim($url) !== '',
+                )),
+                'brand' => $product->brand,
+                'packagingType' => $product->packaging_type,
                 'unitLabel' => $product->unit_label,
                 'businessModes' => $product->business_modes ?? [],
                 'outOfStock' => false,
@@ -175,6 +183,12 @@ class StorefrontCatalogController extends Controller
             'businessTypeLabel' => $label === '' ? null : $label,
             'ownerName' => $owner?->name,
             'address' => $store->address,
+            // The photo the owner uploaded in Settings > Business image, if
+            // they have. The storefront shows it behind the mark on products
+            // that have no photo of their own, so a shelf of placeholders
+            // still looks like this shop's shelf. Null is the ordinary case
+            // and the caller falls back to the plain branded panel.
+            'imageUrl' => StoreImageController::urlFor($store),
         ];
     }
 }

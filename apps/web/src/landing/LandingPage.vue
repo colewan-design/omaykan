@@ -137,6 +137,18 @@ const relatedProducts = computed(() => {
   return products.value.filter((p) => p.categoryId === current.categoryId && p.id !== current.id).slice(0, 12)
 })
 
+/**
+ * Aisle names by id, for the shelves and the listing. A product with no
+ * photograph is drawn with its aisle's glyph, and that glyph is keyed on the
+ * aisle's *name* — the ids here are uuids the icon set knows nothing about.
+ */
+const aisleNames = computed(() =>
+  Object.fromEntries(stockedCategories.value.map((category) => [category.id, category.name])),
+)
+
+/** The shop's own photo, behind the mark on a product that has none. */
+const merchantImage = computed(() => catalog.shop?.imageUrl ?? '')
+
 /** The town on the shop's sign: every product on the listing comes off its shelf. */
 const shopTown = computed(() => townOf(catalog.shop?.address))
 
@@ -346,6 +358,7 @@ function clearSearch() {
             :error="catalogError"
             :search="activeSearch"
             :place="shopTown"
+            :merchant-image-url="merchantImage"
             @change="onListingChange"
             @select="openProduct"
             @retry="retryCatalog"
@@ -379,7 +392,13 @@ function clearSearch() {
                  sees that the market is real, then learns how to use it. -->
             <HowItWorks v-if="!activeSearch" />
 
-            <ProductRow :title="shelfTitle" :products="popular" @select="openProduct" />
+            <ProductRow
+              :title="shelfTitle"
+              :products="popular"
+              :category-names="aisleNames"
+              :merchant-image-url="merchantImage"
+              @select="openProduct"
+            />
 
             <!-- The redesign's band, right after the first shelf. Not while
                  searching: it is editorial, and a results page is not the
@@ -393,6 +412,8 @@ function clearSearch() {
               title="Marked down at the counter"
               blurb="The shops set these markdowns themselves, and Omaykan takes no percentage of a sale — so the discount reaches you whole."
               :products="deals"
+              :category-names="aisleNames"
+              :merchant-image-url="merchantImage"
               @select="openProduct"
             />
 
@@ -430,6 +451,8 @@ function clearSearch() {
             <ProductRow
               title="Everyday essentials under ₱100"
               :products="cheapest"
+              :category-names="aisleNames"
+              :merchant-image-url="merchantImage"
               @select="openProduct"
             />
 

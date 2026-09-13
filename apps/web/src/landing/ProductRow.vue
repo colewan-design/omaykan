@@ -20,11 +20,32 @@ const props = withDefaults(
     viewAllHref?: string
     /** Anchor, so a footer or a link can point at one shelf. */
     anchor?: string
+    /**
+     * Aisle names by id, so a product with no photograph gets its aisle's
+     * glyph. A shelf here can be mixed — "Under ₱100" is every aisle at once —
+     * so it is a lookup and not one name.
+     */
+    categoryNames?: Record<string, string>
+    /** The shop's own photo, if its owner uploaded one. See ProductArt. */
+    merchantImageUrl?: string
   }>(),
-  { blurb: '', viewAllHref: '', anchor: '' },
+  { blurb: '', viewAllHref: '', anchor: '', categoryNames: () => ({}), merchantImageUrl: '' },
 )
 
-defineEmits<{ select: [productId: string] }>()
+const emit = defineEmits<{ select: [productId: string]; viewAll: [] }>()
+
+/**
+ * "See all" is a real link to a real URL, so a middle-click or a modifier
+ * opens it in a tab like any other. A plain left-click is handled in page —
+ * the shelf, the listing and the product are all faces of one document, and
+ * reloading to change which one is showing is the thing this storefront
+ * deliberately does not do.
+ */
+function openAll(event: MouseEvent) {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+  event.preventDefault()
+  emit('viewAll')
+}
 
 const shelf = ref<HTMLElement | null>(null)
 
@@ -45,7 +66,7 @@ function scrollBy(direction: -1 | 1) {
         <h2 class="sf-h2">{{ title }}</h2>
         <p v-if="blurb" class="fdrow__blurb">{{ blurb }}</p>
       </div>
-      <a v-if="viewAllHref" :href="viewAllHref" class="sf-more">
+      <a v-if="viewAllHref" :href="viewAllHref" class="sf-more" @click="openAll">
         See all
         <ArrowRight :size="15" :stroke-width="2" />
       </a>
@@ -61,7 +82,9 @@ function scrollBy(direction: -1 | 1) {
           v-for="product in products"
           :key="product.id"
           :product="product"
-          @select="$emit('select', $event)"
+          :category-name="categoryNames[product.categoryId] ?? ''"
+          :merchant-image-url="merchantImageUrl"
+          @select="emit('select', $event)"
         />
       </div>
 

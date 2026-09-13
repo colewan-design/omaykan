@@ -1,6 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
+  ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
+  MessageSquare,
+  ShoppingCart,
+  Tag,
+  Truck,
+  Wallet,
+} from '@lucide/vue'
+import {
   calculateTax,
   discountPercent,
   formatCurrency,
@@ -10,17 +20,30 @@ import {
 import { useStorefrontCart } from '@pos/web/commerce/cart'
 import { useStorefrontCatalog } from '@pos/web/commerce/catalog'
 import { ORG_SLUG, STORE_ADDRESS, STORE_CODE } from '@pos/web/commerce/context'
+import {
+  DELIVERY_BASE_FEE_CENTS,
+  DELIVERY_BASE_KM,
+  DELIVERY_PER_KM_CENTS,
+} from '@pos/web/commerce/delivery'
 import { MESSAGING_ENABLED } from '@pos/web/commerce/features'
+import { useSavedProducts } from '@pos/web/commerce/favorites'
+import { ALL_AISLES } from './listing'
+import ProductArt from './ProductArt.vue'
 import ProductRow from './ProductRow.vue'
 
-// The product detail face of the landing page: one product at full size, with
-// the quantity control the cards don't have room for, and the rest of its aisle
-// underneath.
+// The product detail face of the landing page: the pack at full size with its
+// other views under it, everything a shopper needs to commit, and the rest of
+// the aisle underneath.
 //
 // It is a face of the landing page rather than its own Vite entry because the
-// whole storefront is one document now — search, aisle and product are all URL
+// whole storefront is one document — search, aisle and product are all URL
 // state on it (?q=, ?category=, ?product=), so opening a product costs no
 // reload and Back walks straight out of it.
+//
+// The right column is four stacked cards: buy, why buying here is safe, who
+// you are buying from, and what the thing is. That is the order of the
+// questions a shopper actually asks on a marketplace where they hand cash to a
+// rider for goods from a shop they have never been to.
 
 const props = defineProps<{
   product: Product
@@ -37,6 +60,7 @@ const emit = defineEmits<{
 }>()
 
 const cart = useStorefrontCart()
+const saved = useSavedProducts()
 
 /**
  * Who the shopper is buying from. Read off the catalog rather than passed in
@@ -52,6 +76,23 @@ const shop = computed(() => catalog.shop)
  * for the demo shelf, which has no shop record behind it.
  */
 const shopAddress = computed(() => shop.value?.address ?? (STORE_ADDRESS || undefined))
+
+/** Its own initials when it has no photo — not a grey disc. Mirrors ShopDirectory. */
+const shopInitials = computed(() =>
+  (shop.value?.name ?? '')
+    .split(/\s+/)
+    .filter((word) => /[a-z0-9]/i.test(word))
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase() ?? '')
+    .join(''),
+)
+
+/**
+ * "Everything else this shop sells" — which on a single-tenant storefront is
+ * this same page's listing face, not another site. So no new tab, and no
+ * external-link glyph promising one.
+ */
+const shopHref = computed(() => `${window.location.pathname}?category=${ALL_AISLES}`)
 
 /**
  * "Do you have this in a bigger size?" is a question for the shop. It goes
@@ -76,6 +117,7 @@ let resetTimer = 0
 
 const discount = computed(() => discountPercent(props.product))
 const soldOut = computed(() => props.product.outOfStock === true)
+const isSaved = computed(() => saved.isSaved(props.product.id))
 
 /** Weighted goods are priced by the unit they're sold in, not per piece. */
 const priceSuffix = computed(() =>
@@ -106,24 +148,70 @@ const inCart = computed(
   () => cart.cartLines.value.find((line) => line.product.id === props.product.id)?.quantity ?? 0,
 )
 
+// ── The gallery ───────────────────────────────────────────────────────────
+// The primary shot has always lived on its own field, because every card,
+// order line and directory tile reads it; the extra views come after it.
+
+const photos = computed(() => {
+  const all = [props.product.imageUrl, ...(props.product.photoUrls ?? [])]
+    .map((url) => (typeof url === 'string' ? url.trim() : ''))
+    .filter((url) => url !== '')
+  // A merchant who uploads the same shot twice gets one thumbnail, not two
+  // identical ones with an arrow between them.
+  return Array.from(new Set(all))
+})
+
+/**
+ * Photos whose url does not load, dropped from the strip rather than left as
+ * the browser's broken-image glyph. A product whose only photo is dead then
+ * falls through to the drawn stand-in the aisle listing uses, instead of to a
+ * blank white frame.
+ */
+const brokenPhotos = ref(new Set<string>())
+const livePhotos = computed(() => photos.value.filter((url) => !brokenPhotos.value.has(url)))
+
+const activeIndex = ref(0)
+const activePhoto = computed(() => livePhotos.value[activeIndex.value] ?? '')
+const hasGallery = computed(() => livePhotos.value.length > 1)
+
+function showPhoto(index: number) {
+  if (index < 0 || index >= livePhotos.value.length) return
+  activeIndex.value = index
+  endZoom()
+}
+
+function stepPhoto(direction: -1 | 1) {
+  showPhoto(activeIndex.value + direction)
+}
+
+function notePhotoBroken(url: string) {
+  brokenPhotos.value = new Set(brokenPhotos.value).add(url)
+  // Whatever slid into this slot is showing now; if the strip ran out, back up.
+  if (activeIndex.value >= livePhotos.value.length) {
+    activeIndex.value = Math.max(0, livePhotos.value.length - 1)
+  }
+}
+
 // Opening a second product from the related shelf reuses this component, so the
-// stepper has to fall back to 1 rather than carry the last product's count.
+// stepper and the gallery reset rather than carry the last product's state.
 watch(
   () => props.product.id,
   () => {
     quantity.value = 1
     justAdded.value = false
+    activeIndex.value = 0
+    brokenPhotos.value = new Set()
     endZoom()
     window.clearTimeout(resetTimer)
   },
 )
 
+// ── Hover-to-zoom ─────────────────────────────────────────────────────────
 /**
- * Hover-to-zoom on the detail shot: the pack photo is the only place a shopper
- * can read a label they'd otherwise pick up and turn over, so pointing at a
- * corner of it magnifies that corner in place rather than opening a lightbox.
- * The frame already clips (overflow: hidden), so scaling the <img> about the
- * cursor is the whole trick — no second copy of the image to download.
+ * The pack photo is the only place a shopper can read a label they'd otherwise
+ * pick up and turn over, so pointing at a corner of it magnifies that corner
+ * in place rather than opening a lightbox. The frame already clips, so scaling
+ * the <img> about the cursor is the whole trick — no second copy to download.
  */
 const ZOOM_SCALE = 2.6
 
@@ -147,9 +235,12 @@ onMounted(() => {
   readPointer()
   hoverQuery?.addEventListener('change', readPointer)
 })
-onBeforeUnmount(() => hoverQuery?.removeEventListener('change', readPointer))
+onBeforeUnmount(() => {
+  hoverQuery?.removeEventListener('change', readPointer)
+  window.clearTimeout(resetTimer)
+})
 
-const canZoom = computed(() => pointerFine.value && Boolean(props.product.imageUrl))
+const canZoom = computed(() => pointerFine.value && activePhoto.value !== '')
 
 const zoomStyle = computed(() =>
   zooming.value
@@ -182,6 +273,17 @@ function endZoom() {
   zoomOrigin.value = '50% 50%'
 }
 
+// ── The trust strip ───────────────────────────────────────────────────────
+// Read off the delivery module rather than written out as prose. The footer
+// used to hard-code "₱49", which is a promise that goes stale the day the rate
+// changes. Whole pesos, because these are round figures and "₱49.00" reads
+// like a receipt rather than a price.
+const peso = (cents: number) => `₱${cents / 100}`
+const deliveryFrom = peso(DELIVERY_BASE_FEE_CENTS)
+const deliveryDetail = `Flat ${deliveryFrom} for the first ${DELIVERY_BASE_KM} km, then ${peso(DELIVERY_PER_KM_CENTS)}/km.`
+
+// ── Actions ───────────────────────────────────────────────────────────────
+
 function step(direction: -1 | 1) {
   const next = quantity.value + direction
   if (next < 1 || next > maxQuantity.value) return
@@ -198,8 +300,8 @@ function addToCart() {
 </script>
 
 <template>
-  <section class="fdpdp">
-    <nav class="fdpdp__crumbs" aria-label="Breadcrumb">
+  <section class="pdp">
+    <nav class="pdp__crumbs" aria-label="Breadcrumb">
       <a href="/" @click.prevent="emit('back')">All categories</a>
       <span aria-hidden="true">›</span>
       <template v-if="category">
@@ -208,72 +310,141 @@ function addToCart() {
         </a>
         <span aria-hidden="true">›</span>
       </template>
-      <span class="fdpdp__here">{{ product.name }}</span>
+      <span class="pdp__here">{{ product.name }}</span>
     </nav>
 
-    <div class="fdpdp__body">
-      <!-- Contain, not cover: a detail shot has to show the whole pack — the
-           weight, the variant — where a card only needs to be recognisable. -->
-      <div
-        class="fdpdp__art"
-        :class="{ 'fdpdp__art--zoomable': canZoom, 'fdpdp__art--zooming': zooming }"
-        @mousemove="trackZoom"
-        @mouseleave="endZoom"
-      >
-        <span v-if="discount !== null" class="fdpdp__flag">SALE — save {{ discount }}%</span>
-        <img
-          v-if="product.imageUrl"
-          ref="zoomImage"
-          :src="product.imageUrl"
-          :alt="product.name"
-          :style="zoomStyle"
-          draggable="false"
-        />
-        <div v-else class="fdpdp__placeholder" aria-hidden="true">🛒</div>
-        <span v-if="canZoom" class="fdpdp__zoomhint" aria-hidden="true">Hover to zoom</span>
+    <div class="pdp__body">
+      <!-- ── The pack ──────────────────────────────────────────────────── -->
+      <div class="pdp__gallery">
+        <!-- Contain, not cover: a detail shot has to show the whole pack — the
+             weight, the variant — where a card only needs to be recognisable. -->
+        <div
+          class="pdp__frame"
+          :class="{ 'pdp__frame--zoomable': canZoom, 'pdp__frame--zooming': zooming }"
+          @mousemove="trackZoom"
+          @mouseleave="endZoom"
+        >
+          <span v-if="discount !== null" class="pdp__flag">SALE — save {{ discount }}%</span>
+
+          <img
+            v-if="activePhoto"
+            ref="zoomImage"
+            :key="activePhoto"
+            :src="activePhoto"
+            :alt="product.name"
+            :style="zoomStyle"
+            draggable="false"
+            @error="notePhotoBroken(activePhoto)"
+          />
+          <!-- No photograph at all: the aisle's own glyph, the same stand-in
+               the listing draws, rather than an empty white square. -->
+          <ProductArt
+            v-else
+            :product="{ ...product, imageUrl: undefined }"
+            :category-name="category?.name ?? ''"
+            :merchant-image-url="shop?.imageUrl ?? ''"
+            :size="96"
+          />
+
+          <button
+            type="button"
+            class="pdp__save"
+            :class="{ 'pdp__save--on': isSaved }"
+            :aria-pressed="isSaved"
+            :aria-label="isSaved ? `Remove ${product.name} from your wishlist` : `Save ${product.name} to your wishlist`"
+            @click="saved.toggle(product)"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" :fill="isSaved ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>
+          </button>
+
+          <span v-if="canZoom" class="pdp__zoomhint" aria-hidden="true">Hover to zoom</span>
+        </div>
+
+        <!-- The other views. Only when there is more than one — a lone
+             thumbnail under its own photo is a control that does nothing. -->
+        <div v-if="hasGallery" class="pdp__thumbs">
+          <button
+            type="button"
+            class="pdp__nav"
+            aria-label="Previous photo"
+            :disabled="activeIndex === 0"
+            @click="stepPhoto(-1)"
+          >
+            <ChevronLeft :size="18" :stroke-width="2" />
+          </button>
+
+          <ul class="pdp__thumblist">
+            <li v-for="(photo, index) in livePhotos" :key="photo">
+              <button
+                type="button"
+                class="pdp__thumb"
+                :class="{ 'pdp__thumb--on': index === activeIndex }"
+                :aria-current="index === activeIndex"
+                :aria-label="`Show photo ${index + 1} of ${livePhotos.length}`"
+                @click="showPhoto(index)"
+                @keydown.left.prevent="stepPhoto(-1)"
+                @keydown.right.prevent="stepPhoto(1)"
+              >
+                <img :src="photo" alt="" loading="lazy" @error="notePhotoBroken(photo)" />
+              </button>
+            </li>
+          </ul>
+
+          <button
+            type="button"
+            class="pdp__nav"
+            aria-label="Next photo"
+            :disabled="activeIndex >= livePhotos.length - 1"
+            @click="stepPhoto(1)"
+          >
+            <ChevronRight :size="18" :stroke-width="2" />
+          </button>
+        </div>
       </div>
 
-      <div class="fdpdp__info">
+      <!-- ── The buy column ────────────────────────────────────────────── -->
+      <div class="pdp__info">
         <a
           v-if="category"
-          class="fdpdp__eyebrow"
+          class="pdp__eyebrow"
           :href="`/?category=${category.id}`"
           @click.prevent="emit('category', category.id)"
         >{{ category.name }}</a>
 
-        <h1 class="fdpdp__title">{{ product.name }}</h1>
+        <h1 class="pdp__title">{{ product.name }}</h1>
 
-        <p v-if="product.unitLabel" class="fdpdp__unit">{{ product.unitLabel }}</p>
+        <p v-if="product.unitLabel" class="pdp__unit">{{ product.unitLabel }}</p>
 
-        <div class="fdpdp__prices">
-          <span class="fdpdp__price" :class="{ 'fdpdp__price--sale': discount !== null }">
-            {{ formatCurrency(product.priceCents) }}<span v-if="priceSuffix" class="fdpdp__per"> {{ priceSuffix }}</span>
+        <div class="pdp__prices">
+          <span class="pdp__price" :class="{ 'pdp__price--sale': discount !== null }">
+            {{ formatCurrency(product.priceCents) }}<span v-if="priceSuffix" class="pdp__per"> {{ priceSuffix }}</span>
           </span>
-          <span v-if="discount !== null" class="fdpdp__was">
+          <span v-if="discount !== null" class="pdp__was">
             {{ formatCurrency(product.compareAtPriceCents!) }}
           </span>
-          <span v-if="discount !== null" class="fdpdp__save">Save {{ discount }}%</span>
+          <span v-if="discount !== null" class="pdp__savetag">Save {{ discount }}%</span>
         </div>
 
-        <p v-if="product.taxRate > 0" class="fdpdp__tax">
+        <p v-if="product.taxRate > 0" class="pdp__tax">
           + {{ formatCurrency(taxCents) }} VAT at checkout
         </p>
 
-        <p class="fdpdp__stock" :class="{ 'fdpdp__stock--out': soldOut, 'fdpdp__stock--low': lowStock }">
+        <p class="pdp__stock" :class="{ 'pdp__stock--out': soldOut, 'pdp__stock--low': lowStock }">
+          <span class="pdp__dot" aria-hidden="true"></span>
           <template v-if="soldOut">Sold out today</template>
           <template v-else-if="lowStock">Only {{ product.stockQty }} left today</template>
           <template v-else>In stock</template>
         </p>
 
-        <div class="fdpdp__buy">
-          <div class="fdpdp__stepper" role="group" aria-label="Quantity">
+        <div class="pdp__buy">
+          <div class="pdp__stepper" role="group" aria-label="Quantity">
             <button
               type="button"
               aria-label="One fewer"
               :disabled="soldOut || quantity <= 1"
               @click="step(-1)"
             >−</button>
-            <span class="fdpdp__qty" aria-live="polite">{{ quantity }}</span>
+            <span class="pdp__qty" aria-live="polite">{{ quantity }}</span>
             <button
               type="button"
               aria-label="One more"
@@ -282,7 +453,8 @@ function addToCart() {
             >+</button>
           </div>
 
-          <button type="button" class="fdpdp__add" :disabled="soldOut" @click="addToCart">
+          <button type="button" class="pdp__add" :disabled="soldOut" @click="addToCart">
+            <ShoppingCart v-if="!soldOut" :size="18" :stroke-width="2" aria-hidden="true" />
             <template v-if="soldOut">Sold out</template>
             <template v-else-if="justAdded">Added to cart ✓</template>
             <template v-else>
@@ -291,49 +463,105 @@ function addToCart() {
           </button>
         </div>
 
-        <p v-if="inCart > 0" class="fdpdp__incart">
-          {{ inCart }} in your cart
-        </p>
+        <p v-if="inCart > 0" class="pdp__incart">{{ inCart }} in your cart</p>
 
-        <div class="fdpdp__notes">
-          <p>
-            This shop sets its own price. Omaykan takes no percentage of the sale, so there
-            is nothing to mark this up to pay for.
-          </p>
-          <p>Cash or GCash when the rider arrives — nothing is charged online.</p>
-        </div>
+        <!-- Why buying from a counter you have never seen is safe. The fee is
+             read off the delivery module, not written out as prose: a
+             hard-coded "₱49" is a promise that goes stale the day the rate
+             changes. -->
+        <ul class="pdp__trust">
+          <li>
+            <span class="pdp__trusticon"><Tag :size="17" :stroke-width="1.9" aria-hidden="true" /></span>
+            <div>
+              <p class="pdp__trusttitle">Shop-set price</p>
+              <p class="pdp__trustnote">This shop sets its own price, so there are no extra fees.</p>
+            </div>
+          </li>
+          <li>
+            <span class="pdp__trusticon"><Wallet :size="17" :stroke-width="1.9" aria-hidden="true" /></span>
+            <div>
+              <p class="pdp__trusttitle">Cash or GCash on delivery</p>
+              <p class="pdp__trustnote">Pay when the rider arrives — no online payment needed.</p>
+            </div>
+          </li>
+          <li>
+            <span class="pdp__trusticon"><Truck :size="17" :stroke-width="1.9" aria-hidden="true" /></span>
+            <div>
+              <p class="pdp__trusttitle">Delivery starts at {{ deliveryFrom }}</p>
+              <p class="pdp__trustnote">{{ deliveryDetail }}</p>
+            </div>
+          </li>
+        </ul>
 
-        <section v-if="shop" class="fdpdp__shop">
-          <h2 class="fdpdp__shoplabel">Sold by</h2>
-          <p class="fdpdp__shopname">{{ shop.name }}</p>
-          <p v-if="shop.businessTypeLabel" class="fdpdp__shopkind">{{ shop.businessTypeLabel }}</p>
-          <dl v-if="shop.ownerName || shopAddress" class="fdpdp__shopfacts">
-            <div v-if="shop.ownerName">
-              <dt>Store owner</dt>
-              <dd>{{ shop.ownerName }}</dd>
-            </div>
-            <div v-if="shopAddress">
-              <dt>Store location</dt>
-              <dd>{{ shopAddress }}</dd>
-            </div>
-          </dl>
-          <a v-if="messageShopHref" class="fdpdp__message" :href="messageShopHref">Message this shop</a>
+        <!-- Who you are buying from. A card and not a fact row: a shopper who
+             has never been to this counter is handing cash to a rider on its
+             behalf, so who and where it is has to read as a statement about
+             the seller rather than as metadata next to a barcode. -->
+        <section v-if="shop" class="pdp__shop">
+          <div class="pdp__shopmark" aria-hidden="true">
+            <img v-if="shop.imageUrl" :src="shop.imageUrl" alt="" />
+            <span v-else>{{ shopInitials }}</span>
+          </div>
+
+          <div class="pdp__shopwho">
+            <p class="pdp__shoplabel">Sold by</p>
+            <p class="pdp__shopname">{{ shop.name }}</p>
+            <p v-if="shop.businessTypeLabel" class="pdp__shopkind">{{ shop.businessTypeLabel }}</p>
+            <dl v-if="shop.ownerName || shopAddress" class="pdp__shopfacts">
+              <div v-if="shop.ownerName">
+                <dt>Store owner</dt>
+                <dd>{{ shop.ownerName }}</dd>
+              </div>
+              <div v-if="shopAddress">
+                <dt>Store location</dt>
+                <dd>{{ shopAddress }}</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div class="pdp__shopacts">
+            <a class="pdp__shopbtn" :href="shopHref" @click.prevent="emit('category', ALL_AISLES)">
+              View shop
+              <ArrowUpRight :size="15" :stroke-width="2" aria-hidden="true" />
+            </a>
+            <a v-if="messageShopHref" class="pdp__shoplink" :href="messageShopHref">
+              <MessageSquare :size="14" :stroke-width="2" aria-hidden="true" />
+              Message
+            </a>
+          </div>
         </section>
 
-        <dl class="fdpdp__facts">
-          <div>
-            <dt>Item code</dt>
-            <dd>{{ product.sku }}</dd>
-          </div>
-          <div v-if="product.barcode">
-            <dt>Barcode</dt>
-            <dd>{{ product.barcode }}</dd>
-          </div>
-          <div v-if="product.kind === 'weighted'">
-            <dt>Sold by</dt>
-            <dd>Weight — priced {{ product.unitLabel || 'per unit' }}</dd>
-          </div>
-        </dl>
+        <!-- What the thing is. Every row is something the merchant actually
+             filed; a blank one is left out rather than printed as "—". -->
+        <section class="pdp__facts">
+          <h2 class="pdp__factstitle">Product details</h2>
+          <dl>
+            <div v-if="product.brand">
+              <dt>Brand</dt>
+              <dd>{{ product.brand }}</dd>
+            </div>
+            <div v-if="category">
+              <dt>Category</dt>
+              <dd>{{ category.name }}</dd>
+            </div>
+            <div v-if="product.sku">
+              <dt>Item code</dt>
+              <dd>{{ product.sku }}</dd>
+            </div>
+            <div v-if="product.barcode">
+              <dt>Barcode</dt>
+              <dd>{{ product.barcode }}</dd>
+            </div>
+            <div v-if="product.packagingType">
+              <dt>Packaging type</dt>
+              <dd>{{ product.packagingType }}</dd>
+            </div>
+            <div v-if="product.kind === 'weighted'">
+              <dt>Sold by</dt>
+              <dd>Weight — priced {{ product.unitLabel || 'per unit' }}</dd>
+            </div>
+          </dl>
+        </section>
       </div>
     </div>
 
@@ -341,53 +569,63 @@ function addToCart() {
       v-if="related.length > 0"
       :title="category ? `More from ${category.name}` : 'More to shop'"
       :products="related"
+      :view-all-href="category ? `/?category=${category.id}` : ''"
+      :category-names="category ? { [category.id]: category.name } : {}"
+      :merchant-image-url="shop?.imageUrl ?? ''"
       @select="emit('select', $event)"
+      @view-all="category && emit('category', category.id)"
     />
   </section>
 </template>
 
 <style scoped>
-.fdpdp { margin-bottom: 56px; }
+.pdp { margin-bottom: 56px; }
 
-.fdpdp__crumbs {
+.pdp__crumbs {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
   margin-bottom: 22px;
   font-size: 13.5px;
-  color: #9ca3af;
+  color: var(--sf-faint);
 }
-.fdpdp__crumbs a { color: #1a6b3c; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
-.fdpdp__crumbs a:hover { color: #16a34a; }
-.fdpdp__here { color: #4b5563; font-weight: 600; }
+.pdp__crumbs a { color: var(--sf-leaf); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.pdp__crumbs a:hover { color: var(--sf-forest); }
+.pdp__here { color: var(--sf-muted); font-weight: 600; }
 
 /* Capped rather than full-bleed: the artwork is a square, so on a wide screen
    two free-growing columns give a 660px photo with the buy controls stranded
    at the top of an equally tall column of nothing. */
-.fdpdp__body {
+.pdp__body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 52px;
+  grid-template-columns: minmax(0, 0.78fr) minmax(0, 1fr);
+  gap: 40px;
   align-items: start;
-  max-width: 1080px;
+  max-width: 1140px;
   margin-bottom: 64px;
 }
 
-.fdpdp__art {
+/* ── The pack ─────────────────────────────────────────────────────────── */
+
+/* Sticky, because the right column is four cards tall and the thing being
+   bought should not scroll away from the price of it. */
+.pdp__gallery { position: sticky; top: 96px; }
+
+.pdp__frame {
   position: relative;
   aspect-ratio: 1 / 1;
   display: grid;
   place-items: center;
-  padding: 28px;
-  border: 1px solid #edf0ee;
+  padding: 30px;
+  border: 1px solid var(--sf-rule);
   border-radius: 14px;
-  /* White, not the card's grey: most catalog photos are cut out on white
-     already, and a grey mat makes them read as a picture of a picture. */
+  /* White, not the page's cream: most catalog photos are cut out on white
+     already, and a tinted mat makes them read as a picture of a picture. */
   background: #fff;
   overflow: hidden;
 }
-.fdpdp__art img {
+.pdp__frame img {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
@@ -398,40 +636,16 @@ function addToCart() {
   transition: transform 180ms ease-out;
   will-change: transform;
 }
-.fdpdp__art--zooming img { transition: transform 90ms ease-out; }
-.fdpdp__art--zoomable { cursor: zoom-in; }
-.fdpdp__placeholder { font-size: 72px; }
+.pdp__frame--zooming img { transition: transform 90ms ease-out; }
+.pdp__frame--zoomable { cursor: zoom-in; }
 
-.fdpdp__zoomhint {
-  position: absolute;
-  right: 10px;
-  bottom: 10px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  background: rgba(26, 26, 26, 0.62);
-  color: #fff;
-  font-size: 11.5px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  opacity: 0;
-  transition: opacity 160ms;
-  pointer-events: none;
-}
-.fdpdp__art:hover .fdpdp__zoomhint { opacity: 1; }
-.fdpdp__art--zooming .fdpdp__zoomhint { opacity: 0; }
-
-@media (prefers-reduced-motion: reduce) {
-  .fdpdp__art img,
-  .fdpdp__art--zooming img { transition: none; }
-}
-
-.fdpdp__flag {
+.pdp__flag {
   position: absolute;
   top: 0;
   left: 0;
   padding: 7px 14px;
   border-radius: 0 0 10px 0;
-  background: #16a34a;
+  background: var(--sf-clay);
   color: #fff;
   font-size: 12px;
   font-weight: 800;
@@ -440,51 +654,173 @@ function addToCart() {
   z-index: 2;
 }
 
-.fdpdp__info { padding-top: 6px; }
+.pdp__save {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 253, 249, 0.95);
+  color: var(--sf-ink);
+  box-shadow: 0 2px 10px rgba(23, 35, 28, 0.16);
+  cursor: pointer;
+  transition: color 150ms, transform 150ms;
+}
+.pdp__save:hover { color: var(--sf-clay); transform: scale(1.07); }
+.pdp__save--on { color: var(--sf-clay); }
+.pdp__save:focus-visible { outline: 2px solid var(--sf-clay); outline-offset: 2px; }
 
-.fdpdp__eyebrow {
+.pdp__zoomhint {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(23, 35, 28, 0.62);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  opacity: 0;
+  transition: opacity 160ms;
+  pointer-events: none;
+}
+.pdp__frame:hover .pdp__zoomhint { opacity: 1; }
+.pdp__frame--zooming .pdp__zoomhint { opacity: 0; }
+
+/* The strip. Arrows step the selection rather than scrolling the row: with a
+   handful of thumbnails "next photo" is what an arrow beside them means, and
+   a scroller that will not move because everything already fits reads as
+   broken. */
+.pdp__thumbs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.pdp__thumblist {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 2px;
+  overflow-x: auto;
+  list-style: none;
+  scrollbar-width: none;
+}
+.pdp__thumblist::-webkit-scrollbar { display: none; }
+
+.pdp__thumb {
+  display: block;
+  width: 74px;
+  height: 74px;
+  padding: 5px;
+  border: 1.5px solid var(--sf-rule);
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 150ms;
+}
+.pdp__thumb img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.pdp__thumb:hover { border-color: var(--sf-sand-deep); }
+.pdp__thumb--on { border-color: var(--sf-forest); }
+.pdp__thumb:focus-visible { outline: 2px solid var(--sf-clay); outline-offset: 2px; }
+
+.pdp__nav {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--sf-rule);
+  border-radius: 50%;
+  background: var(--sf-paper);
+  color: var(--sf-ink);
+  cursor: pointer;
+  transition: border-color 150ms, color 150ms;
+}
+.pdp__nav:hover:not(:disabled) { border-color: var(--sf-forest); }
+.pdp__nav:disabled { color: var(--sf-rule); cursor: not-allowed; }
+.pdp__nav:focus-visible { outline: 2px solid var(--sf-clay); outline-offset: 2px; }
+
+/* ── The buy column ───────────────────────────────────────────────────── */
+
+.pdp__info { padding-top: 4px; }
+
+.pdp__eyebrow {
   display: inline-block;
   margin-bottom: 10px;
-  color: #16a34a;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.fdpdp__eyebrow:hover { color: #1a6b3c; text-decoration: underline; text-underline-offset: 3px; }
-
-.fdpdp__title {
-  margin: 0 0 6px;
-  font-size: clamp(1.6rem, 3.2vw, 2.35rem);
+  color: var(--sf-leaf);
+  font-size: 12.5px;
   font-weight: 800;
-  line-height: 1.15;
-  letter-spacing: -0.03em;
-  color: #1a1a1a;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+.pdp__eyebrow:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+.pdp__title {
+  margin: 0 0 6px;
+  font-family: var(--sf-serif);
+  font-size: clamp(1.7rem, 3.2vw, 2.4rem);
+  font-weight: 700;
+  line-height: 1.14;
+  color: var(--sf-ink);
 }
 
-.fdpdp__unit { margin: 0 0 18px; color: #6b7280; font-size: 14.5px; }
+.pdp__unit { margin: 0 0 20px; color: var(--sf-muted); font-size: 14.5px; }
 
-.fdpdp__prices { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-.fdpdp__price { font-size: 2rem; font-weight: 800; color: #1a1a1a; letter-spacing: -0.02em; }
-.fdpdp__price--sale { color: #c2410c; }
-.fdpdp__per { font-size: 1rem; font-weight: 600; color: #6b7280; }
-.fdpdp__was { font-size: 16px; color: #9ca3af; text-decoration: line-through; }
-.fdpdp__save {
+.pdp__prices { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.pdp__price {
+  font-size: 2.15rem;
+  font-weight: 800;
+  color: var(--sf-ink);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.pdp__price--sale { color: var(--sf-clay); }
+.pdp__per { font-size: 1rem; font-weight: 600; color: var(--sf-muted); }
+.pdp__was { font-size: 16px; color: var(--sf-faint); text-decoration: line-through; }
+.pdp__savetag {
   padding: 3px 9px;
-  border: 1px solid #c2410c;
+  border: 1px solid var(--sf-clay);
   border-radius: 5px;
-  color: #c2410c;
+  color: var(--sf-clay);
   font-size: 13px;
   font-weight: 700;
 }
 
-.fdpdp__tax { margin: 8px 0 0; color: #9ca3af; font-size: 13px; }
+.pdp__tax { margin: 8px 0 0; color: var(--sf-faint); font-size: 13px; }
 
-.fdpdp__stock { margin: 16px 0 0; font-size: 14px; font-weight: 600; color: #16a34a; }
-.fdpdp__stock--low { color: #c2410c; }
-.fdpdp__stock--out { color: #9ca3af; }
+/* A pill, not a line of text: "is it actually there" is the one fact on this
+   page a shopper checks before anything else, and it has to survive a glance. */
+.pdp__stock {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 16px 0 0;
+  padding: 5px 12px 5px 10px;
+  border-radius: 999px;
+  background: var(--sf-leaf-wash);
+  color: var(--sf-leaf);
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.pdp__dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.pdp__stock--low { background: #fbeee7; color: var(--sf-clay); }
+.pdp__stock--out { background: var(--sf-sand); color: var(--sf-muted); }
 
-.fdpdp__buy {
+.pdp__buy {
   display: flex;
   align-items: stretch;
   gap: 14px;
@@ -492,114 +828,217 @@ function addToCart() {
   margin-top: 22px;
 }
 
-.fdpdp__stepper {
+.pdp__stepper {
   display: flex;
   align-items: center;
-  border: 1px solid #d7ddd9;
-  border-radius: 999px;
+  border: 1px solid var(--sf-rule);
+  border-radius: 10px;
+  background: var(--sf-paper);
   overflow: hidden;
 }
-.fdpdp__stepper button {
+.pdp__stepper button {
   width: 44px;
-  height: 52px;
+  height: 54px;
   border: none;
-  background: #fff;
-  color: #1a1a1a;
+  background: none;
+  color: var(--sf-ink);
+  font-family: inherit;
   font-size: 20px;
   font-weight: 700;
   line-height: 1;
   cursor: pointer;
 }
-.fdpdp__stepper button:hover:not(:disabled) { background: #f2f6f3; color: #1a6b3c; }
-.fdpdp__stepper button:disabled { color: #cbd5d0; cursor: not-allowed; }
-.fdpdp__qty {
+.pdp__stepper button:hover:not(:disabled) { background: var(--sf-cream); color: var(--sf-forest); }
+.pdp__stepper button:disabled { color: var(--sf-rule); cursor: not-allowed; }
+.pdp__qty {
   min-width: 34px;
   text-align: center;
   font-size: 16px;
   font-weight: 800;
-  color: #1a1a1a;
+  color: var(--sf-ink);
+  font-variant-numeric: tabular-nums;
 }
 
-.fdpdp__add {
+.pdp__add {
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   min-width: 240px;
-  height: 52px;
+  height: 54px;
   padding: 0 28px;
   border: none;
-  border-radius: 999px;
-  background: #1a6b3c;
+  border-radius: 10px;
+  background: var(--sf-forest);
   color: #fff;
   /* Longhands: `inherit` is only legal as the shorthand's entire value, so
      `font: 800 15px/1 inherit` is dropped whole and the element renders at
      the inherited 17px/400 instead. Same trap as .fd-totop in FdFooter. */
   font-family: inherit;
-  font-size: 15px;
+  font-size: 15.5px;
   font-weight: 800;
   line-height: 1;
   cursor: pointer;
   transition: background 160ms;
 }
-.fdpdp__add:hover:not(:disabled) { background: #16a34a; }
-.fdpdp__add:disabled { background: #e5e9e7; color: #9ca3af; cursor: not-allowed; }
+.pdp__add:hover:not(:disabled) { background: var(--sf-clay); }
+.pdp__add:disabled { background: var(--sf-sand); color: var(--sf-faint); cursor: not-allowed; }
+.pdp__add:focus-visible { outline: 2px solid var(--sf-clay); outline-offset: 2px; }
 
-.fdpdp__incart { margin: 12px 0 0; color: #1a6b3c; font-size: 13.5px; font-weight: 600; }
+.pdp__incart { margin: 12px 0 0; color: var(--sf-leaf); font-size: 13.5px; font-weight: 700; }
 
-.fdpdp__notes {
+/* ── The cards down the column ────────────────────────────────────────── */
+
+.pdp__trust,
+.pdp__shop,
+.pdp__facts {
+  margin-top: 20px;
+  border: 1px solid var(--sf-rule);
+  border-radius: 12px;
+  background: var(--sf-paper);
+}
+
+/* Three across on a wide column, folding as it narrows. The rules between
+   them are borders on the items, so they follow the columns rather than
+   being drawn where a column no longer is. */
+.pdp__trust {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-top: 26px;
-  padding: 18px 20px;
-  border-radius: 12px;
-  background: #f5f9f6;
+  padding: 0;
+  list-style: none;
 }
-.fdpdp__notes p { margin: 0; font-size: 14px; line-height: 1.6; color: #4b5563; }
-.fdpdp__notes p + p { margin-top: 8px; }
+.pdp__trust li {
+  display: flex;
+  gap: 11px;
+  padding: 16px 15px;
+  border-left: 1px solid var(--sf-rule);
+}
+.pdp__trust li:first-child { border-left: none; }
 
-/* The shop card, not a fact row: a shopper who has never been to this counter
-   is handing cash to a rider on its behalf, so who and where it is has to read
-   as a statement about the seller rather than as metadata next to a barcode. */
-.fdpdp__shop {
-  margin-top: 24px;
-  padding: 18px 20px;
-  border: 1px solid #e3e8e5;
-  border-radius: 12px;
+.pdp__trusticon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--sf-leaf-wash);
+  color: var(--sf-leaf);
 }
-.fdpdp__shoplabel {
-  margin: 0 0 6px;
+.pdp__trusttitle { margin: 0; font-size: 13.5px; font-weight: 800; line-height: 1.3; color: var(--sf-ink); }
+.pdp__trustnote { margin: 3px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--sf-muted); }
+
+.pdp__shop {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 18px;
+}
+
+.pdp__shopmark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--sf-forest);
+  color: var(--sf-cream);
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.pdp__shopmark img { width: 100%; height: 100%; object-fit: cover; }
+
+.pdp__shopwho { flex: 1; min-width: 0; }
+
+.pdp__shoplabel {
+  margin: 0;
   font-size: 11.5px;
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: #9ca3af;
+  color: var(--sf-faint);
 }
-.fdpdp__shopname { margin: 0; font-size: 17px; font-weight: 800; color: #1a1a1a; }
-.fdpdp__shopkind { margin: 3px 0 0; font-size: 13.5px; color: #6b7280; }
+.pdp__shopname { margin: 3px 0 0; font-size: 17.5px; font-weight: 800; color: var(--sf-ink); }
+.pdp__shopkind { margin: 2px 0 0; font-size: 13.5px; color: var(--sf-muted); }
 
-.fdpdp__shopfacts { margin: 14px 0 0; display: grid; gap: 8px; }
-.fdpdp__shopfacts > div { display: flex; gap: 10px; font-size: 13.5px; }
-.fdpdp__shopfacts dt { min-width: 96px; flex: none; color: #9ca3af; }
-.fdpdp__shopfacts dd { margin: 0; color: #4b5563; font-weight: 600; }
+.pdp__shopfacts { margin: 12px 0 0; display: grid; gap: 6px; }
+.pdp__shopfacts > div { display: flex; gap: 10px; font-size: 13px; }
+.pdp__shopfacts dt { min-width: 96px; flex: none; color: var(--sf-faint); }
+.pdp__shopfacts dd { margin: 0; min-width: 0; color: var(--sf-ink); font-weight: 600; }
 
-.fdpdp__message {
+.pdp__shopacts { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+
+.pdp__shopbtn {
   display: inline-flex;
   align-items: center;
-  margin-top: 14px;
-  padding: 8px 16px;
-  border: 1px solid #1a6b3c;
-  border-radius: 999px;
-  color: #1a6b3c;
+  gap: 6px;
+  padding: 9px 15px;
+  border: 1.5px solid var(--sf-forest);
+  border-radius: 8px;
+  color: var(--sf-forest);
   font-size: 13.5px;
   font-weight: 700;
   text-decoration: none;
+  white-space: nowrap;
 }
-.fdpdp__message:hover { background: #1a6b3c; color: #fff; }
+.pdp__shopbtn:hover { background: var(--sf-forest); color: var(--sf-paper); }
 
-.fdpdp__facts { margin: 24px 0 0; display: grid; gap: 10px; }
-.fdpdp__facts > div { display: flex; gap: 10px; font-size: 13.5px; }
-.fdpdp__facts dt { min-width: 96px; color: #9ca3af; }
-.fdpdp__facts dd { margin: 0; color: #4b5563; font-weight: 600; }
+.pdp__shoplink {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--sf-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.pdp__shoplink:hover { color: var(--sf-clay); text-decoration: underline; text-underline-offset: 3px; }
+
+.pdp__facts { padding: 18px; }
+.pdp__factstitle {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--sf-ink);
+}
+.pdp__facts dl { margin: 0; display: grid; gap: 9px; }
+.pdp__facts dl > div { display: flex; gap: 14px; font-size: 13.5px; }
+.pdp__facts dt { min-width: 132px; flex: none; color: var(--sf-muted); }
+.pdp__facts dd { margin: 0; min-width: 0; color: var(--sf-ink); font-weight: 600; overflow-wrap: anywhere; }
+
+/* ── Narrower screens ─────────────────────────────────────────────────── */
+
+@media (max-width: 1080px) {
+  .pdp__trust { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* The third starts a new row, so it loses the rule to its left and takes
+     one above instead. */
+  .pdp__trust li:nth-child(3) { border-left: none; border-top: 1px solid var(--sf-rule); }
+}
 
 @media (max-width: 900px) {
-  .fdpdp__body { grid-template-columns: 1fr; gap: 28px; margin-bottom: 48px; }
-  .fdpdp__art { max-width: 460px; }
-  .fdpdp__add { min-width: 0; }
+  .pdp__body { grid-template-columns: minmax(0, 1fr); gap: 28px; margin-bottom: 48px; }
+  /* Sticky only pays when there is a second column to stay level with. */
+  .pdp__gallery { position: static; max-width: 460px; }
+  .pdp__add { min-width: 0; }
+}
+
+@media (max-width: 620px) {
+  .pdp__trust { grid-template-columns: minmax(0, 1fr); }
+  .pdp__trust li { border-left: none; border-top: 1px solid var(--sf-rule); }
+  .pdp__trust li:first-child { border-top: none; }
+  .pdp__shop { flex-wrap: wrap; }
+  .pdp__shopacts { flex-direction: row; align-items: center; width: 100%; }
+  .pdp__facts dt { min-width: 104px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pdp__frame img,
+  .pdp__frame--zooming img,
+  .pdp__save:hover { transition: none; transform: none; }
 }
 </style>

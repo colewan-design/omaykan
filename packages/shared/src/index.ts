@@ -104,6 +104,17 @@ export interface Product {
   taxRate: number
   kind: ProductKind
   imageUrl?: string
+  /**
+   * Further photographs of the same product, after `imageUrl`. The detail
+   * page's gallery is `[imageUrl, ...photoUrls]`; everywhere else — cards,
+   * order lines, the shop directory — still reads `imageUrl` alone and needs
+   * to know nothing about galleries.
+   */
+  photoUrls?: string[]
+  /** The name on the pack, which is rarely the name the merchant typed. */
+  brand?: string
+  /** "Can", "Sachet", "Bottle" — free text, as the merchant filed it. */
+  packagingType?: string
   unitLabel?: string
   outOfStock?: boolean
   stockQty?: number

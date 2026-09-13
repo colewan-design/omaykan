@@ -361,6 +361,12 @@ class SyncController extends Controller
 
     private function applyProductEvent(StoreContext $context, string $entityId, array $payload): void
     {
+        // Read first: an update that simply omits a field must not blank it.
+        // Older tills push a payload with no gallery, no brand and no
+        // packaging in it at all, and their next price change should not strip
+        // the photographs off a product someone else set up.
+        $existing = Product::query()->whereKey($entityId)->first();
+
         $product = Product::query()->updateOrCreate(
             ['id' => $entityId],
             [
@@ -375,6 +381,24 @@ class SyncController extends Controller
                 'price_cents' => $payload['priceCents'] ?? 0,
                 'track_inventory' => $payload['trackInventory'] ?? true,
                 'is_active' => $payload['isActive'] ?? true,
+                // How a product looks on a storefront, which until now got no
+                // further than the till it was typed into. None of these were
+                // written here: a merchant who photographed a product, marked
+                // it down, or labelled it "per kg" saw all three on their own
+                // screen and none of them online, silently, because the row
+                // saved and synced exactly as expected. The gallery this
+                // release adds would have gone the same way.
+                'image_url' => $this->keptField($payload, 'imageUrl', $existing?->image_url),
+                'photo_urls' => $this->keptGallery($payload, $existing?->photo_urls),
+                'brand' => $this->keptField($payload, 'brand', $existing?->brand),
+                'packaging_type' => $this->keptField($payload, 'packagingType', $existing?->packaging_type),
+                'unit_label' => $this->keptField($payload, 'unitLabel', $existing?->unit_label),
+                'compare_at_price_cents' => array_key_exists('compareAtPriceCents', $payload)
+                    ? $payload['compareAtPriceCents']
+                    : $existing?->compare_at_price_cents,
+                'low_stock_threshold' => array_key_exists('lowStockThreshold', $payload)
+                    ? $payload['lowStockThreshold']
+                    : $existing?->low_stock_threshold,
                 // Nothing pairs any more, so there is no terminal to credit.
                 // The column stays for the rows that have one.
                 'created_by_device_id' => null,
@@ -406,6 +430,53 @@ class SyncController extends Controller
             $inventory->deleted_at = null;
             $inventory->save();
         }
+    }
+
+    /**
+     * A presentation field the client may simply not have sent.
+     *
+     * An absent key is "no opinion" and keeps what is stored; a present one
+     * wins, including an explicit empty string, which is a merchant clearing
+     * the field and is stored as null rather than as "".
+     */
+    private function keptField(array $payload, string $key, ?string $stored): ?string
+    {
+        if (! array_key_exists($key, $payload)) {
+            return $stored;
+        }
+
+        $value = is_string($payload[$key]) ? trim($payload[$key]) : null;
+
+        return $value === '' ? null : $value;
+    }
+
+    /**
+     * The extra photographs, after the primary one in image_url.
+     *
+     * Strings only, blanks dropped, and the merchant's order kept — this is
+     * the whole of what the gallery's ordering means. An absent key keeps
+     * whatever is stored, so a till that predates galleries cannot strip one.
+     *
+     * @param  array<string, mixed>  $payload
+     * @param  array<int, string>|null  $stored
+     * @return array<int, string>|null
+     */
+    private function keptGallery(array $payload, ?array $stored): ?array
+    {
+        if (! array_key_exists('photoUrls', $payload)) {
+            return $stored;
+        }
+
+        if (! is_array($payload['photoUrls'])) {
+            return null;
+        }
+
+        $urls = array_values(array_filter(
+            array_map(fn ($url) => is_string($url) ? trim($url) : '', $payload['photoUrls']),
+            fn (string $url) => $url !== '',
+        ));
+
+        return $urls === [] ? null : $urls;
     }
 
     /**

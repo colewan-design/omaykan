@@ -1598,6 +1598,16 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         stockQty: product.stockQty ?? null,
         lowStockThreshold: product.lowStockThreshold ?? null,
         isActive: !product.outOfStock,
+        // How the product reads on a storefront. These were absent from the
+        // payload entirely, so a photo, a unit label or a markdown set at the
+        // counter never left the till — the row saved, synced and listed in
+        // the POS exactly as expected, and the storefront showed none of it.
+        imageUrl: product.imageUrl ?? null,
+        photoUrls: product.photoUrls ?? [],
+        brand: product.brand ?? null,
+        packagingType: product.packagingType ?? null,
+        unitLabel: product.unitLabel ?? null,
+        compareAtPriceCents: product.compareAtPriceCents ?? null,
       },
     })
   }

@@ -187,6 +187,42 @@ sudo -u www-data env HOME=/tmp php artisan ...
 
 Directory swaps are reversible.
 
+**Updated 2026-09-16, 15:05 UTC.** Frontend and backend: shop subdomains
+(`ccf0abb`). No migration — production already had all 30. nginx gained the
+`omaykan-shops` site and lost the `baguioonlinemarket.salidumay.com` alias
+earlier the same day (§1, §6a); neither is undone by a directory swap.
+
+| | Roll back to | Holds |
+|---|---|---|
+| Frontend | `web.bak-20260916-230147-shop-subdomains` | the 2026-09-13 21:26 build, no `shop.html` |
+| Backend | `backend.bak-20260916-150348-shop-subdomains` | the 2026-09-13 09:26 release, no slug rules |
+| Database | `/root/db-backups/omaykan-predeploy-20260916-150348-shop-subdomains.sql.gz` | taken before the swap; nothing changed it |
+
+(The frontend label uses the deploying laptop's clock, UTC+8; the backend's
+uses the server's, UTC. They are the same deploy.)
+
+**The first backend swap served 500s for about a minute.** The live `.env`
+was copied into the release with a plain `cp` as root, which left it
+`root:root 0640`. PHP-FPM runs as `www-data`, could not read it, and Laravel
+fell back to its defaults — SQLite at `database/database.sqlite`, which does
+not exist — so every request failed on the cache table. `migrate --force` ran
+against that same missing file and touched nothing. The release was swapped
+back out, the file chowned to `www-data:www-data`, a `tinker` check confirmed
+it read `pgsql`/`omaykan` before the second swap, and that one went in with an
+automatic swap-back if any artisan step or `/api/stores` failed.
+
+**Copy the `.env` with `cp -p`, or chown it, and check the release reads it
+before swapping:**
+
+```bash
+sudo -u www-data env HOME=/tmp php artisan tinker --execute='echo config("database.default");'   # expect pgsql
+```
+
+Also left out of this release on purpose: order push notifications
+(`OrderPushToken`, `PushSender`, `NotifyCustomerOfRider`, migration
+`2026_09_16_000100_create_order_push_tokens_table`), which were being written
+in the same working tree at the time and are uncommitted.
+
 **Updated 2026-09-14, 13:28.** nginx-only. `/app.html` now 301s to `/app`, so
 the staff app has one public URL instead of two. **No directory swap, no
 build** — the frontend and backend releases below are still what is running,
@@ -632,12 +668,11 @@ thing standing between the next developer and a confusing failure.
 
 ## 6a. Shop subdomains — `<slug>.omaykan.com`
 
-**Status 2026-09-16, 14:36 UTC: server set up, frontend and backend not yet
-deployed.** Every shop's shareable page is its own subdomain. The wildcard `*`
-A record points at this box, the certificate and server block below are live,
-and `https://<slug>.omaykan.com/` answers 404 until a build containing
-`shop.html` is deployed. `/api/` already works there, and every other path
-302s to the main site. Pre-edit nginx: `/root/nginx-backup-20260916-143527-shop-subdomains.tgz`;
+**Live since 2026-09-16, 15:05 UTC.** Every shop's shareable page is its own
+subdomain. The wildcard `*` A record points at this box, and the certificate,
+server block and `shop.html` build below are all in place. An unknown slug
+answers 200 with the page's own "We couldn't find that shop"; `/api/` works
+on every subdomain, and every other path 302s to the main site. Pre-edit nginx: `/root/nginx-backup-20260916-143527-shop-subdomains.tgz`;
 to undo, remove the `sites-enabled/omaykan-shops` symlink and reload.
 
 **How it works.** A subdomain serves `shop.html` at `/`, which reads the shop
@@ -701,8 +736,9 @@ server {
 }
 ```
 
-**3. Deploy** with `VITE_SHOP_ROOT_DOMAIN=omaykan.com` in the build environment,
-then check `https://<slug>.omaykan.com/` opens that shop.
+**3. Build** with `VITE_SHOP_ROOT_DOMAIN=omaykan.com` in `.env.production`, and
+after any frontend deploy check a shop subdomain's `<title>` names the shop
+once the page has loaded — the static HTML's own title is just "Shop".
 
 ---
 

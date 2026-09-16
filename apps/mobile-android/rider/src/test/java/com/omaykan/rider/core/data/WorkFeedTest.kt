@@ -16,6 +16,8 @@ import com.omaykan.rider.core.network.dto.PasswordChangeRequestDto
 import com.omaykan.rider.core.network.dto.PositionAckDto
 import com.omaykan.rider.core.network.dto.PositionRequestDto
 import com.omaykan.rider.core.network.dto.ProfileUpdateRequestDto
+import com.omaykan.rider.core.network.dto.RatingsDto
+import com.omaykan.rider.core.network.dto.SupportDto
 import com.omaykan.rider.core.network.dto.ReleasedDto
 import com.omaykan.rider.core.network.dto.RiderEnvelopeDto
 import com.omaykan.rider.core.network.dto.RiderSessionDto
@@ -111,9 +113,23 @@ class WorkFeedTest {
             passwordConfirmation: RequestBody,
             licenseNumber: RequestBody,
             plateNumber: RequestBody,
+            vehicleType: RequestBody,
+            vehicleMake: RequestBody,
+            vehicleModel: RequestBody,
+            vehicleColor: RequestBody,
             licenseImage: MultipartBody.Part,
             plateImage: MultipartBody.Part,
         ): RiderSessionDto = throw UnsupportedOperationException()
+
+        override suspend fun uploadAvatar(photo: MultipartBody.Part): RiderEnvelopeDto =
+            throw UnsupportedOperationException()
+
+        override suspend fun deleteAvatar(): RiderEnvelopeDto =
+            throw UnsupportedOperationException()
+
+        override suspend fun ratings(): RatingsDto = throw UnsupportedOperationException()
+
+        override suspend fun support(): SupportDto = throw UnsupportedOperationException()
 
         override suspend fun updateProfile(request: ProfileUpdateRequestDto): RiderEnvelopeDto =
             throw UnsupportedOperationException()

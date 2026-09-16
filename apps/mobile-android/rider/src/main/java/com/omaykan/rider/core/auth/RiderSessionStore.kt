@@ -5,7 +5,10 @@ import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.omaykan.rider.core.model.RiderProfile
+import com.omaykan.rider.core.model.RatingSummary
 import com.omaykan.rider.core.model.RiderStatus
+import com.omaykan.rider.core.model.Vehicle
+import com.omaykan.rider.core.model.VehicleType
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -71,6 +74,19 @@ class RiderSessionStore @Inject constructor(
         val phone: String = "",
         val licenseNumber: String = "",
         val plateNumber: String = "",
+        /*
+         * The profile additions of 2026-09. Every one defaulted, which is what
+         * lets a cache written by the previous build decode into this class
+         * rather than throw and sign a rider out on upgrade.
+         */
+        val photoUrl: String? = null,
+        val vehicleType: String = VehicleType.Motorcycle.wire,
+        val vehicleMake: String? = null,
+        val vehicleModel: String? = null,
+        val vehicleColor: String? = null,
+        val vehicleLabel: String = "",
+        val ratingAverage: Double? = null,
+        val ratingCount: Int = 0,
         val status: String = RiderStatus.Pending.wire,
         val reviewNote: String? = null,
         val reviewedAt: String? = null,
@@ -169,6 +185,20 @@ class RiderSessionStore @Inject constructor(
             phone = stored.phone,
             licenseNumber = stored.licenseNumber,
             plateNumber = stored.plateNumber,
+            photoUrl = stored.photoUrl,
+            vehicle = Vehicle(
+                type = VehicleType.fromWire(stored.vehicleType),
+                make = stored.vehicleMake,
+                model = stored.vehicleModel,
+                color = stored.vehicleColor,
+                label = stored.vehicleLabel.takeIf { it.isNotBlank() }
+                    ?: VehicleType.fromWire(stored.vehicleType).label,
+                plateNumber = stored.plateNumber,
+            ),
+            rating = RatingSummary(
+                average = if (stored.ratingCount <= 0) null else stored.ratingAverage,
+                count = stored.ratingCount,
+            ),
             status = RiderStatus.fromWire(stored.status),
             reviewNote = stored.reviewNote,
             reviewedAt = stored.reviewedAt,
@@ -183,6 +213,14 @@ class RiderSessionStore @Inject constructor(
         phone = phone,
         licenseNumber = licenseNumber,
         plateNumber = plateNumber,
+        photoUrl = photoUrl,
+        vehicleType = vehicle.type.wire,
+        vehicleMake = vehicle.make,
+        vehicleModel = vehicle.model,
+        vehicleColor = vehicle.color,
+        vehicleLabel = vehicle.label,
+        ratingAverage = rating.average,
+        ratingCount = rating.count,
         status = status.wire,
         reviewNote = reviewNote,
         reviewedAt = reviewedAt,

@@ -3,6 +3,7 @@ package com.omaykan.seller.core.designsystem
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,17 +12,32 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -29,27 +45,33 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 /*
  * The pieces every screen in this app is assembled from.
  *
  * They exist so the redesign is one decision made once rather than the same
- * decision made slightly differently on four screens. A card's corner, the
+ * decision made slightly differently on eight screens. A card's corner, the
  * weight of a shadow, how a status is coloured — get those wrong in one place
  * here and the whole app is wrong together, which is far easier to see and to
- * fix than three screens quietly drifting apart.
+ * fix than screens quietly drifting apart.
  */
 
 /**
- * The surface everything sits on: white, softly rounded, barely lifted.
+ * The white, softly lifted card the reference sets everything on.
  *
- * The shadow is deliberately small. This is a list of cards on a tinted ground
- * — the separation is already done by the colour change, and a heavy shadow
- * under every row turns a day's orders into a pile of receipts.
+ * A shadow rather than a border: on cream, a hairline reads as a box drawn
+ * around the content, and a shadow reads as the content resting on the page.
+ * Kept small, because a day's orders under heavy shadows is a pile of receipts.
  */
 @Composable
 fun SoftCard(
@@ -59,7 +81,7 @@ fun SoftCard(
 ) {
     val base = modifier
         .shadow(
-            elevation = 8.dp,
+            elevation = 3.dp,
             shape = CardShape,
             clip = false,
             ambientColor = SellerTheme.colors.shadow,
@@ -69,89 +91,6 @@ fun SoftCard(
         .background(MaterialTheme.colorScheme.surface)
 
     Column(if (onClick != null) base.clickable(onClick = onClick) else base, content = content)
-}
-
-/**
- * One figure, in a tile.
- *
- * Label above, number below, unit trailing the number in small grey. The unit
- * rides at the baseline of the value rather than joining it, because "37" is
- * the thing being read and "orders" is only there to say what 37 is.
- */
-@Composable
-fun StatTile(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    unit: String? = null,
-    caption: String? = null,
-    valueColor: Color = MaterialTheme.colorScheme.onSurface,
-    badge: String? = null,
-    badgeColor: Color = MaterialTheme.colorScheme.primary,
-) {
-    Column(
-        modifier
-            .shadow(
-                elevation = 10.dp,
-                shape = TileShape,
-                clip = false,
-                ambientColor = SellerTheme.colors.shadow,
-                spotColor = SellerTheme.colors.shadow,
-            )
-            .clip(TileShape)
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodySmall,
-                color = SellerTheme.colors.textSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-            badge?.let {
-                Spacer(Modifier.width(6.dp))
-                Pill(text = it, tint = badgeColor, dense = true)
-            }
-        }
-
-        Row(
-            Modifier.padding(top = 6.dp),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            Text(
-                text = value,
-                style = MaterialTheme.typography.headlineMedium,
-                color = valueColor,
-                maxLines = 1,
-                // A six-figure day is wider than half a phone. Ellipsised
-                // rather than clipped, so a merchant can see that the number
-                // has been cut rather than misread a shortened one.
-                overflow = TextOverflow.Ellipsis,
-            )
-            unit?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = SellerTheme.colors.textTertiary,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 3.dp),
-                )
-            }
-        }
-
-        caption?.let {
-            Text(
-                text = it,
-                style = MaterialTheme.typography.bodySmall,
-                color = SellerTheme.colors.textTertiary,
-                modifier = Modifier.padding(top = 6.dp),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
 }
 
 /**
@@ -200,11 +139,7 @@ fun Pill(
 }
 
 /**
- * An icon in a circle, for the two or three controls that live in a header.
- *
- * A bare icon on the dark header would be a 24dp target floating in a lot of
- * green; the circle is what makes it look pressable and gives the thumb an
- * edge to aim at.
+ * An icon in a circle, for the controls that live in a header or on a card.
  */
 @Composable
 fun CircleIconButton(
@@ -234,20 +169,20 @@ fun CircleIconButton(
 }
 
 /**
- * A round ground with one or two letters in it.
+ * A round ground with a letter in it.
  *
- * Stands in for the photograph the reference designs put here. This app shows
- * no pictures — there is nothing to photograph on the seller's side of an
- * order — so the shop's own initial does the job of being the thing your eye
- * lands on first.
+ * Stands in for the portrait the reference puts beside a shop or a customer.
+ * The app has no photograph of either — the platform stores none of customers,
+ * and a shop without an uploaded photo has none of itself — and a stock face
+ * in its place would be a stranger on every order.
  */
 @Composable
 fun InitialAvatar(
     text: String,
     modifier: Modifier = Modifier,
     size: Int = 44,
-    background: Color = MaterialTheme.colorScheme.primary,
-    foreground: Color = MaterialTheme.colorScheme.onPrimary,
+    background: Color = SellerTheme.colors.accentSoft,
+    foreground: Color = SellerTheme.colors.onAccentSoft,
 ) {
     Box(
         modifier
@@ -259,74 +194,69 @@ fun InitialAvatar(
         Text(
             text = text.trim().take(1).uppercase().ifBlank { "•" },
             style = MaterialTheme.typography.titleLarge,
+            fontSize = (size * 0.42f).sp,
             color = foreground,
         )
     }
 }
 
-/** One tab: what it says, and the number of things waiting behind it. */
-data class TabItem(val label: String, val badge: Int? = null)
+/** One tab: what it says, and how many things are behind it. */
+data class TabItem(val label: String, val count: Int? = null)
 
 /**
- * Two tabs, underlined.
+ * A row of filter chips — "All (28)", "Preparing (5)" — the reference's way of
+ * cutting one list several ways.
  *
- * Underline rather than the chips this screen used to carry, because chips
- * read as filters you can turn on and off in combination and these are two
- * views of one list. The bar under the selected one is the whole affordance,
- * and it moves the moment you tap — which is what tells a merchant the list
- * below has changed rather than merely reloaded.
+ * The count is part of the label rather than a badge beside it: these are
+ * read as a sentence ("five preparing"), not scanned for a red dot. It scrolls
+ * sideways rather than wrapping, so a narrow phone keeps the list below it
+ * where the thumb expects it.
  */
 @Composable
-fun SegmentedTabs(
+fun ChipTabs(
     tabs: List<TabItem>,
     selected: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * Share the row out evenly instead of scrolling — the products screen's
+     * three filters, which the reference draws as one full-width band.
+     * Only for a set short enough to fit.
+     */
+    equalWidth: Boolean = false,
+    /**
+     * Fill the chosen chip solid terracotta with white words, as the
+     * reference's inbox does, instead of the tinted ground the list filters
+     * use. For a two- or three-way switch where "which one am I on" is the
+     * whole point.
+     */
+    filledSelected: Boolean = false,
 ) {
-    Row(modifier.fillMaxWidth()) {
+    Row(
+        if (equalWidth) modifier.fillMaxWidth() else modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         tabs.forEachIndexed { index, tab ->
             val active = index == selected
-            Column(
-                Modifier
-                    .weight(1f)
-                    .clip(MaterialTheme.shapes.small)
-                    .clickable { onSelect(index) }
-                    .padding(vertical = 10.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+            val tint = MaterialTheme.colorScheme.primary
+            val activeGround = if (filledSelected) tint else tint.copy(alpha = 0.12f)
+            val activeText = if (filledSelected) MaterialTheme.colorScheme.onPrimary else tint
+            Box(
+                (if (equalWidth) Modifier.weight(1f) else Modifier)
+                    .clip(PillShape)
+                    .background(if (active) activeGround else MaterialTheme.colorScheme.surface)
+                    .border(1.dp, if (active) tint else SellerTheme.colors.separator, PillShape)
+                    .selectable(selected = active, role = Role.Tab) { onSelect(index) }
+                    .padding(horizontal = if (equalWidth) 6.dp else 14.dp, vertical = 7.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = tab.label,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-                        color = if (active) {
-                            MaterialTheme.colorScheme.onSurface
-                        } else {
-                            SellerTheme.colors.textTertiary
-                        },
-                    )
-                    // A count only where there is something to count. A "0"
-                    // beside a tab is a badge that trains people to ignore
-                    // badges.
-                    tab.badge?.takeIf { it > 0 }?.let {
-                        Spacer(Modifier.width(6.dp))
-                        Pill(
-                            text = it.toString(),
-                            tint = MaterialTheme.colorScheme.primary,
-                            solid = active,
-                            dense = true,
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-                Box(
-                    Modifier
-                        .width(if (active) 28.dp else 0.dp)
-                        .height(3.dp)
-                        .clip(PillShape)
-                        .background(MaterialTheme.colorScheme.primary),
+                Text(
+                    text = tab.count?.let { "${tab.label} ($it)" } ?: tab.label,
+                    style = if (equalWidth) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (active) activeText else SellerTheme.colors.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
@@ -336,11 +266,8 @@ fun SegmentedTabs(
 /**
  * How far along something is, as a row of bars.
  *
- * The reference designs draw this as a vertical timeline with a dot per step,
- * which is right for a customer watching one order and wrong for a shop
- * scanning twenty cards: it costs four lines of height each. Flattened to a
- * rail, it says the same thing — where we are, how much is left — in the space
- * of one.
+ * Flattened from the vertical timeline a customer sees, because a shop scans
+ * twenty of these and a four-line timeline per card would cost the list.
  */
 @Composable
 fun StageTrack(
@@ -368,12 +295,11 @@ fun StageTrack(
 }
 
 /**
- * The button that does the thing.
+ * The terracotta button — the thing a screen wants pressed.
  *
- * A capsule, filled with the brand green, and it holds its own busy state:
- * every one of these in this app fires a network write, and a button that
- * looks identical while a request is in flight is a button that gets pressed
- * twice.
+ * It holds its own busy state: every one of these in this app fires a network
+ * write, and a button that looks identical while a request is in flight is a
+ * button that gets pressed twice.
  */
 @Composable
 fun PrimaryButton(
@@ -382,7 +308,7 @@ fun PrimaryButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     busy: Boolean = false,
-    /** 50 on a sheet, 44 in a row of card actions beside a [SecondaryButton]. */
+    /** 50 on a form or a sheet, 44 in a row of card actions. */
     height: Int = 50,
     container: Color = MaterialTheme.colorScheme.primary,
     content: Color = MaterialTheme.colorScheme.onPrimary,
@@ -392,10 +318,12 @@ fun PrimaryButton(
         onClick = onClick,
         enabled = enabled && !busy,
         modifier = modifier.height(height.dp),
-        shape = PillShape,
+        shape = ButtonShape,
         colors = ButtonDefaults.buttonColors(
             containerColor = container,
             contentColor = content,
+            disabledContainerColor = container.copy(alpha = 0.4f),
+            disabledContentColor = content.copy(alpha = 0.85f),
         ),
         contentPadding = PaddingValues(horizontal = 20.dp),
     ) {
@@ -409,6 +337,7 @@ fun PrimaryButton(
             Text(
                 text = label,
                 style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -418,11 +347,11 @@ fun PrimaryButton(
 }
 
 /**
- * The same capsule, hollow.
+ * The same button, hollow.
  *
- * For everything beside the main action on a card. Bordered rather than
- * tinted, so that a card with a green button and two of these has exactly one
- * place your eye is pulled to.
+ * For everything beside the main action. Bordered rather than tinted, so a
+ * card with one terracotta button and two of these has exactly one place your
+ * eye is pulled to.
  */
 @Composable
 fun SecondaryButton(
@@ -431,17 +360,19 @@ fun SecondaryButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     leading: ImageVector? = null,
+    height: Int = 44,
 ) {
     Row(
         modifier
-            .height(44.dp)
-            .clip(PillShape)
-            .border(1.dp, SellerTheme.colors.separator, PillShape)
+            .height(height.dp)
+            .clip(ButtonShape)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, SellerTheme.colors.separator, ButtonShape)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         // Centred, so the same button works both hugging its label in a row of
-        // card actions and stretched to the full width of a sheet.
+        // card actions and stretched to the full width of a form.
         horizontalArrangement = Arrangement.Center,
     ) {
         val foreground = if (enabled) {
@@ -480,4 +411,394 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier) {
         color = SellerTheme.colors.textTertiary,
         modifier = modifier,
     )
+}
+
+/** "Top Products ········ See All ›". */
+@Composable
+fun SectionHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
+    Row(
+        modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+            color = SellerTheme.colors.ink,
+            modifier = Modifier.weight(1f),
+        )
+        if (actionLabel != null && onAction != null) {
+            Row(
+                Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable(onClick = onAction)
+                    .padding(start = 6.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = actionLabel,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+    }
+}
+
+/** The forest switch: "on" is the frame colour, never the button colour. */
+@Composable
+fun SellerSwitch(
+    checked: Boolean,
+    onCheckedChange: ((Boolean) -> Unit)?,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val colors = SellerTheme.colors
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        enabled = enabled,
+        modifier = modifier,
+        colors = SwitchDefaults.colors(
+            checkedThumbColor = Color.White,
+            checkedTrackColor = colors.canopy,
+            checkedBorderColor = colors.canopy,
+            uncheckedThumbColor = colors.textTertiary,
+            uncheckedTrackColor = colors.fill,
+            uncheckedBorderColor = colors.separator,
+        ),
+    )
+}
+
+/**
+ * One line of a settings-style list: an icon, what it is, a line under it,
+ * and either a chevron (it opens something) or whatever [trailing] draws.
+ */
+@Composable
+fun SettingsRow(
+    icon: ImageVector,
+    title: String,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    onClick: (() -> Unit)? = null,
+    tint: Color = SellerTheme.colors.ink,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 16.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+        Column(
+            Modifier
+                .weight(1f)
+                .padding(start = 14.dp, end = 8.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = if (tint == SellerTheme.colors.ink) MaterialTheme.colorScheme.onSurface else tint,
+            )
+            subtitle?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SellerTheme.colors.textTertiary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        when {
+            trailing != null -> trailing()
+            onClick != null -> Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = SellerTheme.colors.textTertiary,
+            )
+        }
+    }
+}
+
+/**
+ * A shortcut on the home screen: a terracotta square with an icon in it, and
+ * the name of where it goes underneath.
+ */
+@Composable
+fun QuickTile(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    count: Int = 0,
+) {
+    SoftCard(modifier, onClick = onClick) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box {
+                Box(
+                    Modifier
+                        .size(42.dp)
+                        .clip(RoundedCornerShape(11.dp))
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+                if (count > 0) {
+                    CountBadge(
+                        count,
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(start = 30.dp),
+                        ground = SellerTheme.colors.canopy,
+                    )
+                }
+            }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 8.dp, start = 4.dp, end = 4.dp),
+            )
+        }
+    }
+}
+
+/** A small round count — unread messages, waiting orders. "99+" past that. */
+@Composable
+fun CountBadge(
+    count: Int,
+    modifier: Modifier = Modifier,
+    ground: Color = MaterialTheme.colorScheme.primary,
+) {
+    Box(
+        modifier
+            .defaultMinSize(minWidth = 18.dp, minHeight = 18.dp)
+            .clip(PillShape)
+            .background(ground)
+            .padding(horizontal = 5.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = if (count > 99) "99+" else count.toString(),
+            color = Color.White,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+        )
+    }
+}
+
+/**
+ * A labelled text field, the way the product form is laid out: the label
+ * above the box rather than floating inside it, and a terracotta star when
+ * the field is required.
+ */
+@Composable
+fun FormField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    required: Boolean = false,
+    placeholder: String? = null,
+    enabled: Boolean = true,
+    error: String? = null,
+    supporting: String? = null,
+    singleLine: Boolean = true,
+    minLines: Int = 1,
+    prefix: String? = null,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+) {
+    Column(modifier) {
+        Row {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            if (required) {
+                Text(
+                    text = " *",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp),
+            enabled = enabled,
+            singleLine = singleLine,
+            minLines = minLines,
+            isError = error != null,
+            placeholder = placeholder?.let { { Text(it) } },
+            prefix = prefix?.let { { Text(it) } },
+            supportingText = (error ?: supporting)?.let { { Text(it) } },
+            shape = ButtonShape,
+            keyboardOptions = keyboardOptions,
+            colors = OutlinedTextFieldDefaults.colors(
+                unfocusedBorderColor = SellerTheme.colors.separator,
+                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                disabledContainerColor = SellerTheme.colors.fill,
+            ),
+        )
+    }
+}
+
+/** The bordered search box at the top of a list. */
+@Composable
+fun SearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String = "Search",
+) {
+    val keyboard = LocalSoftwareKeyboardController.current
+
+    Row(
+        modifier
+            .fillMaxWidth()
+            .height(46.dp)
+            .clip(ButtonShape)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, SellerTheme.colors.separator, ButtonShape)
+            .padding(start = 14.dp, end = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Outlined.Search,
+            contentDescription = null,
+            tint = SellerTheme.colors.textSecondary,
+            modifier = Modifier.size(22.dp),
+        )
+        Box(
+            Modifier
+                .weight(1f)
+                .padding(start = 12.dp),
+        ) {
+            if (query.isEmpty()) {
+                Text(
+                    text = placeholder,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = SellerTheme.colors.textTertiary,
+                    maxLines = 1,
+                )
+            }
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (query.isNotEmpty()) {
+            Icon(
+                Icons.Filled.Close,
+                contentDescription = "Clear search",
+                tint = SellerTheme.colors.textSecondary,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable { onQueryChange("") }
+                    .padding(8.dp)
+                    .size(18.dp),
+            )
+        }
+    }
+}
+
+/**
+ * A screen with nothing to show yet, said as a picture rather than a
+ * paragraph: a peach circle, an icon, one line saying what is true and one
+ * saying what will change it.
+ *
+ * A grey sentence alone in the middle of a screen reads as something that
+ * failed to load; most of the empty states here have not failed.
+ */
+@Composable
+fun ScreenMessage(
+    icon: ImageVector,
+    title: String,
+    body: String,
+    modifier: Modifier = Modifier,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
+    Column(
+        modifier.padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier
+                .size(84.dp)
+                .clip(CircleShape)
+                .background(SellerTheme.colors.accentSoft),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier.size(36.dp),
+                tint = SellerTheme.colors.onAccentSoft,
+            )
+        }
+
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onBackground,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 20.dp),
+        )
+
+        Text(
+            text = body,
+            style = MaterialTheme.typography.bodyMedium,
+            color = SellerTheme.colors.textTertiary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+
+        if (actionLabel != null && onAction != null) {
+            SecondaryButton(
+                label = actionLabel,
+                onClick = onAction,
+                modifier = Modifier.padding(top = 20.dp),
+            )
+        }
+    }
 }

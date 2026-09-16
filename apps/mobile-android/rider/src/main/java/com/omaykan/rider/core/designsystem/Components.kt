@@ -1,5 +1,6 @@
 package com.omaykan.rider.core.designsystem
 
+import android.app.Activity
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -8,19 +9,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -31,36 +29,39 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 
 /*
  * The kit every screen in this app is built out of.
  *
- * It exists because the four screens kept re-deciding the same six questions —
- * how round is a card, how tall is a button, what a small tinted badge looks
- * like — and answering them slightly differently each time. A rider moves
- * between all four in a minute; a card that changes shape between the board and
- * the status screen is the difference between one app and three.
+ * It exists because the screens kept re-deciding the same six questions — how
+ * round is a card, how tall is a button, what a small tinted badge looks like —
+ * and answering them slightly differently each time. A rider moves between all
+ * of them in a minute; a card that changes shape between the board and the
+ * status screen is the difference between one app and three.
  *
  * Nothing here knows about deliveries. Anything that does belongs in the
  * feature package that owns it.
  */
 
 /** The standard press target: tall enough for a thumb, in a hurry, outdoors. */
-private val ButtonHeight = 54.dp
+private val ButtonHeight = 52.dp
 
 /**
- * The tile everything sits on.
+ * The tile everything sits on: white on the cream page.
  *
  * A flat surface with a hairline rather than a shadow. Elevation in Material is
  * drawn as a tonal shift, which on this app's near-black dark ground turns a
@@ -72,12 +73,12 @@ private val ButtonHeight = 54.dp
 fun RiderCard(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.surface,
-    padding: Dp = 18.dp,
+    padding: Dp = 16.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
+        shape = CardShape,
         color = color,
         border = BorderStroke(1.dp, RiderTheme.colors.hairline),
     ) {
@@ -86,11 +87,11 @@ fun RiderCard(
 }
 
 /**
- * The one button on a screen that a rider is meant to press.
+ * The one button a screen wants pressed. Terracotta, full width, 52dp.
  *
- * Full width, capsule, and it carries its own spinner: every action in this app
- * is a network write against a shared board, and a button that looks identical
- * while the request is in the air is a button that gets pressed twice.
+ * [container] can be handed the green accent for the second-rank "open this"
+ * buttons the reference draws in forest — View order details — so that
+ * terracotta stays reserved for the step that actually moves a job on.
  */
 @Composable
 fun PrimaryButton(
@@ -99,8 +100,9 @@ fun PrimaryButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     busy: Boolean = false,
-    container: Color = MaterialTheme.colorScheme.primary,
-    content: Color = MaterialTheme.colorScheme.onPrimary,
+    container: Color = RiderTheme.colors.cta,
+    content: Color = RiderTheme.colors.onCta,
+    leadingIcon: ImageVector? = null,
 ) {
     Button(
         onClick = onClick,
@@ -108,7 +110,7 @@ fun PrimaryButton(
         modifier = modifier
             .fillMaxWidth()
             .height(ButtonHeight),
-        shape = PillShape,
+        shape = ButtonShape,
         colors = ButtonDefaults.buttonColors(
             containerColor = container,
             contentColor = content,
@@ -121,6 +123,15 @@ fun PrimaryButton(
                 color = content,
             )
         } else {
+            if (leadingIcon != null) {
+                Icon(
+                    leadingIcon,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .padding(end = 10.dp)
+                        .size(20.dp),
+                )
+            }
             Text(text, style = MaterialTheme.typography.titleMedium)
         }
     }
@@ -143,8 +154,8 @@ fun GhostButton(
     OutlinedButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.height(46.dp),
-        shape = PillShape,
+        modifier = modifier.height(44.dp),
+        shape = ButtonShape,
         border = BorderStroke(1.dp, RiderTheme.colors.separator),
         colors = ButtonDefaults.outlinedButtonColors(
             contentColor = MaterialTheme.colorScheme.onSurface,
@@ -152,11 +163,17 @@ fun GhostButton(
         contentPadding = ButtonDefaults.TextButtonContentPadding,
     ) {
         if (icon != null) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+            Icon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
         }
         Text(
             text = text,
             style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
             modifier = Modifier.padding(start = if (icon != null) 8.dp else 0.dp),
         )
     }
@@ -200,13 +217,9 @@ fun SegmentedPills(
                     .weight(1f)
                     .height(40.dp),
                 shape = PillShape,
-                color = if (selected) {
-                    MaterialTheme.colorScheme.surface
-                } else {
-                    Color.Transparent
-                },
+                color = if (selected) RiderTheme.colors.canopy else Color.Transparent,
                 contentColor = if (selected) {
-                    MaterialTheme.colorScheme.onSurface
+                    RiderTheme.colors.onCanopy
                 } else {
                     RiderTheme.colors.textSecondary
                 },
@@ -280,7 +293,7 @@ fun SoftBanner(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
+            .clip(ButtonShape)
             .background(container)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -331,7 +344,7 @@ fun RiderTextField(
         enabled = enabled,
         isError = error != null,
         supportingText = (error ?: hint)?.let { { Text(it) } },
-        shape = MaterialTheme.shapes.medium,
+        shape = ButtonShape,
         visualTransformation = visualTransformation,
         keyboardOptions = keyboardOptions,
         keyboardActions = keyboardActions,
@@ -373,39 +386,42 @@ fun IconBadge(
 }
 
 /**
- * The green block at the top of every screen.
+ * White status-bar icons for as long as the calling screen is on screen.
  *
- * Every screen opens with it, and that is the navigation model made visible:
- * the tab bar says which of four screens this is, and the block is what says
- * the four are one app. It paints under the status bar and pads itself out from
- * underneath it, so no caller ever handles a top inset.
+ * Every screen that opens under the forest or a darkened photograph calls this.
+ * The onboarding pages and the job map's full-bleed moments do not, and keep
+ * whatever the theme chose for them.
+ */
+@Composable
+fun LightStatusBarIcons() {
+    val view = LocalView.current
+    DisposableEffect(view) {
+        val window = (view.context as? Activity)?.window
+        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
+        val previous = controller?.isAppearanceLightStatusBars
+        controller?.isAppearanceLightStatusBars = false
+        onDispose { if (previous != null) controller.isAppearanceLightStatusBars = previous }
+    }
+}
+
+/**
+ * The forest block a form screen opens with — sign-up, the forgotten-password
+ * form, the status letter.
  *
- * ## Why it is a gradient now
- *
- * A flat near-black green read as chrome - a title bar that happened to be
- * green. Two stops give the block a direction: it is darkest where it meets the
- * status bar, which is where the white text sits, and brightest at the rounded
- * bottom edge, which is the edge that is meant to be seen. The brand is then
- * the first thing on the screen rather than the frame around it.
- *
- * Both stops hold white above 5:1 in both themes. That is the constraint the
- * brightness was picked against, and it is why this is not the lighter green a
- * mock would use - see Color.kt.
+ * Flat, as the reference draws its headers: the curved edge it used to have
+ * made the canopy read as an illustration rather than as the app's frame.
  */
 @Composable
 fun Canopy(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val colors = RiderTheme.colors
+    LightStatusBarIcons()
 
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
-            .background(
-                Brush.verticalGradient(listOf(colors.canopy, colors.canopyBright)),
-            )
+            .background(RiderTheme.colors.canopy)
             .statusBarsPadding()
             .padding(horizontal = 20.dp),
         content = content,
@@ -415,11 +431,10 @@ fun Canopy(
 /**
  * A person, as a letter in a disc.
  *
- * There are no profile photographs on this platform - registration uploads a
- * licence and a plate, and neither is a picture of a face anybody would want on
- * a home screen. The initial is what a rider recognises as *their* app in the
- * half-second before they have read the name beside it, which is all this has
- * to do.
+ * The fallback [RiderAvatar] draws while a photo loads, when it fails, and for
+ * the many riders who never upload one. The initial is what a rider recognises
+ * as *their* app in the half-second before they have read the name beside it,
+ * which is all this has to do.
  */
 @Composable
 fun Avatar(
@@ -439,21 +454,22 @@ fun Avatar(
         Text(
             text = name.trim().take(1).uppercase().ifBlank { "R" },
             style = MaterialTheme.typography.titleLarge,
+            fontSize = MaterialTheme.typography.titleLarge.fontSize * (size / 46.dp).coerceIn(0.7f, 1.8f),
             color = content,
         )
     }
 }
 
 /** What a chip is saying. One hue per meaning, everywhere in the app. */
-enum class ChipTone { Success, Danger, Cash, Accent, Neutral }
+enum class ChipTone { Success, Danger, Cash, Accent, Neutral, Cta }
 
 /**
- * A verdict in a capsule: Delivered, Carrying, Cash at the door.
+ * A verdict in a capsule: Delivered, On the way, Cash on delivery.
  *
  * Tinted ground with the word on it, which is the same rule [SoftBanner]
  * follows one size up. The ground is what the eye finds when scanning a column
  * of rows, and it means the same thing here as it does on a banner or a card:
- * green happened, red failed, amber is money.
+ * green happened, red failed, amber is money, peach is the next thing to do.
  */
 @Composable
 fun StatusChip(
@@ -469,6 +485,7 @@ fun StatusChip(
         ChipTone.Cash -> colors.cashSoft
         ChipTone.Accent -> colors.accentSoft
         ChipTone.Neutral -> colors.fill
+        ChipTone.Cta -> colors.peach
     }
 
     val tint = when (tone) {
@@ -477,130 +494,20 @@ fun StatusChip(
         ChipTone.Cash -> colors.cash
         ChipTone.Accent -> MaterialTheme.colorScheme.primary
         ChipTone.Neutral -> colors.textSecondary
+        ChipTone.Cta -> colors.onPeach
     }
 
     Text(
         text = text,
         style = MaterialTheme.typography.bodySmall,
+        fontWeight = FontWeight.Medium,
         color = tint,
+        maxLines = 1,
         modifier = modifier
             .clip(PillShape)
             .background(container)
-            .padding(horizontal = 10.dp, vertical = 5.dp),
+            .padding(horizontal = 10.dp, vertical = 4.dp),
     )
-}
-
-/**
- * One of the two money cards at the top of the home screen.
- *
- * A saturated tile with white on it, rather than the tinted band the rest of
- * the app uses, and this is the one place that exception is worth making:
- * these two are read in the three seconds a rider looks at the app between
- * jobs, and they have to be told apart from *each other* before either is
- * read. Colour does that; two white cards with different headings do not.
- *
- * The action is a small capsule inside the card rather than a button
- * underneath, so the tile stays one object - the number and what to do about
- * it in the same coloured rectangle.
- */
-@Composable
-fun MoneyCard(
-    label: String,
-    value: String,
-    caption: String,
-    actionLabel: String,
-    onAction: () -> Unit,
-    container: Color,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-) {
-    val onContainer = Color.White
-
-    Column(
-        modifier = modifier
-            .clip(MaterialTheme.shapes.large)
-            .background(container)
-            .padding(16.dp),
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = onContainer.copy(alpha = 0.85f),
-        )
-
-        Text(
-            text = value,
-            style = RiderTextStyles.statValue,
-            color = onContainer,
-            maxLines = 1,
-            modifier = Modifier.padding(top = 6.dp),
-        )
-
-        Text(
-            text = caption,
-            style = MaterialTheme.typography.bodySmall,
-            color = onContainer.copy(alpha = 0.8f),
-            // Two lines whatever it says, so the pair of cards keep their
-            // buttons on one line as the captions change under them.
-            minLines = 2,
-            maxLines = 2,
-        )
-
-        Surface(
-            onClick = onAction,
-            enabled = enabled,
-            modifier = Modifier
-                .padding(top = 12.dp)
-                .fillMaxWidth()
-                .height(36.dp),
-            shape = PillShape,
-            // The card's own colour lightened, not white: a white pill on teal
-            // is a second card inside the first, and the eye reads it before
-            // the number it is meant to follow.
-            color = Color.White.copy(alpha = if (enabled) 0.22f else 0.10f),
-            contentColor = onContainer,
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text(actionLabel, style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-    }
-}
-
-/**
- * One number and what it counts, as a card: finished jobs, jobs in hand.
- *
- * The disc carries the colour and the number stays at full contrast - the same
- * split as [StatusChip], one size up. Two of these sit side by side and are
- * given equal width by the caller rather than being sized by their contents:
- * "150" and "5" have to line up, or the smaller one reads as less important
- * rather than merely smaller.
- */
-@Composable
-fun OverviewTile(
-    value: String,
-    label: String,
-    icon: ImageVector,
-    tint: Color,
-    container: Color,
-    modifier: Modifier = Modifier,
-) {
-    RiderCard(modifier = modifier, padding = 16.dp) {
-        IconBadge(icon = icon, tint = tint, container = container, size = 38.dp)
-
-        Text(
-            text = value,
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(top = 12.dp),
-        )
-
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = RiderTheme.colors.textSecondary,
-        )
-    }
 }
 
 /**
@@ -654,20 +561,20 @@ fun MapSheet(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+            .clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
             .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 20.dp, vertical = 18.dp)
+            .padding(horizontal = 20.dp, vertical = 16.dp)
             .navigationBarsPadding(),
         content = content,
     )
 }
 
 /**
- * A round, translucent button on the canopy.
+ * An icon on the forest: refresh, sign out, back.
  *
- * Refresh, sign out, back. All three are the same gesture from a rider's point
- * of view — a small thing at the edge of the dark block that is not a job — so
- * they are one shape, and the icon inside is the only thing that differs.
+ * Bare, the way the reference draws its bar icons, with a full 48dp target
+ * behind it — the translucent disc it used to sit in was a second shape on a
+ * bar that already has a title and a mark competing for the eye.
  */
 @Composable
 fun CanopyIconButton(
@@ -679,87 +586,60 @@ fun CanopyIconButton(
 ) {
     Box(
         modifier = modifier
-            .size(40.dp)
+            .size(48.dp)
             .clip(PillShape)
-            .background(RiderTheme.colors.canopyFill)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = description,
-            tint = RiderTheme.colors.onCanopy,
-            modifier = Modifier.size(20.dp),
+            tint = RiderTheme.colors.onCanopy.copy(alpha = if (enabled) 1f else 0.5f),
+            modifier = Modifier.size(22.dp),
         )
     }
 }
 
-/**
- * The strip of numbers along the bottom of the canopy.
- *
- * What the shift has amounted to, kept out of the scrolling half of the screen
- * on purpose: it is the reason a rider is here, and it should not be something
- * they have to scroll back up to find. Three columns rather than a grid of
- * tiles, because on the board the jobs are the content and this is the frame.
- */
-@Composable
-fun CanopyStats(
-    modifier: Modifier = Modifier,
-    content: @Composable RowScope.() -> Unit,
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.large)
-            .background(RiderTheme.colors.canopyFill)
-            .heightIn(min = 68.dp)
-            .padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        content = content,
-    )
-}
-
-/** One column of [CanopyStats]: a number, and what it counts. */
-@Composable
-fun RowScope.CanopyStat(value: String, label: String) {
-    Column(
-        modifier = Modifier.weight(1f),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        Text(
-            text = value,
-            style = RiderTextStyles.statValue,
-            color = RiderTheme.colors.onCanopy,
-            maxLines = 1,
-        )
-        Text(
-            text = label.uppercase(),
-            style = RiderTextStyles.overline,
-            color = RiderTheme.colors.onCanopyMuted,
-            textAlign = TextAlign.Center,
-        )
-    }
-}
-
-/** The hairline between two [CanopyStat]s. */
-@Composable
-fun CanopyStatDivider() {
-    Box(
-        Modifier
-            .width(1.dp)
-            .height(28.dp)
-            .background(RiderTheme.colors.canopyFill),
-    )
-}
-
-/** The small capitals that open a group of fields or a run of cards. */
+/** Sentence-case section heading for clear hierarchy. */
 @Composable
 fun SectionLabel(text: String, modifier: Modifier = Modifier) {
     Text(
-        text = text.uppercase(),
-        style = RiderTextStyles.overline,
-        color = RiderTheme.colors.textTertiary,
+        text = text,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface,
         modifier = modifier,
     )
+}
+
+/**
+ * A section heading with a way to see the rest: "Active orders · View all →".
+ *
+ * The action is terracotta text rather than a button because it is a link to
+ * another screen, not a step in a job.
+ */
+@Composable
+fun SectionHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    action: String? = null,
+    onAction: () -> Unit = {},
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SectionLabel(title, Modifier.weight(1f))
+
+        if (action != null) {
+            TextButton(onClick = onAction) {
+                Text(
+                    text = "$action  →",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = RiderTheme.colors.cta,
+                )
+            }
+        }
+    }
 }

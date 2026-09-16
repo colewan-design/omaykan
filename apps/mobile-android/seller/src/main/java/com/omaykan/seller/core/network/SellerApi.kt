@@ -1,7 +1,14 @@
 package com.omaykan.seller.core.network
 
 import com.omaykan.seller.core.network.dto.AssignRiderRequestDto
+import com.omaykan.seller.core.network.dto.BootstrapDto
+import com.omaykan.seller.core.network.dto.ConversationThreadDto
+import com.omaykan.seller.core.network.dto.ConversationsDto
 import com.omaykan.seller.core.network.dto.DeletedDto
+import com.omaykan.seller.core.network.dto.ReplyRequestDto
+import com.omaykan.seller.core.network.dto.SyncPushRequestDto
+import com.omaykan.seller.core.network.dto.SyncPushResponseDto
+import com.omaykan.seller.core.network.dto.UnreadDto
 import com.omaykan.seller.core.network.dto.SaveRiderRequestDto
 import com.omaykan.seller.core.network.dto.SavedRiderDirectoryDto
 import com.omaykan.seller.core.network.dto.SavedRiderEnvelopeDto
@@ -10,6 +17,9 @@ import com.omaykan.seller.core.network.dto.SellerOrdersDto
 import com.omaykan.seller.core.network.dto.SelectStoreRequestDto
 import com.omaykan.seller.core.network.dto.SettlePaymentRequestDto
 import com.omaykan.seller.core.network.dto.StaffGoogleRequestDto
+import com.omaykan.seller.core.network.dto.StoreDirectoryDto
+import com.omaykan.seller.core.network.dto.StoreImageDto
+import com.omaykan.seller.core.network.dto.StoreImageRequestDto
 import com.omaykan.seller.core.network.dto.StaffSessionDto
 import com.omaykan.seller.core.network.dto.StaffSignInDto
 import com.omaykan.seller.core.network.dto.StaffSignInRequestDto
@@ -20,6 +30,7 @@ import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Path
 
 /**
@@ -160,4 +171,60 @@ interface SellerApi {
         @Path("orderId") orderId: String,
         @Body request: SettlePaymentRequestDto,
     ): SellerOrderEnvelopeDto
+
+    /**
+     * The shop's catalog, as the register bootstraps it: every product in the
+     * organization, this branch's overrides and stock, and who is signed in.
+     *
+     * The same call the till makes on a cold start. There is no smaller
+     * product endpoint for staff, and a second one would be a second copy of
+     * the rules about what a branch sells.
+     */
+    @GET("api/sync/bootstrap")
+    suspend fun bootstrap(): BootstrapDto
+
+    /**
+     * The till's outbox, and the only way a product is written.
+     *
+     * Answers 200 with a result per event; a failed event is inside the body,
+     * not the status line. See CatalogRepository.save.
+     */
+    @POST("api/sync/push")
+    suspend fun push(@Body request: SyncPushRequestDto): SyncPushResponseDto
+
+    /** Customer threads, most recent first, capped at 100 by the server. */
+    @GET("api/seller/conversations")
+    suspend fun conversations(): ConversationsDto
+
+    /** The number the home screen's message icon wears. */
+    @GET("api/seller/conversations/unread")
+    suspend fun unreadMessages(): UnreadDto
+
+    /** One thread. Reading it marks it read for the shop. */
+    @GET("api/seller/conversations/{conversationId}")
+    suspend fun conversation(@Path("conversationId") conversationId: String): ConversationThreadDto
+
+    @POST("api/seller/conversations/{conversationId}/messages")
+    suspend fun reply(
+        @Path("conversationId") conversationId: String,
+        @Body request: ReplyRequestDto,
+    ): ConversationThreadDto
+
+    /**
+     * The public shop directory, and the only place a shop's address, map pin
+     * and business type are published to anybody but the register.
+     *
+     * Listed shops only: one with nothing sellable on its shelf yet is left
+     * out, so the store profile has to cope with not finding itself.
+     */
+    @GET("api/stores")
+    suspend fun storeDirectory(): StoreDirectoryDto
+
+    /**
+     * Replace the shop's photo. Admins and managers only — 403 for anyone
+     * else — and JPEG, PNG or WebP under 3MB decoded. Answers with the new,
+     * versioned URL, so a cached copy of the old photo is never shown again.
+     */
+    @PUT("api/seller/store-image")
+    suspend fun updateStoreImage(@Body request: StoreImageRequestDto): StoreImageDto
 }

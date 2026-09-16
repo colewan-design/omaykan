@@ -150,6 +150,47 @@ object NavigationProgress {
 
         return if (abs(delta) == 180.0) 180.0 else delta
     }
+
+    /**
+     * Running distance to each vertex of a path, starting at zero, so an offset
+     * along the road can be turned into a place without walking it again.
+     */
+    fun cumulativeMetres(path: List<MapPoint>): List<Double> {
+        if (path.isEmpty()) return emptyList()
+
+        val out = ArrayList<Double>(path.size)
+        var running = 0.0
+        out += 0.0
+
+        for (i in 1 until path.size) {
+            running += distanceMetres(path[i - 1], path[i])
+            out += running
+        }
+
+        return out
+    }
+
+    /**
+     * How much of [path] is still ahead of [at], in metres. Null without a fix.
+     *
+     * Measured from the vertex after the nearest one — straight to it, then
+     * along the road. Good to a few metres, and it needs no routing call, which
+     * is the point: the route to the door runs shop-to-door and is never asked
+     * for again, so before this its distance and time were the whole trip's for
+     * the whole trip — "8 min, 2.6 km away" still showing at the kerb.
+     */
+    fun metresRemaining(path: List<MapPoint>, at: MapPoint?): Double? {
+        val road = path.filter { it.placed }
+        if (road.size < 2 || at == null || !at.placed) return null
+
+        val cumulative = cumulativeMetres(road)
+        val nearest = road.indices.minByOrNull { distanceMetres(at, road[it]) } ?: return null
+
+        if (nearest == road.lastIndex) return distanceMetres(at, road.last())
+
+        val next = nearest + 1
+        return distanceMetres(at, road[next]) + (cumulative.last() - cumulative[next])
+    }
 }
 
 /** An instruction and the distance still to run before it. */

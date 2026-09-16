@@ -53,6 +53,17 @@ data class RiderProfile(
     val phone: String,
     val licenseNumber: String,
     val plateNumber: String,
+    /**
+     * The path to this rider's photograph, or null if they have not set one.
+     *
+     * A path rather than a full URL — see RiderDto.photoUrl. Null is the
+     * ordinary case and never an error: every screen that draws a rider has an
+     * initial-letter avatar to fall back to, and a rider who does not want
+     * their face on a stranger's phone is entitled to keep it that way.
+     */
+    val photoUrl: String?,
+    val vehicle: Vehicle,
+    val rating: RatingSummary,
     val status: RiderStatus,
     /**
      * What the operator wrote when they decided.
@@ -65,6 +76,79 @@ data class RiderProfile(
     val reviewedAt: String?,
     val createdAt: String?,
 )
+
+/**
+ * What the rider rides.
+ *
+ * [type] is a closed set the app draws an icon from; the rest is free text,
+ * because the long tail of what people actually ride here — a rebuilt
+ * tricycle, an unbadged e-bike — does not fit a dropdown.
+ *
+ * [label] is the server's own sentence rather than one assembled here, so the
+ * shop's dashboard, the customer's tracking page and this app all describe the
+ * same bike with the same words.
+ */
+data class Vehicle(
+    val type: VehicleType,
+    val make: String?,
+    val model: String?,
+    val color: String?,
+    val label: String,
+    val plateNumber: String,
+)
+
+/**
+ * The six shapes a job can arrive on.
+ *
+ * [Ebike] is separate from [Bicycle] deliberately, and the distinction is the
+ * shop's rather than the rider's: to somebody deciding what fits in a top box
+ * and how far it will go before it stops, a pedal bicycle and an electric one
+ * are different vehicles.
+ */
+enum class VehicleType(val wire: String, val label: String) {
+    Motorcycle("motorcycle", "Motorcycle"),
+    Scooter("scooter", "Scooter"),
+    Tricycle("tricycle", "Tricycle"),
+    Bicycle("bicycle", "Bicycle"),
+    Ebike("ebike", "E-bike"),
+    Car("car", "Car"),
+    ;
+
+    companion object {
+        /**
+         * Anything unrecognised reads as a motorcycle.
+         *
+         * The same argument RiderStatus.fromWire makes, with less at stake: a
+         * type this build has never heard of should draw *a* vehicle rather
+         * than leave a hole in the card, and motorcycle is what the column
+         * defaults to server-side anyway.
+         */
+        fun fromWire(value: String?): VehicleType =
+            entries.firstOrNull { it.wire == value } ?: Motorcycle
+    }
+}
+
+/**
+ * What customers have scored this rider.
+ *
+ * [average] is null for a rider nobody has rated yet — *not* zero. Rendering an
+ * unrated rider as 0.0 out of 5 would put the worst possible number on the
+ * screen of the person least able to have earned it, which is why the null
+ * survives all the way from the server to this field.
+ */
+data class RatingSummary(
+    val average: Double?,
+    val count: Int,
+) {
+    /** Below this many, an average is an anecdote. `Rider::RATING_CONFIDENCE_THRESHOLD`. */
+    val isConfident: Boolean get() = count >= CONFIDENCE_THRESHOLD
+
+    companion object {
+        const val CONFIDENCE_THRESHOLD = 5
+
+        val None = RatingSummary(average = null, count = 0)
+    }
+}
 
 /**
  * Which screen the app is on, resolved at launch and then kept current.

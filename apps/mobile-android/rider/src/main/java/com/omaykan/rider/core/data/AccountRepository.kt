@@ -2,11 +2,14 @@ package com.omaykan.rider.core.data
 
 import com.omaykan.rider.core.auth.RiderSessionStore
 import com.omaykan.rider.core.model.RiderProfile
+import com.omaykan.rider.core.model.VehicleType
 import com.omaykan.rider.core.network.ApiCaller
 import com.omaykan.rider.core.network.RiderApi
 import com.omaykan.rider.core.network.dto.ForgotPasswordRequestDto
 import com.omaykan.rider.core.network.dto.PasswordChangeRequestDto
 import com.omaykan.rider.core.network.dto.ProfileUpdateRequestDto
+import com.omaykan.rider.core.network.dto.RatingsDto
+import com.omaykan.rider.core.network.dto.SupportDto
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -45,15 +48,72 @@ class AccountRepository @Inject constructor(
         name: String? = null,
         phone: String? = null,
         plateNumber: String? = null,
+        vehicleType: VehicleType? = null,
+        vehicleMake: String? = null,
+        vehicleModel: String? = null,
+        vehicleColor: String? = null,
     ): RiderProfile {
         val rider = caller.call {
-            api.updateProfile(ProfileUpdateRequestDto(name = name, phone = phone, plateNumber = plateNumber))
+            api.updateProfile(
+                ProfileUpdateRequestDto(
+                    name = name,
+                    phone = phone,
+                    plateNumber = plateNumber,
+                    vehicleType = vehicleType?.wire,
+                    // Passed through as given, empty string included: `""` is
+                    // how a field is *cleared*, because a null would be dropped
+                    // from the body entirely. See ProfileUpdateRequestDto.
+                    vehicleMake = vehicleMake,
+                    vehicleModel = vehicleModel,
+                    vehicleColor = vehicleColor,
+                ),
+            )
         }.rider.toModel()
 
         store.saveRider(rider)
 
         return rider
     }
+
+    /**
+     * Replace the rider's photograph.
+     *
+     * The stored profile is replaced with the server's answer, which carries
+     * the new `photoUrl` — including its version stamp, so the canopy and the
+     * account header stop showing the previous photo from Coil's cache without
+     * anything here having to reach into it.
+     */
+    suspend fun uploadPhoto(upload: DocumentUpload): RiderProfile {
+        val rider = caller.call {
+            api.uploadAvatar(upload.asFilePart("photo"))
+        }.rider.toModel()
+
+        store.saveRider(rider)
+
+        return rider
+    }
+
+    /** Take the photo down. The initial-letter avatar comes back on its own. */
+    suspend fun removePhoto(): RiderProfile {
+        val rider = caller.call { api.deleteAvatar() }.rider.toModel()
+
+        store.saveRider(rider)
+
+        return rider
+    }
+
+    /**
+     * What customers have scored this rider.
+     *
+     * Not cached in the session store, unlike the profile: a score is not
+     * something the app needs before the network answers, and the summary
+     * already travels on the profile for the one place that shows it at a
+     * glance.
+     */
+    suspend fun ratings(): RatingsDto = caller.call { api.ratings() }
+
+    /** How to reach a human. See RiderSupportController for why it is a call. */
+    suspend fun support(): SupportDto = caller.call { api.support() }
 
     /**
      * Change the password.

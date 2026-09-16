@@ -2,6 +2,7 @@ package com.omaykan.rider.core.data
 
 import com.omaykan.rider.core.auth.RiderSessionStore
 import com.omaykan.rider.core.model.RiderProfile
+import com.omaykan.rider.core.model.VehicleType
 import com.omaykan.rider.core.model.RiderStatus
 import com.omaykan.rider.core.model.SessionState
 import com.omaykan.rider.core.network.ApiCaller
@@ -58,6 +59,15 @@ data class Registration(
     val password: String,
     val licenseNumber: String,
     val plateNumber: String,
+    /**
+     * The bike. Type always has a value because the form always shows a
+     * selection; the three descriptive fields are blank when the rider left
+     * them blank, and blank reaches the server as a cleared column.
+     */
+    val vehicleType: VehicleType = VehicleType.Motorcycle,
+    val vehicleMake: String = "",
+    val vehicleModel: String = "",
+    val vehicleColor: String = "",
     val licenseImage: DocumentUpload,
     val plateImage: DocumentUpload,
 )
@@ -138,6 +148,10 @@ class SessionRepository @Inject constructor(
                 passwordConfirmation = input.password.asTextPart(),
                 licenseNumber = input.licenseNumber.trim().asTextPart(),
                 plateNumber = input.plateNumber.trim().asTextPart(),
+                vehicleType = input.vehicleType.wire.asTextPart(),
+                vehicleMake = input.vehicleMake.trim().asTextPart(),
+                vehicleModel = input.vehicleModel.trim().asTextPart(),
+                vehicleColor = input.vehicleColor.trim().asTextPart(),
                 licenseImage = input.licenseImage.asFilePart("licenseImage"),
                 plateImage = input.plateImage.asFilePart("plateImage"),
             )
@@ -237,7 +251,12 @@ class SessionRepository @Inject constructor(
  */
 private fun String.asTextPart(): RequestBody = toRequestBody()
 
-private fun DocumentUpload.asFilePart(field: String): MultipartBody.Part =
+/**
+ * Internal rather than private since the account screen gained an uploader of
+ * its own: registration and the avatar route are the same multipart shape, and
+ * a second copy of three lines is how the two drift apart.
+ */
+internal fun DocumentUpload.asFilePart(field: String): MultipartBody.Part =
     MultipartBody.Part.createFormData(
         field,
         fileName,

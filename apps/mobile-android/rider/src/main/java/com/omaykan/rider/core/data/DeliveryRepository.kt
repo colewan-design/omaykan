@@ -57,6 +57,19 @@ class DeliveryRepository @Inject constructor(
     }
 
     /**
+     * The board alone.
+     *
+     * [fetch] deliberately reads the board and this rider's own work together,
+     * because a screen showing one without the other shows the same job twice.
+     * The watcher has no screen and no such problem — it is asking one
+     * question, "is there anything new", and pulling a rider's assignment list
+     * once a minute in the background to answer it would be waste.
+     */
+    suspend fun board(): List<DeliveryOffer> = caller.call {
+        api.board().orders.map { it.toModel() }
+    }
+
+    /**
      * Claim a job.
      *
      * Throws [com.omaykan.rider.core.network.ApiException.Taken] on the 409 when

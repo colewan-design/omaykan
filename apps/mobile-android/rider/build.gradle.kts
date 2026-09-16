@@ -139,10 +139,16 @@ kotlin {
  * server's answer to "what is available right now", and a cached one sends a
  * rider to a shop for an order somebody else took twenty minutes ago.
  *
- * **Coil, for one picture.** There is not one photograph in this app — the
- * registration screen *uploads* two and reads them through the platform's photo
- * picker, which hands back a thumbnail of its own. What Coil is here for is the
- * static route map on a job card, and nothing else.
+ * **Coil, for two kinds of picture.** It arrived for one — the static route map
+ * on a job card — at a point when this app displayed no photographs at all: the
+ * registration screen *uploads* two documents and reads them back through the
+ * platform's photo picker, which hands over a thumbnail of its own.
+ *
+ * As of 2026-09 a rider can put a photograph of themselves on their profile, so
+ * Coil now also draws faces — in the canopy, on the account screen, and nowhere
+ * else. See `core/designsystem/RiderAvatar.kt`, which falls back to the
+ * initial-letter disc the app has always drawn: most riders will never upload
+ * one, and that is a supported state rather than a gap.
  *
  * **No Play Services — but there is a Maps SDK now.** These were one decision
  * and they have come apart, which is worth being explicit about because the

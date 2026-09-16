@@ -138,22 +138,33 @@ class SignInViewModel @Inject constructor(
         }
     }
 
+    /** A tap on a row of the shop picker. Guarded, so a double tap picks once. */
     fun chooseStore(store: StaffStore) {
         val token = pendingToken ?: return
         if (_state.value.submitting) return
 
         _state.update { it.copy(submitting = true, error = null) }
 
-        viewModelScope.launch {
-            try {
-                sessions.chooseStore(token, store)
-                // No navigation from here. Choosing writes the token and the
-                // store, the session flow turns Paired, and MainActivity swaps
-                // the screen — one source of truth for "am I signed in", rather
-                // than a screen that thinks it is and a session that disagrees.
-            } catch (e: ApiException) {
-                _state.update { it.copy(submitting = false, error = e.message) }
-            }
+        viewModelScope.launch { select(token, store) }
+    }
+
+    /**
+     * Open [store] with the pending token.
+     *
+     * Split from [chooseStore] because the one-shop path arrives here with
+     * `submitting` already true — it is still inside the sign-in tap — and
+     * going through the public guard made it return without doing anything:
+     * a spinner that never stopped for everybody who works at one shop.
+     */
+    private suspend fun select(token: String, store: StaffStore) {
+        try {
+            sessions.chooseStore(token, store)
+            // No navigation from here. Choosing writes the token and the
+            // store, the session flow turns Paired, and MainActivity swaps
+            // the screen — one source of truth for "am I signed in", rather
+            // than a screen that thinks it is and a session that disagrees.
+        } catch (e: ApiException) {
+            _state.update { it.copy(submitting = false, error = e.message) }
         }
     }
 
@@ -182,7 +193,7 @@ class SignInViewModel @Inject constructor(
                         error = "This account isn't set up for any shop yet. Ask an admin to add you in Staff.",
                     )
                 }
-                1 -> chooseStore(pending.stores.first())
+                1 -> select(pending.token, pending.stores.first())
                 else -> _state.update {
                     it.copy(submitting = false, storeChoices = pending.stores)
                 }

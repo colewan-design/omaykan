@@ -9,14 +9,19 @@ import com.omaykan.rider.core.model.EarningsDay
 import com.omaykan.rider.core.model.EarningsTotal
 import com.omaykan.rider.core.model.Pickup
 import com.omaykan.rider.core.model.RiderProfile
+import com.omaykan.rider.core.model.RatingSummary
 import com.omaykan.rider.core.model.RiderStatus
+import com.omaykan.rider.core.model.Vehicle
+import com.omaykan.rider.core.model.VehicleType
 import com.omaykan.rider.core.network.dto.AssignmentDto
 import com.omaykan.rider.core.network.dto.EarningsDayDto
 import com.omaykan.rider.core.network.dto.EarningsDto
 import com.omaykan.rider.core.network.dto.EarningsTotalDto
 import com.omaykan.rider.core.network.dto.OfferDto
 import com.omaykan.rider.core.network.dto.PickupDto
+import com.omaykan.rider.core.network.dto.RatingSummaryDto
 import com.omaykan.rider.core.network.dto.RiderDto
+import com.omaykan.rider.core.network.dto.VehicleDto
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 
@@ -35,10 +40,37 @@ internal fun RiderDto.toModel(): RiderProfile = RiderProfile(
     phone = phone,
     licenseNumber = licenseNumber,
     plateNumber = plateNumber,
+    photoUrl = photoUrl?.takeIf { it.isNotBlank() },
+    vehicle = vehicle.toModel(plateFallback = plateNumber),
+    rating = rating.toModel(),
     status = RiderStatus.fromWire(status),
     reviewNote = reviewNote?.takeIf { it.isNotBlank() },
     reviewedAt = reviewedAt,
     createdAt = createdAt,
+)
+
+/**
+ * @param plateFallback the account's own plate, used when the server is old
+ *   enough not to send one inside the vehicle object. The two are the same
+ *   column; only the nesting is new.
+ */
+internal fun VehicleDto.toModel(plateFallback: String): Vehicle = Vehicle(
+    type = VehicleType.fromWire(type),
+    make = make?.takeIf { it.isNotBlank() },
+    model = model?.takeIf { it.isNotBlank() },
+    color = color?.takeIf { it.isNotBlank() },
+    // A server that sent no label leaves this app to say something rather than
+    // nothing; the type's own name is what the server would have fallen back to.
+    label = label.takeIf { it.isNotBlank() } ?: VehicleType.fromWire(type).label,
+    plateNumber = plateNumber.takeIf { it.isNotBlank() } ?: plateFallback,
+)
+
+internal fun RatingSummaryDto.toModel(): RatingSummary = RatingSummary(
+    // Zero ratings and a zero average are different facts. Guard the average
+    // on the count rather than trusting it: a server that sends 0.0 alongside
+    // a count of 0 must still read as "not rated yet".
+    average = if (count <= 0) null else average,
+    count = count,
 )
 
 internal fun PickupDto.toModel(): Pickup = Pickup(

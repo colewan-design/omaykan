@@ -10,41 +10,46 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.unit.dp
 
-/**
- * --radius-sm through --radius-xl, with the top of the scale opened up.
- *
- * `large` is the card radius and it is the one that moved: 16dp reads as a
- * rounded rectangle, 20dp reads as a tile, and every job on the board is a
- * tile. `extraLarge` is the canopy's bottom corners and the one sheet in the
- * app, where the curve is meant to be seen.
- */
+/** Softer and smaller than Material's, the way the reference's cards are cut. */
 val RiderShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(10.dp),
-    medium = RoundedCornerShape(14.dp),
-    large = RoundedCornerShape(20.dp),
-    extraLarge = RoundedCornerShape(28.dp),
+    extraSmall = RoundedCornerShape(6.dp),
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(10.dp),
+    large = RoundedCornerShape(14.dp),
+    extraLarge = RoundedCornerShape(22.dp),
 )
 
-/**
- * A shape Material's five slots have no room for.
- *
- * Every button a rider actually presses is this one. A full-width capsule is
- * harder to miss with a thumb at a junction than a 14dp rectangle of the same
- * height, and it is what separates "press this" from the fields and cards it
- * sits under.
+/*
+ * The shapes the screens are actually built out of — the same three :seller
+ * uses, so a card is cut the same way on both sides of an order.
  */
+
+/** A job, a figure, a panel — anything that holds a decision. */
+val CardShape = RoundedCornerShape(14.dp)
+
+/** Buttons and text fields. A soft rectangle, not a capsule. */
+val ButtonShape = RoundedCornerShape(10.dp)
+
+/** Chips, badges, status words, discs. A capsule at any height. */
 val PillShape = RoundedCornerShape(percent = 50)
 
+/*
+ * The green accent is `primary`, not terracotta, and that is where this app
+ * parts from :seller. Here `primary` is what every stock control reaches for on
+ * its own — the checked Switch, a spinner, a TextButton — and in a rider's app
+ * those are all *state*: sharing is on, the job is loading. Terracotta is kept
+ * for the one button a screen wants pressed, which the screens draw by hand
+ * through PrimaryButton. The forest is `secondary`: the frame.
+ */
 private val LightScheme = lightColorScheme(
     primary = AccentLight,
-    onPrimary = AccentTextOnLight,
+    onPrimary = OnAccentLight,
     primaryContainer = AccentSoftLight,
     onPrimaryContainer = AccentLight,
-    secondary = AccentLight,
-    onSecondary = AccentTextOnLight,
+    secondary = ForestLight,
+    onSecondary = OnForestLight,
     tertiary = WarningLight,
-    onTertiary = AccentTextOnLight,
+    onTertiary = OnCtaLight,
     background = BgBaseLight,
     onBackground = TextPrimaryLight,
     surface = BgElevatedLight,
@@ -53,22 +58,24 @@ private val LightScheme = lightColorScheme(
     onSurfaceVariant = TextSecondaryLight,
     surfaceContainer = BgElevatedLight,
     surfaceContainerHigh = BgElevatedLight,
+    surfaceContainerHighest = FillLight,
     surfaceContainerLow = BgBaseLight,
+    surfaceContainerLowest = BgElevatedLight,
     outline = SeparatorLight,
     outlineVariant = SeparatorLight,
     error = DangerLight,
-    onError = AccentTextOnLight,
+    onError = OnCtaLight,
 )
 
 private val DarkScheme = darkColorScheme(
     primary = AccentDark,
-    onPrimary = AccentTextOnDark,
+    onPrimary = OnAccentDark,
     primaryContainer = AccentSoftDark,
     onPrimaryContainer = AccentDark,
-    secondary = AccentDark,
-    onSecondary = AccentTextOnDark,
+    secondary = ForestDark,
+    onSecondary = OnForestDark,
     tertiary = WarningDark,
-    onTertiary = AccentTextOnDark,
+    onTertiary = OnAccentDark,
     background = BgBaseDark,
     onBackground = TextPrimaryDark,
     surface = BgElevatedDark,
@@ -77,17 +84,19 @@ private val DarkScheme = darkColorScheme(
     onSurfaceVariant = TextSecondaryDark,
     surfaceContainer = BgElevatedDark,
     surfaceContainerHigh = BgElevatedDark,
+    surfaceContainerHighest = FillDark,
     surfaceContainerLow = BgBaseDark,
+    surfaceContainerLowest = BgBaseDark,
     outline = SeparatorDark,
     outlineVariant = SeparatorDark,
     error = DangerDark,
-    onError = AccentTextOnDark,
+    onError = BgBaseDark,
 )
 
 /**
- * No dynamic colour, for the same reason :app refuses it: the accent is the
+ * No dynamic colour, for the same reason :app refuses it: the palette is the
  * brand's, and handing it to the phone's wallpaper would trade away the one
- * thing that says this is the same product as the till on the counter.
+ * thing that says this is the same market as the till on the counter.
  *
  * Dark theme is followed rather than forced, unlike the web portals (which pin
  * themselves light). A rider reads this screen in the dark more than anyone
@@ -99,61 +108,9 @@ fun RiderTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    val extended = if (darkTheme) {
-        RiderColors(
-            accentPressed = AccentPressedDark,
-            success = SuccessDark,
-            warning = WarningDark,
-            danger = DangerDark,
-            textSecondary = TextSecondaryDark,
-            textTertiary = TextTertiaryDark,
-            separator = SeparatorDark,
-            fill = FillDark,
-            ink = InkDark,
-            onInk = OnInkDark,
-            cash = WarningDark,
-            canopy = CanopyDark,
-            canopyBright = CanopyBrightDark,
-            onCanopy = OnCanopyDark,
-            onCanopyMuted = OnCanopyMutedDark,
-            canopyFill = CanopyFillDark,
-            payout = PayoutDark,
-            owed = OwedDark,
-            accentSoft = AccentSoftDark,
-            cashSoft = CashSoftDark,
-            successSoft = SuccessSoftDark,
-            dangerSoft = DangerSoftDark,
-            hairline = HairlineDark,
-        )
-    } else {
-        RiderColors(
-            accentPressed = AccentPressedLight,
-            success = SuccessLight,
-            warning = WarningLight,
-            danger = DangerLight,
-            textSecondary = TextSecondaryLight,
-            textTertiary = TextTertiaryLight,
-            separator = SeparatorLight,
-            fill = FillLight,
-            ink = InkLight,
-            onInk = OnInkLight,
-            cash = WarningLight,
-            canopy = CanopyLight,
-            canopyBright = CanopyBrightLight,
-            onCanopy = OnCanopyLight,
-            onCanopyMuted = OnCanopyMutedLight,
-            canopyFill = CanopyFillLight,
-            payout = PayoutLight,
-            owed = OwedLight,
-            accentSoft = AccentSoftLight,
-            cashSoft = CashSoftLight,
-            successSoft = SuccessSoftLight,
-            dangerSoft = DangerSoftLight,
-            hairline = HairlineLight,
-        )
-    }
-
-    CompositionLocalProvider(LocalRiderColors provides extended) {
+    CompositionLocalProvider(
+        LocalRiderColors provides if (darkTheme) DarkRiderColors else LightRiderColors,
+    ) {
         MaterialTheme(
             colorScheme = if (darkTheme) DarkScheme else LightScheme,
             typography = RiderTypography,

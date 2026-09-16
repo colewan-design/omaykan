@@ -11,10 +11,12 @@ import com.omaykan.rider.core.network.dto.MyDeliveriesDto
 import com.omaykan.rider.core.network.dto.PasswordChangeRequestDto
 import com.omaykan.rider.core.network.dto.PositionAckDto
 import com.omaykan.rider.core.network.dto.PositionRequestDto
+import com.omaykan.rider.core.network.dto.RatingsDto
 import com.omaykan.rider.core.network.dto.ProfileUpdateRequestDto
 import com.omaykan.rider.core.network.dto.ReleasedDto
 import com.omaykan.rider.core.network.dto.RiderEnvelopeDto
 import com.omaykan.rider.core.network.dto.RiderSessionDto
+import com.omaykan.rider.core.network.dto.SupportDto
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import retrofit2.http.Body
@@ -62,6 +64,13 @@ interface RiderApi {
         @Part("password_confirmation") passwordConfirmation: RequestBody,
         @Part("licenseNumber") licenseNumber: RequestBody,
         @Part("plateNumber") plateNumber: RequestBody,
+        // The bike. Optional on the server so that a client which predates the
+        // column keeps registering successfully, but this one always sends a
+        // type because its form always asks for one.
+        @Part("vehicleType") vehicleType: RequestBody,
+        @Part("vehicleMake") vehicleMake: RequestBody,
+        @Part("vehicleModel") vehicleModel: RequestBody,
+        @Part("vehicleColor") vehicleColor: RequestBody,
         @Part licenseImage: MultipartBody.Part,
         @Part plateImage: MultipartBody.Part,
     ): RiderSessionDto
@@ -116,6 +125,52 @@ interface RiderApi {
      */
     @PATCH("api/rider/me")
     suspend fun updateProfile(@Body request: ProfileUpdateRequestDto): RiderEnvelopeDto
+
+    /**
+     * Replace the rider's photograph.
+     *
+     * Outside the approval gate with `/me`: a pending rider filling in their
+     * profile while they wait is the normal case, and the photo is shown to
+     * nobody until they are carrying an order — which the gate prevents.
+     *
+     * 422 on anything that does not decode as an image, so a renamed file
+     * cannot become an avatar.
+     */
+    @Multipart
+    @POST("api/rider/avatar")
+    suspend fun uploadAvatar(@Part photo: MultipartBody.Part): RiderEnvelopeDto
+
+    /**
+     * Take the photo down.
+     *
+     * The server clears the column before deleting the file, so this returning
+     * successfully means the photo has stopped resolving everywhere it was
+     * shown — which is what the rider asked for.
+     */
+    @DELETE("api/rider/avatar")
+    suspend fun deleteAvatar(): RiderEnvelopeDto
+
+    /**
+     * What customers have scored this rider, and the twenty most recent.
+     *
+     * Behind `rider.approved` with earnings, and for the same reason: a score
+     * is a fact about work, and an account never allowed to work has none.
+     *
+     * The customer who left a rating is not in the payload. That is deliberate
+     * server-side — see RiderRating::toRiderArray.
+     */
+    @GET("api/rider/ratings")
+    suspend fun ratings(): RatingsDto
+
+    /**
+     * How to reach a human.
+     *
+     * Outside the approval gate on purpose: a rejected rider who does not
+     * understand why is the person most in need of somebody to ask, and gating
+     * support behind approval would silence exactly them.
+     */
+    @GET("api/rider/support")
+    suspend fun support(): SupportDto
 
     /**
      * Change the password, current one required.

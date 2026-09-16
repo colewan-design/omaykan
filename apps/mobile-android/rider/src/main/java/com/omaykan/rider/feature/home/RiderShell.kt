@@ -1,9 +1,8 @@
 package com.omaykan.rider.feature.home
 
+import android.app.Activity
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,20 +12,27 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.TwoWheeler
-import androidx.compose.material.icons.filled.Wallet
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.outlined.AccountBalanceWallet
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.TwoWheeler
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -34,27 +40,38 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.omaykan.rider.core.designsystem.LockupEmber
 import com.omaykan.rider.core.designsystem.PillShape
 import com.omaykan.rider.core.designsystem.RiderTheme
 import com.omaykan.rider.core.model.RiderProfile
 import com.omaykan.rider.feature.account.AccountScreen
 import com.omaykan.rider.feature.earnings.EarningsScreen
+import com.omaykan.rider.feature.job.JobDetailScreen
 import com.omaykan.rider.feature.work.WorkScreen
+import com.omaykan.rider.feature.work.WorkTab
 
 /** The four screens an approved rider has. */
-private enum class RiderTab(val label: String, val icon: ImageVector) {
-    Home("Home", Icons.Filled.Home),
-    Jobs("Jobs", Icons.Filled.TwoWheeler),
-    Earnings("Earnings", Icons.Filled.Wallet),
-    Account("Account", Icons.Filled.AccountCircle),
+internal enum class RiderTab(
+    val label: String,
+    val icon: ImageVector,
+    val selectedIcon: ImageVector,
+) {
+    Home("Home", Icons.Outlined.Home, Icons.Filled.Home),
+    Jobs("Jobs", Icons.Outlined.TwoWheeler, Icons.Filled.TwoWheeler),
+    Earnings("Earnings", Icons.Outlined.AccountBalanceWallet, Icons.Filled.AccountBalanceWallet),
+    Account("Profile", Icons.Outlined.Person, Icons.Filled.Person),
 }
 
 /**
  * What an approved rider sees: a standing summary, the board, what it has paid,
- * and their account.
+ * and their profile — and, over all four, the job they have opened.
  *
  * ## Still no NavHost
  *
@@ -69,13 +86,13 @@ private enum class RiderTab(val label: String, val icon: ImageVector) {
  * than nothing at all: on Home the system default (leave the app) is right, so
  * the handler is disabled there rather than swallowing it.
  *
- * ## Why four rather than three
+ * ## The open job lives here, not on the Jobs tab
  *
- * The home screen was the top third of the board, and it lost that argument the
- * moment it had anything worth keeping still. A rider opens this app far more
- * often to check what they have made and what they are holding than to look for
- * new work, and both of those were scrolling away under a list. Splitting them
- * is what lets the board be nothing but jobs.
+ * It used to be a variable inside WorkScreen, which was fine while the board
+ * was the only way into a job. Home's active-order cards open one too now, so
+ * the id is held one level up, and an open job covers the tab bar the way the
+ * reference draws its delivery screens: a rider in the middle of a job has one
+ * thing on screen, and it is not four tabs.
  *
  * ## Why the bar is only in this state
  *
@@ -89,19 +106,44 @@ fun RiderShell(
     viewModel: RiderShellViewModel = hiltViewModel(),
 ) {
     var tab by rememberSaveable { mutableStateOf(RiderTab.Home) }
+    var openJobId by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // Which list the Jobs tab should show when Home sends a rider there. Not
+    // saved: it is an instruction consumed on arrival, not a state.
+    var workRequest by remember { mutableStateOf<WorkTab?>(null) }
+
+    openJobId?.let { id ->
+        JobDetailScreen(jobId = id, onBack = { openJobId = null })
+        return
+    }
 
     BackHandler(enabled = tab != RiderTab.Home) { tab = RiderTab.Home }
 
-    Column(Modifier.fillMaxSize()) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
         Box(Modifier.weight(1f)) {
             when (tab) {
                 RiderTab.Home -> HomeScreen(
                     rider = rider,
-                    onSeeJobs = { tab = RiderTab.Jobs },
-                    onSeeEarnings = { tab = RiderTab.Earnings },
+                    onOpenJobs = { which ->
+                        workRequest = which
+                        tab = RiderTab.Jobs
+                    },
+                    onOpenEarnings = { tab = RiderTab.Earnings },
+                    onOpenAccount = { tab = RiderTab.Account },
+                    onOpenJob = { openJobId = it },
                 )
 
-                RiderTab.Jobs -> WorkScreen(rider = rider)
+                RiderTab.Jobs -> WorkScreen(
+                    rider = rider,
+                    onOpenJob = { openJobId = it },
+                    tabRequest = workRequest,
+                    onTabRequestHandled = { workRequest = null },
+                )
+
                 RiderTab.Earnings -> EarningsScreen()
                 RiderTab.Account -> AccountScreen(
                     rider = rider,
@@ -115,92 +157,79 @@ fun RiderShell(
 }
 
 /**
- * Four targets along the bottom, with the current one named.
+ * The forest tab bar with rounded shoulders, the same bar :app and :seller wear.
  *
- * Material's `NavigationBar` writes every label all the time, which on a
- * four-tab bar is four words competing for a strip 56dp tall — and it draws the
- * selected state as a pale pill behind an icon that keeps its own colour, which
- * is a cue you have to look for. This one names only the tab you are on, and
- * fills its pill with the brand green: the selected tab is a *shape* on a white
- * bar, readable at the speed a glance actually runs at, and the other three
- * stay icons because a rider already knows what they are.
- *
- * The labels are not lost to a screen reader — every target carries its own
- * `contentDescription` and the `selectable` role, so TalkBack reads "Jobs, tab,
- * not selected" whether or not the word is drawn.
+ * Hand-built rather than Material's NavigationBar, which draws a pale pill
+ * behind an icon that keeps its own colour — a cue you have to look for. Here
+ * the current tab gets a filled icon, a brighter label, and a short ember bar
+ * over it, which is a shape and can be seen from a handlebar mount. All four
+ * keep their labels: the reference shows them, and a rider's second week is not
+ * the time to learn which glyph is which.
  */
 @Composable
-private fun TabBar(selected: RiderTab, onSelect: (RiderTab) -> Unit) {
-    HorizontalDivider(color = RiderTheme.colors.hairline)
+internal fun TabBar(selected: RiderTab, onSelect: (RiderTab) -> Unit) {
+    val colors = RiderTheme.colors
+    LightNavigationBarIcons()
 
     Row(
-        modifier = Modifier
+        Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
+            .clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
+            .background(colors.canopy)
             .navigationBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .padding(top = 3.dp)
             .selectableGroup(),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically,
     ) {
         RiderTab.entries.forEach { entry ->
-            TabTarget(
-                tab = entry,
-                selected = entry == selected,
-                onSelect = { onSelect(entry) },
-            )
+            val on = entry == selected
+            val tint = if (on) colors.onCanopy else colors.onCanopyMuted
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .selectable(selected = on, onClick = { onSelect(entry) }, role = Role.Tab),
+            ) {
+                Box(
+                    Modifier
+                        .width(22.dp)
+                        .height(3.dp)
+                        .clip(PillShape)
+                        .background(if (on) LockupEmber else Color.Transparent),
+                )
+                Icon(
+                    imageVector = if (on) entry.selectedIcon else entry.icon,
+                    contentDescription = null,
+                    tint = tint,
+                    modifier = Modifier
+                        .padding(top = 4.dp)
+                        .size(22.dp),
+                )
+                Text(
+                    text = entry.label,
+                    fontSize = 10.sp,
+                    fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                    color = tint,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
         }
     }
 }
 
+/**
+ * White navigation-bar icons while the forest tab bar sits under them. The
+ * light theme would otherwise draw dark ones, invisible on the green.
+ */
 @Composable
-private fun TabTarget(tab: RiderTab, selected: Boolean, onSelect: () -> Unit) {
-    // Animated so that switching tabs is one object moving along the bar rather
-    // than one pill vanishing and another appearing somewhere else.
-    val container by animateColorAsState(
-        targetValue = if (selected) {
-            MaterialTheme.colorScheme.primary
-        } else {
-            Color.Transparent
-        },
-        label = "tabContainer",
-    )
-
-    val content = if (selected) {
-        MaterialTheme.colorScheme.onPrimary
-    } else {
-        RiderTheme.colors.textTertiary
-    }
-
-    Row(
-        modifier = Modifier
-            .clip(PillShape)
-            .background(container)
-            .selectable(
-                selected = selected,
-                onClick = onSelect,
-                role = Role.Tab,
-            )
-            .height(44.dp)
-            .padding(horizontal = if (selected) 18.dp else 20.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Icon(
-            imageVector = tab.icon,
-            // Named on every target, selected or not: the word beside it is
-            // drawn for one of the four, and a screen reader needs all four.
-            contentDescription = tab.label,
-            tint = content,
-            modifier = Modifier.size(22.dp),
-        )
-
-        if (selected) {
-            Text(
-                text = tab.label,
-                style = MaterialTheme.typography.bodyMedium,
-                color = content,
-            )
-        }
+private fun LightNavigationBarIcons() {
+    val view = LocalView.current
+    DisposableEffect(view) {
+        val window = (view.context as? Activity)?.window
+        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
+        val previous = controller?.isAppearanceLightNavigationBars
+        controller?.isAppearanceLightNavigationBars = false
+        onDispose { if (previous != null) controller.isAppearanceLightNavigationBars = previous }
     }
 }

@@ -10,47 +10,55 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.unit.dp
 
-/** --radius-sm through --radius-xl. */
+/** Softer and smaller than Material's, the way the reference's cards are cut. */
 val SellerShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
+    extraSmall = RoundedCornerShape(6.dp),
     small = RoundedCornerShape(8.dp),
-    medium = RoundedCornerShape(12.dp),
-    large = RoundedCornerShape(16.dp),
+    medium = RoundedCornerShape(10.dp),
+    large = RoundedCornerShape(14.dp),
     extraLarge = RoundedCornerShape(22.dp),
 )
 
 /*
  * The shapes the screens are actually built out of.
  *
- * Kept beside [SellerShapes] rather than replacing its values, because those
- * are the ported ones — a text field and a bottom sheet still round the way
- * the web portals do. These are this app's own: bigger, softer corners for the
- * cards and tiles a merchant reads at arm's length, where a 12dp radius reads
- * as a box and a 20dp one reads as a card.
+ * Tighter than the capsules this app used to wear. The reference cuts its cards
+ * at a modest radius and its buttons as soft rectangles, and a capsule-shaped
+ * "Save Product" beside a rectangular text field reads as two design systems.
  */
 
-/** An order, a sheet panel — anything that holds a decision. */
-val CardShape = RoundedCornerShape(20.dp)
+/** An order, a product row, a panel — anything that holds a decision. */
+val CardShape = RoundedCornerShape(14.dp)
 
-/** A figure in the takings grid. Slightly tighter than a card, so a tile
- *  never looks like something you can open. */
-val TileShape = RoundedCornerShape(18.dp)
+/** A figure or a shortcut tile. A little tighter than a card. */
+val TileShape = RoundedCornerShape(12.dp)
 
-/** The header, rounded only where it meets the list below it. */
-val HeroShape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)
+/** A screen's opening panel, rounded only where it meets what is below it. */
+val HeroShape = RoundedCornerShape(bottomStart = 22.dp, bottomEnd = 22.dp)
 
-/** Buttons, chips, badges. A capsule at any height. */
+/** Buttons and text fields. */
+val ButtonShape = RoundedCornerShape(10.dp)
+
+/** Chips, badges, status words. A capsule at any height. */
 val PillShape = RoundedCornerShape(percent = 50)
 
+/*
+ * Terracotta is `primary`, so every Material control that reaches for the
+ * accent on its own — a TextButton, a spinner, a focused field — lands on the
+ * same colour as the buttons the screens draw by hand. The forest is
+ * `secondary`: the frame, not the thing to press.
+ */
 private val LightScheme = lightColorScheme(
-    primary = AccentLight,
-    onPrimary = AccentTextOnLight,
-    primaryContainer = AccentLight,
-    onPrimaryContainer = AccentTextOnLight,
-    secondary = AccentLight,
-    onSecondary = AccentTextOnLight,
+    primary = CtaLight,
+    onPrimary = OnCtaLight,
+    primaryContainer = PeachLight,
+    onPrimaryContainer = TextPrimaryLight,
+    secondary = ForestLight,
+    onSecondary = OnForestLight,
+    secondaryContainer = PeachLight,
+    onSecondaryContainer = TextPrimaryLight,
     tertiary = WarningLight,
-    onTertiary = AccentTextOnLight,
+    onTertiary = OnCtaLight,
     background = BgBaseLight,
     onBackground = TextPrimaryLight,
     surface = BgElevatedLight,
@@ -59,22 +67,26 @@ private val LightScheme = lightColorScheme(
     onSurfaceVariant = TextSecondaryLight,
     surfaceContainer = BgElevatedLight,
     surfaceContainerHigh = BgElevatedLight,
+    surfaceContainerHighest = FillLight,
     surfaceContainerLow = BgBaseLight,
+    surfaceContainerLowest = BgElevatedLight,
     outline = SeparatorLight,
     outlineVariant = SeparatorLight,
     error = DangerLight,
-    onError = AccentTextOnLight,
+    onError = OnCtaLight,
 )
 
 private val DarkScheme = darkColorScheme(
-    primary = AccentDark,
-    onPrimary = AccentTextOnDark,
-    primaryContainer = AccentDark,
-    onPrimaryContainer = AccentTextOnDark,
-    secondary = AccentDark,
-    onSecondary = AccentTextOnDark,
+    primary = CtaDark,
+    onPrimary = OnCtaDark,
+    primaryContainer = PeachDark,
+    onPrimaryContainer = TextPrimaryDark,
+    secondary = ForestDark,
+    onSecondary = OnForestDark,
+    secondaryContainer = PeachDark,
+    onSecondaryContainer = TextPrimaryDark,
     tertiary = WarningDark,
-    onTertiary = AccentTextOnDark,
+    onTertiary = OnCtaDark,
     background = BgBaseDark,
     onBackground = TextPrimaryDark,
     surface = BgElevatedDark,
@@ -83,71 +95,32 @@ private val DarkScheme = darkColorScheme(
     onSurfaceVariant = TextSecondaryDark,
     surfaceContainer = BgElevatedDark,
     surfaceContainerHigh = BgElevatedDark,
+    surfaceContainerHighest = FillDark,
     surfaceContainerLow = BgBaseDark,
+    surfaceContainerLowest = BgBaseDark,
     outline = SeparatorDark,
     outlineVariant = SeparatorDark,
     error = DangerDark,
-    onError = AccentTextOnDark,
+    onError = BgBaseDark,
 )
 
 /**
- * No dynamic colour, for the same reason :app refuses it: the accent is the
+ * No dynamic colour, for the same reason :app refuses it: the palette is the
  * brand's, and handing it to the phone's wallpaper would trade away the one
- * thing that says this is the same product as the till on the counter.
+ * thing that says this is the same market as the shopper's app.
  *
- * Dark theme is followed rather than forced, unlike the web portals (which pin
- * themselves light). A phone in a shop is read at six in the morning and at ten
- * at night, and the person holding it has already told the phone which they
- * want.
+ * Dark theme is followed rather than forced. A phone in a shop is read at six
+ * in the morning and at ten at night, and the person holding it has already
+ * told the phone which they want.
  */
 @Composable
 fun SellerTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    val extended = if (darkTheme) {
-        SellerColors(
-            accentPressed = AccentPressedDark,
-            success = SuccessDark,
-            warning = WarningDark,
-            danger = DangerDark,
-            textSecondary = TextSecondaryDark,
-            textTertiary = TextTertiaryDark,
-            separator = SeparatorDark,
-            fill = FillDark,
-            ink = InkDark,
-            onInk = OnInkDark,
-            attention = WarningDark,
-            canopy = CanopyDark,
-            onCanopy = OnCanopyDark,
-            canopyMuted = CanopyMutedDark,
-            accentSoft = AccentSoftDark,
-            onAccentSoft = OnAccentSoftDark,
-            shadow = ShadowDark,
-        )
-    } else {
-        SellerColors(
-            accentPressed = AccentPressedLight,
-            success = SuccessLight,
-            warning = WarningLight,
-            danger = DangerLight,
-            textSecondary = TextSecondaryLight,
-            textTertiary = TextTertiaryLight,
-            separator = SeparatorLight,
-            fill = FillLight,
-            ink = InkLight,
-            onInk = OnInkLight,
-            attention = WarningLight,
-            canopy = CanopyLight,
-            onCanopy = OnCanopyLight,
-            canopyMuted = CanopyMutedLight,
-            accentSoft = AccentSoftLight,
-            onAccentSoft = OnAccentSoftLight,
-            shadow = ShadowLight,
-        )
-    }
-
-    CompositionLocalProvider(LocalSellerColors provides extended) {
+    CompositionLocalProvider(
+        LocalSellerColors provides if (darkTheme) DarkSellerColors else LightSellerColors,
+    ) {
         MaterialTheme(
             colorScheme = if (darkTheme) DarkScheme else LightScheme,
             typography = SellerTypography,

@@ -138,11 +138,11 @@ data class DeliveryItem(
     /** A float on the wire: a grocery sells 1.5 kg of something. */
     val quantity: Double,
 ) {
-    /** "2× Pandesal", with the trailing `.0` dropped off a whole number. */
+    /** "2", or "1.5" — the trailing `.0` dropped off a whole number. */
+    val quantityLabel: String
+        get() = if (quantity % 1.0 == 0.0) quantity.toInt().toString() else quantity.toString()
+
+    /** "2× Pandesal". */
     val label: String
-        get() {
-            val shown =
-                if (quantity % 1.0 == 0.0) quantity.toInt().toString() else quantity.toString()
-            return "$shown× $name"
-        }
+        get() = "$quantityLabel× $name"
 }

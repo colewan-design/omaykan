@@ -6,6 +6,7 @@ import com.omaykan.rider.core.data.EarningsRepository
 import com.omaykan.rider.core.data.SessionRepository
 import com.omaykan.rider.core.data.WorkFeed
 import com.omaykan.rider.core.data.WorkState
+import com.omaykan.rider.core.alerts.JobAlertController
 import com.omaykan.rider.core.location.LocationShareController
 import com.omaykan.rider.core.location.LocationSource
 import com.omaykan.rider.core.location.PositionReporter
@@ -62,6 +63,7 @@ class HomeViewModel @Inject constructor(
     private val earnings: EarningsRepository,
     private val sessions: SessionRepository,
     private val sharing: LocationShareController,
+    private val alerts: JobAlertController,
     private val locations: LocationSource,
     reporter: PositionReporter,
 ) : ViewModel() {
@@ -107,6 +109,20 @@ class HomeViewModel @Inject constructor(
      */
     fun setSharing(on: Boolean) {
         if (on) sharing.start() else sharing.stop()
+    }
+
+    /**
+     * Whether the background watcher is alive.
+     *
+     * Read from the service rather than from whoever flipped the switch, for
+     * the reason JobAlertController gives: alerts can stop without anybody
+     * asking, and nothing appears on screen when they do.
+     */
+    val watchingJobs: StateFlow<Boolean> = alerts.watching
+
+    /** Start or stop being told about new jobs. */
+    fun setJobAlerts(on: Boolean) {
+        if (on) alerts.start() else alerts.stop()
     }
 
     /** Both halves of the screen, on one pull. */

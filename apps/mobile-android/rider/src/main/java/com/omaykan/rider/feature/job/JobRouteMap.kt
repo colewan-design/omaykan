@@ -6,10 +6,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.mapbox.common.MapboxOptions
 import com.mapbox.geojson.Feature
@@ -91,6 +95,13 @@ fun JobRouteMap(
     headingDeg: Double?,
     route: String?,
     modifier: Modifier = Modifier,
+    /**
+     * How much of the map is covered at the top — the bar and the turn banner —
+     * and at the bottom by the trip sheet. The rider is framed inside what is
+     * left, not inside the whole view, or the scooter sits under the sheet.
+     */
+    obscuredTop: Dp = 0.dp,
+    obscuredBottom: Dp = 0.dp,
 ) {
     // The same public token the static map on the cards uses. Blank is still a
     // supported build: no style will load, so rather than show a grey canvas
@@ -111,8 +122,15 @@ fun JobRouteMap(
 
     BoxWithConstraints(modifier.background(RiderTheme.colors.hairline)) {
         /*
-         * Where the puck sits on screen: about seventy percent down, so most of
-         * the map is the road ahead rather than the road already ridden.
+         * Where the puck sits on screen: about seventy percent down the part of
+         * the map that is actually visible, so most of it is the road ahead
+         * rather than the road already ridden.
+         *
+         * "Visible" is the half that was missing. Framed against the whole
+         * view, seventy percent down is under the trip sheet, and the rider was
+         * drawn — correctly placed, facing the right way — where nobody could
+         * see them. The sheet's height is padded off the bottom, and the bar's
+         * off the top, before the fraction is taken.
          *
          * Done with camera padding rather than by aiming the camera at a point
          * in front of the rider, because padding is in screen space and so
@@ -125,8 +143,30 @@ fun JobRouteMap(
          * aiming at moves *away* from the padded side.
          */
         val followPadding = with(LocalDensity.current) {
-            EdgeInsets((maxHeight * TRAIL_FRACTION).toPx().toDouble(), 0.0, 0.0, 0.0)
+            val visible = (maxHeight - obscuredTop - obscuredBottom).coerceAtLeast(0.dp)
+            EdgeInsets(
+                (obscuredTop + visible * TRAIL_FRACTION).toPx().toDouble(),
+                0.0,
+                obscuredBottom.toPx().toDouble(),
+                0.0,
+            )
         }
+
+        /*
+         * The style loads asynchronously, and anything that arrives before it
+         * does — a route, a fix, the measured sheet — is dropped by `update`,
+         * which cannot draw on a map with no style yet. So the load callback
+         * reads the latest of each rather than the values captured when the
+         * view was made. Without this, a rider who opened the map already
+         * standing still got no scooter and the wrong framing until their next
+         * fix happened to arrive.
+         */
+        val latestPickup by rememberUpdatedState(pickup)
+        val latestDropoff by rememberUpdatedState(dropoff)
+        val latestRoute by rememberUpdatedState(route)
+        val latestHere by rememberUpdatedState(here)
+        val latestHeading by rememberUpdatedState(headingDeg)
+        val latestPadding by rememberUpdatedState(followPadding)
 
         AndroidView(
             modifier = Modifier.fillMaxSize(),
@@ -135,7 +175,7 @@ fun JobRouteMap(
 
                 MapView(context).apply {
                     mapboxMap.loadStyle(styleUri) { style ->
-                        drawTrip(style, pickup, dropoff, route, routeColour)
+                        drawTrip(style, latestPickup, latestDropoff, latestRoute, routeColour)
 
                         // Pitch after the style, never before: a style load
                         // resets the camera, and an unpitched navigation map is
@@ -143,13 +183,16 @@ fun JobRouteMap(
                         // indistinguishable from a flat sprite.
                         mapboxMap.setCamera(
                             CameraOptions.Builder()
-                                .center(here?.toPoint() ?: pickup?.toPoint())
+                                .center(latestHere?.toPoint() ?: latestPickup?.toPoint())
                                 .zoom(FOLLOW_ZOOM)
                                 .pitch(FOLLOW_PITCH)
-                                .bearing(headingDeg ?: 0.0)
-                                .padding(followPadding)
+                                .bearing(latestHeading ?: 0.0)
+                                .padding(latestPadding)
                                 .build(),
                         )
+
+                        // And the rider, if a fix came in before the style did.
+                        latestHere?.takeIf { it.placed }?.let { puck.moveTo(it, latestHeading) }
                     }
 
                     // Settings before the provider, not after. Registering a
@@ -216,7 +259,7 @@ fun JobRouteMap(
 /**
  * How much of the map sits *behind* the rider.
  *
- * The rest is the road ahead. Expressed as a fraction of the view rather than a
+ * The rest is the road ahead. Expressed as a fraction of the visible map rather than a
  * dp figure so the framing is the same on a 5-inch phone and a tablet.
  */
 private const val TRAIL_FRACTION = 0.42f

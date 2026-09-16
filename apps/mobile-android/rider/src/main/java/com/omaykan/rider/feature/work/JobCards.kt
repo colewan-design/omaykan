@@ -401,10 +401,10 @@ private fun JobSheet(
                     .offset(y = -SheetOverlap)
                     .clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
                     .background(MaterialTheme.colorScheme.surface)
-                    .padding(start = CardInset, end = CardInset, top = 18.dp)
-                    // The overlap is taken off the top, so the bottom needs it
-                    // back or the button sits too close to the card's edge.
-                    .padding(bottom = CardInset + SheetOverlap),
+                    .padding(start = CardInset, end = CardInset, top = 18.dp),
+                // No bottom padding: `offset` moves the drawing, not the
+                // layout, so the overlap is already left over as space under
+                // the button. Padding for it as well doubled the gap.
                 content = content,
             )
         }

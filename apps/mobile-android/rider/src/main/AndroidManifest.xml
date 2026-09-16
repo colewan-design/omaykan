@@ -48,6 +48,13 @@
     -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!--
+      The job watcher. `dataSync` and not `location`: it reads a list from the
+      API and touches no sensor, and claiming a location type for it would put
+      a location indicator in the rider's status bar for something that is not
+      reading their position. See JobWatcherService.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <!--
       What this app can start, and therefore what Android lets it see on a
@@ -105,6 +112,16 @@
             android:name=".core.location.LocationShareService"
             android:exported="false"
             android:foregroundServiceType="location" />
+
+        <!--
+          Watches the board while the app is closed. Opt-in, stoppable from its
+          own notification, and NOT stickily restarted — see JobWatcherService
+          for why a service nobody re-enabled should stay dead.
+        -->
+        <service
+            android:name=".core.alerts.JobWatcherService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 
 </manifest>

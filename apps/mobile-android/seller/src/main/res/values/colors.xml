@@ -1,7 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- bg-base token, light. The dark answer is in values-night. -->
-    <color name="window_background">#FFFFFF</color>
-    <!-- The brand green the mark sits on. Same accent as tokens.css. -->
-    <color name="ic_launcher_background">#1A6B3C</color>
+    <!--
+      The forest the launch window is painted with. Signed out, the first
+      Compose frame is the welcome screen's dark photograph; signed in, it is a
+      forest bar; and while the session is being read MainActivity paints this
+      same forest. Cream here would flash between two dark frames.
+      The dark answer is in values-night. Same as ForestLight in Color.kt.
+    -->
+    <color name="window_background">#1E3A2B</color>
+    <!-- The forest the launcher mark sits on, as in :app. -->
+    <color name="ic_launcher_background">#1E3A2B</color>
 </resources>

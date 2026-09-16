@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.omaykan.rider.core.data.DocumentUpload
 import com.omaykan.rider.core.data.Registration
 import com.omaykan.rider.core.data.SessionRepository
+import com.omaykan.rider.core.model.VehicleType
 import com.omaykan.rider.core.network.ApiException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -42,6 +43,16 @@ data class RegisterUiState(
     val confirmPassword: String = "",
     val licenseNumber: String = "",
     val plateNumber: String = "",
+    /**
+     * The bike, asked for at sign-up so the first shop this rider collects from
+     * already knows what to look for. Type defaults rather than starting empty:
+     * a required selection with no default is one more thing between somebody
+     * at a junction and a job board.
+     */
+    val vehicleType: VehicleType = VehicleType.Motorcycle,
+    val vehicleMake: String = "",
+    val vehicleModel: String = "",
+    val vehicleColor: String = "",
     val licenseImage: ChosenDocument? = null,
     val plateImage: ChosenDocument? = null,
     val submitting: Boolean = false,
@@ -128,6 +139,14 @@ class RegisterViewModel @Inject constructor(
 
     fun onPlateNumberChange(value: String) = edit("plateNumber") { it.copy(plateNumber = value) }
 
+    fun onVehicleTypeChange(value: VehicleType) = edit("vehicleType") { it.copy(vehicleType = value) }
+
+    fun onVehicleMakeChange(value: String) = edit("vehicleMake") { it.copy(vehicleMake = value) }
+
+    fun onVehicleModelChange(value: String) = edit("vehicleModel") { it.copy(vehicleModel = value) }
+
+    fun onVehicleColorChange(value: String) = edit("vehicleColor") { it.copy(vehicleColor = value) }
+
     /**
      * Read a picked photo into memory.
      *
@@ -191,6 +210,10 @@ class RegisterViewModel @Inject constructor(
                         password = current.password,
                         licenseNumber = current.licenseNumber,
                         plateNumber = current.plateNumber,
+                        vehicleType = current.vehicleType,
+                        vehicleMake = current.vehicleMake,
+                        vehicleModel = current.vehicleModel,
+                        vehicleColor = current.vehicleColor,
                         licenseImage = license.upload,
                         plateImage = plate.upload,
                     ),

@@ -25,6 +25,7 @@ Rider".
 
 | | |
 |---|---|
+| **Know what it is** | Three pages on the way in, once: what work there is, what it pays, and what you have to do to be paid. Skipped counts as read. |
 | **Apply to ride** | Eight fields and two photographs — licence and plate — through the platform photo picker, which needs no permission. |
 | **Wait, and be told why** | Pending, rejected and suspended are three different screens, and the operator's review note is on two of them. |
 | **The board** | Every unclaimed delivery on the platform, newest first, refreshing every 15s. What it pays, where from, roughly where to, and what there is to collect. |
@@ -33,7 +34,12 @@ Rider".
 | **See the trip** | A picture at the top of every job card: the shop, the door, and the road between them once the job is claimed. A still image, not a map — see below. |
 | **Navigate and call** | One tap into whichever map app the rider already uses, and one into the dialler. |
 | **Advance or hand back** | assigned → picked up → delivered, and a release button that disappears the moment the food is in the bag. |
-| **Be on the map** | A switch at the top of the board puts the rider's live position on the shop's dashboard and the customer's tracking page. Off by default, and off means erased. |
+| **Be on the map** | A switch at the top of the home screen puts the rider's live position on the shop's dashboard and the customer's tracking page. Off by default, and off means erased. |
+| **See the shift** | A home screen: what today has paid, how many drops today, what cash is in the rider's hands that belongs to a shop, and the jobs in hand. Earnings has the week, the month, all time and the finished list by day. |
+| **Be recognised** | An optional photograph and a description of the bike — type, colour, make, model. The shop reads it at the counter, the customer reads it at the kerb, and both stop after the handover. |
+| **Be told about work** | An opt-in background watcher that checks the board every minute and posts a notification per new job, so a rider is not obliged to keep the app open. |
+| **See what customers said** | A star average and the remarks behind it, with the customer's name deliberately absent. |
+| **Reach a human** | A support number and address, served from the API rather than compiled in, and readable by a rejected rider — the person most likely to need one. |
 
 ## Sign-in: this app signs in a person
 
@@ -118,39 +124,83 @@ doing it: a board that lies. `WorkFeedTest` holds a fetch open with a
 
 ## What it looks like
 
-Four screens, one vocabulary, defined in `core/designsystem/Components.kt`. None
-of it is Material's defaults left where they fell:
+As of 2026-09-11 the app wears the highland look `:app` and `:seller` were
+redrawn to the same week, from the "KADAYAW Rider" reference board: welcome,
+home, delivery details, on the way, earnings and profile. The three rules are
+the other two refreshes' rules — **Omaykan's name, the reference's look, and a
+fact the API actually has in every slot**. The slot-by-slot decisions are in
+[documentation/design/rider-refresh](../../../documentation/design/rider-refresh/README.md).
 
-- **The canopy.** Every screen opens with the same dark green block, rounded off
-  at the bottom, painting under the status bar. It is the whole navigation model
-  made visible — there is no bar, no drawer and no back stack, so the block is
-  what tells a rider which screen they are on before they have read anything. On
-  the board it carries the rider's name, their plate, and three numbers; on the
-  status screen it carries the verdict; on the two form screens it carries the
-  title. It does not scroll, and the form under it does.
-- **Cards.** A flat surface, 20dp radius, a hairline instead of a shadow.
-  Elevation in Material is drawn as a tonal shift, which on this app's near-black
-  dark ground turns a card grey and washes out the money on it.
-- **The capsule.** Every button a rider actually presses is a full-width pill,
-  54dp tall. Wide and round is easier to hit with a thumb at a junction than a
-  rectangle of the same height, and it separates "press this" from the fields and
-  cards above it. The Available / My jobs choice is capsules in a tray rather than
-  an underlined tab row, for the same reason: a fill is read as a shape, a 2dp
-  underline has to be read as text.
+One vocabulary, defined in `core/designsystem/` (`Color.kt`, `Type.kt`,
+`Brand.kt`, `Components.kt`). None of it is Material's defaults left where they
+fell:
+
+- **Three colours, three roles.** Forest `#1E3A2B` is the frame — every header,
+  the tab bar, the welcome screen. Terracotta `#B0512E` is the one thing on a
+  screen to press: Log in, Take this job, I have picked up the order. The green
+  accent (`primary`, `#2E5E43`) is *state* — a switch that is on, the stop a
+  rider is heading to, the step a delivery is on. Everything a rider reads sits
+  on a cream page or a white card. This is where `:rider` parts from `:seller`,
+  which makes terracotta `primary`: here the stock controls that reach for
+  `primary` on their own are all state, not actions.
+- **Three voices.** The platform sans for everything a rider acts on; Lora for
+  the lines meant to be felt (the greeting over the mountains, the sign-off, the
+  line under a rider's name); Cinzel for the `OMAYKAN` wordmark only. Both are
+  bundled variable fonts in `res/font`, not downloadable ones — those need Play
+  Services.
+- **The forest bar.** `ForestTopBar` paints under the status bar: back on the
+  left when there is somewhere to go back to, a centred title, actions on the
+  right. It is flat. The curved green canopy it replaced read as an
+  illustration rather than as the app's frame.
+- **Cards.** White, 14dp radius, a hairline instead of a shadow. Elevation in
+  Material is drawn as a tonal shift, which on the dark ground turns a card grey
+  and washes out the money on it.
+- **Buttons.** Soft 10dp rectangles, 52dp tall, full width. The one exception is
+  the job screen's advance button — the reference's terracotta capsule with a
+  white disc at its head. It looks like a slider and is a tap: a swipe would be
+  a new gesture to learn on a moving bike, and the server already refuses a
+  stage that skips a step.
 - **Tinted bands, never coloured text.** Cash to collect is amber on amber, a
-  prepaid order is green on green, a failure is red on red. Coloured text on white
-  is a contrast problem at small sizes in daylight; a soft ground carries the
-  meaning and leaves the words at full contrast. The same four grounds do the
-  notices, so a colour means one thing everywhere in the app.
+  prepaid order is green on green, a failure is red on red, the next thing to do
+  is terracotta on peach. Coloured text on white is a contrast problem at small
+  sizes in daylight; a soft ground carries the meaning and leaves the words at
+  full contrast.
+- **The tab bar.** Forest with rounded shoulders, the same bar the other two
+  apps wear. All four tabs keep their labels; the current one gets a filled
+  icon, a brighter label and a short ember bar above it — a shape, which can be
+  seen from a handlebar mount.
 
-Every job card is the same three bands in the same order — **the money, the
-route, the button** — which is the order a rider decides in. The fee is the
-largest thing in the app, larger than any heading, because on a board of six it
-is the first thing read and often the only thing read. Under it the two ends of
-the trip are two discs joined by a dotted rail: green is where the rider is
-going *now*, and it moves from the shop to the door when they press "Picked up",
-so a rider holding three jobs can tell which are still at a counter without
-reading a word.
+### Four tabs, and still no NavHost
+
+Home, Jobs, Earnings, Profile. They are not a stack — they are four views of one
+signed-in session — so they are a `rememberSaveable` enum over a tab bar, and
+Back from any of them returns to Home rather than walking out to a sign-in
+screen the rider is not on. The same argument `MainActivity` makes one level up.
+
+An **open job** is held by `RiderShell` rather than by the Jobs tab, because
+Home's active-order cards open jobs too now, and it covers the tab bar while it
+is open: a rider in the middle of a job has one thing on screen. The job screen
+has two faces over one view model — the details while the food is at the shop,
+the map once it is in the bag, either one tap from the other.
+
+`JobDetailViewModel` is scoped to the activity (there is no NavHost to scope it
+shorter), so the screen calls `close()` when it leaves composition. Before that
+existed, closing a job left the location stream — and the GPS — running until
+the app was killed, and opening a second job left the first job's feed
+collector writing into the state.
+
+### What fills the reference's slots
+
+| Reference | This app |
+| --- | --- |
+| "You're Online" toggle | The job-alert switch and the location switch, in one card. There is no online state on this platform, and sharing stays at the top of the first screen so the off switch is always findable. |
+| Completion rate | Cash to collect — nothing records a handed-back job as a failure, so there is no rate. |
+| Inbox (2) | My jobs, with the count of jobs in hand. Riders have no inbox. |
+| COD / Paid online split, filter chips | Deliveries and average per delivery. A finished job's payment status can change after the fact, so a split by it would not be a record. |
+| Order item photos and prices | Names and quantities — all the rider's copy of an order carries. |
+| "Near You" step | "Arriving", lit only when the phone has a fix within 300 m of the door. |
+| Rider ID | The plate. |
+| App settings, Safety guidelines | Left out: the only settings are the two switches on Home, and there is no rider code to link to. |
 
 ### Looking at it without a backend
 
@@ -163,7 +213,31 @@ draws every card with made-up jobs on one scrolling screen:
 adb shell am start -n com.omaykan.rider.debug/com.omaykan.rider.GalleryActivity
 adb shell am start -n com.omaykan.rider.debug/com.omaykan.rider.GalleryActivity --es screen signin
 adb shell am start -n com.omaykan.rider.debug/com.omaykan.rider.GalleryActivity --es screen register
+adb shell am start -n com.omaykan.rider.debug/com.omaykan.rider.GalleryActivity --es screen onboarding
+adb shell am start -n com.omaykan.rider.debug/com.omaykan.rider.GalleryActivity --es screen account
+adb shell am start -n com.omaykan.rider.debug/com.omaykan.rider.GalleryActivity --es screen home
+adb shell am start -n com.omaykan.rider.debug/com.omaykan.rider.GalleryActivity --es screen earnings
+adb shell am start -n com.omaykan.rider.debug/com.omaykan.rider.GalleryActivity --es screen job
+adb shell am start -n com.omaykan.rider.debug/com.omaykan.rider.GalleryActivity --es screen jobmap
+adb shell am start -n com.omaykan.rider.debug/com.omaykan.rider.GalleryActivity --es screen finished
+adb shell am start -n com.omaykan.rider.debug/com.omaykan.rider.GalleryActivity --es screen delivery   # a whole job, played through; --ei speed 12 to hurry
+adb shell am start -n com.omaykan.rider.debug/com.omaykan.rider.GalleryActivity --es screen forgot
+adb shell am start -n com.omaykan.rider.debug/com.omaykan.rider.GalleryActivity --es screen map
+adb shell am start -n com.omaykan.rider.debug/com.omaykan.rider.GalleryActivity --es screen drive
+adb shell am start -n com.omaykan.rider.debug/com.omaykan.rider.GalleryActivity --es screen nav
 ```
+
+`home`, `earnings` and `account` draw the tab bar, because they draw a
+signed-in shell — which makes them the ones to reach for when a change touches
+navigation rather than a card. `home` can walk to the other tabs from its bar.
+
+`home`, `earnings`, `job`, `jobmap` and `finished` render the production layouts
+(`HomeContent`, `EarningsContent`, `JobDetailContent`) with fixture state. They
+cannot draw the screens' view models: those need a signed-in session and live
+calls, and a gallery has neither. Run any of them under
+`adb shell cmd uimode night yes` to check the dark palette. The job samples ask
+Mapbox Directions for the real road between the fixture shop and door, so the
+map face shows the same route line, turn banner and ETA a live job does.
 
 ## Building
 
@@ -220,6 +294,56 @@ order on the board. Seed `DemoSellerSeeder`, register through the app, then
 approve the account from the platform admin's rider review — and place a
 **delivery** order from a storefront, since the board only ever carries
 `fulfillment_method = delivery` at `delivery_stage = pending`.
+
+## A face, a bike, and a score
+
+Added 2026-09. Three features that all answer one question the app could not
+answer before — *who is this person on my doorstep* — plus the one that answers
+it back.
+
+```
+riders.avatar_path        private disk, streamed via /api/riders/{id}/avatar
+riders.vehicle_type       closed set: motorcycle scooter tricycle bicycle ebike car
+riders.vehicle_{make,model,color}   free text; the long tail does not fit a dropdown
+rider_ratings             one row per delivered order, unique on order_id
+```
+
+**The photograph is optional and stays optional.** Most riders will never upload
+one, and the initial-letter disc the app has always drawn is the supported
+fallback rather than a placeholder waiting to be replaced. Nothing in the
+product requires a face.
+
+**It is on the private disk, with the licence, for a different reason.** The
+licence is private because it is an identity document. This is private because
+a directory-listable folder of every rider's face is a scraping target, and
+because a rider who removes their photo needs it to actually stop resolving. It
+is streamed through a route keyed by the rider's UUID — the same arrangement
+`StoreImageController` uses for a shop's photo.
+
+**The customer's copy is stage-gated; the shop's is not.** `Order::riderProfileForCustomer`
+withholds the whole block outside `assigned` and `picked_up`, for the reason the
+phone number is withheld: the tracking view is public by UUID and that link is
+*meant* to be forwarded, so anything left in the payload afterwards is readable
+by everyone who was ever sent it. A photograph of somebody's face is the most
+personal thing this application could leave there. The shop's copy is ungated
+because a merchant is a party to the delivery for its whole life.
+
+That the gate also makes the feature *work* is a coincidence worth noting: a
+customer needs to know what the rider looks like in exactly the window where the
+answer is on its way to them.
+
+**A rating is a receipt, not an opinion.** `order_id` is unique, there is no
+update route, and the four conditions are checked in
+`RiderRatingController::store` — the order is the customer's, it was delivered,
+it had a rider with an account, and nobody has rated it. An unrated rider's
+average is **null and never 0.0**: rendering a first-day rider as zero out of
+five would put the worst possible number on the screen of the person least able
+to have earned it. Under five ratings the app says so rather than implying the
+average means anything yet.
+
+The rider reads their scores back without the customer attached. A rider seeing
+"3 stars — slow" against a name and an address they delivered to an hour ago is
+the setup for a confrontation this feature should not create.
 
 ## Sharing a position
 
@@ -299,9 +423,28 @@ ping. There is no trail.
 
   Blank `OMAYKAN_MAPBOX_TOKEN` is a supported build: no image, and every card is
   the card that shipped before there was one.
-- **No background watcher and no push.** Nothing tells a rider about a new job
-  while the app is closed. See below; this is the first thing to fix.
-- **No earnings report, and no statistics screen.** The completed list is the
+- **No push, and the watcher is the cheap version.** As of 2026-09 there *is* a
+  background watcher — an opt-in foreground service that polls the board every
+  60s and posts a notification per new job (`core/alerts/`). It is deliberately
+  not push: FCM needs a device-token registry the backend does not have and a
+  "job posted" event that does not exist, since today there is only
+  `OrderPlaced` on a store channel that no rider is subscribed to.
+
+  Two honest limits come with that. Alerts stop when the service does, and
+  `START_NOT_STICKY` means a system kill or a reboot ends them silently — the
+  same choice `LocationShareService` makes, and for the same reason. This
+  narrows the gap between "app open" and "nothing at all"; it does not close
+  it.
+- **No cancellation count, and no company balance.** Both are on every
+  competitor's rider dashboard and neither has anything behind it here. A rider
+  who hands a job back is not recorded as having failed — the row goes to
+  somebody else, which is the system working — and there is no platform cut, so
+  there is no balance to owe and nothing to withdraw. The home screen's second
+  card is cash *to collect at doors*, summed over the jobs in hand, which is a
+  physical fact about a pocket rather than a ledger. It offers no Settle button
+  for the same reason: there is no endpoint that could honour one.
+
+- **No earnings report beyond `/earnings`, and no statistics screen.** The completed list is the
   server's last 30 and is history, not accounting. Totals, week-on-week
   comparisons, active days and an average ETA all need an aggregates endpoint
   that does not exist, and a customer rating needs a feature that does not
@@ -317,12 +460,11 @@ ping. There is no trail.
 
 ## Next, in the order it is worth doing
 
-1. **A watcher, then push.** A rider who has to keep the app open to hear about
-   a job will keep the app open, and will still miss jobs. The cheap version is
-   `:seller`'s opt-in `dataSync` foreground service holding the same feed. The
-   real version is FCM, which needs a device-token registry on the backend and
-   an event to send — and there is no "job posted" event today, only
-   `OrderPlaced` on a store channel.
+1. ~~**A watcher**~~, then **push**. The watcher shipped in 2026-09 — an opt-in
+   `dataSync` foreground service over the same board feed, with the switch
+   beside the location one on the home screen. What is left is FCM, which still
+   needs a device-token registry on the backend and an event to send: there is
+   no "job posted" event today, only `OrderPlaced` on a store channel.
 2. ~~**Location, once the backend can take it.**~~ Done — see *Sharing a
    position*, below, and
    [live-delivery-tracking.md](../../../documentation/live-delivery-tracking.md).

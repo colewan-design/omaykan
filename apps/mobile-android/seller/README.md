@@ -1,12 +1,17 @@
 # Omaykan Seller
 
-The merchant's phone. Incoming storefront orders, and the four decisions a shop
-makes about one while standing away from the till.
+The merchant's phone. Incoming storefront orders and the four decisions a shop
+makes about one while standing away from the till — and, since the 2026-09-11
+redesign, the day's figures, the shop's products and its customer messages.
 
-This is the app [mobile-plan.md §11](../../../documentation/mobile-plan.md)
+This started as the app [mobile-plan.md §11](../../../documentation/mobile-plan.md)
 describes: *"small and specific — new-order alerts and order acceptance, not the
-whole register."* The register stays a PWA. Nothing here syncs a catalog, opens
-a shift, counts a drawer or sells to somebody at the counter.
+whole register."* It is bigger now, and the register is still a PWA: nothing
+here opens a shift, counts a drawer or sells to somebody at the counter. Five
+tabs — Home, Products, Orders, Sales, Account — with Messages, a product form
+and a message thread pushed on top. The look and the reasoning behind each
+departure from the reference are in
+[seller-refresh](../../../documentation/design/seller-refresh/README.md).
 
 ```
 apps/mobile-android/
@@ -30,7 +35,11 @@ label is "Omaykan Seller" and not "Omaykan".
 | **Where the rider is** | A map in the assign sheet, when a platform rider is carrying the order and has sharing switched on. |
 | **Settle payment** | Mark an unpaid order paid: cash, e-wallet or card. |
 | **Today's takings** | Gross, order count and what is still unpaid — arithmetic over the list already fetched, not a second endpoint. |
-| **New-order alert** | A sound and a heads-up notification when an order arrives, with an opt-in watcher that keeps working while the app is in the background. |
+| **New-order alert** | A sound and a heads-up notification when an order arrives, with an opt-in watcher that keeps working while the app is in the background. Tapping it opens the Orders tab. |
+| **Home** | Today's sales, orders and what is still owed; the low-stock count; top sellers over seven days; unread messages. Every figure is read from a list another tab already shows. |
+| **Products** | The catalog as the register bootstraps it (`GET /api/sync/bootstrap`), searchable and filtered by category and status. Admins and managers add and edit through the register's own outbox (`POST /api/sync/push`) — see `core/data/ProductEvents.kt` for why an edit sends every field back and why stock goes as an adjustment. |
+| **Sales** | Seven days of storefront sales as bars, total, order count and average — arithmetic over the last 100 orders, and it says so when a busy week runs past them. |
+| **Messages** | Customer threads (`/api/seller/conversations`), a reply box, and the customer's recent orders at this shop above each thread. A shop answers; it cannot start one. |
 
 ## Sign-in: a person, then a shop
 
@@ -140,9 +149,15 @@ business-mode gate, deliberately.
   second app stops moving, that is the time.
 - **No local database.** An order list is the server's answer to "what is
   happening right now", and a cached one is a lie a merchant would act on.
-- **No product photos.** The seller knows what they sell. Coil *is* here now,
-  for exactly one image — the static delivery map in the assign sheet — and for
-  nothing else.
+- **No photo upload, unit or description on the product form.** Coil shows a
+  product's photo and the shop's own photo when they exist, but there is no
+  endpoint for uploading a product photo, the sync event that writes a product
+  carries no unit, and a product has no description column. The form offers
+  only what it can save.
+- **No payouts and no open/closed switch.** Customers pay the shop directly and
+  the platform never holds the money, so there is nothing to pay out; and
+  nothing on the server takes a shop off the storefront. The reference's
+  places for both hold recent orders and the order-alert switch instead.
 - **No embedded map.** The Mapbox Android SDK adds megabytes and a secret
   download token to every build and every CI run, to draw a pannable map nobody
   wants while standing at a counter. The question here is "is he close", and one
@@ -173,6 +188,11 @@ business-mode gate, deliberately.
    section used to be waiting for.
 4. **A sound of its own.** The default notification tone is right for a first
    version and wrong for a busy kitchen.
+5. **Guard catalog writes on the server.** `POST /api/sync/push` applies
+   product and stock events for any signed-in staff member — it has no
+   `isManager()` check, where the store-photo and staff endpoints do. This app
+   hides the product form's save from cashiers, which is a courtesy, not a
+   control: a cashier's token can still write the catalog.
 5. **Factor out the map, the theme, `ApiCaller` and the Google flow.**
    `StaticMap` is the third near-copy across these three apps and the OAuth flow
    is now the second. Three copies is the point at which a shared module stops

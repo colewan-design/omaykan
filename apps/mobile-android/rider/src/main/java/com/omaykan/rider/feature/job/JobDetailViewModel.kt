@@ -2,6 +2,7 @@ package com.omaykan.rider.feature.job
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.omaykan.rider.core.data.AccountRepository
 import com.omaykan.rider.core.data.DeliveryRepository
 import com.omaykan.rider.core.data.WorkFeed
 import com.omaykan.rider.core.location.LocationSource
@@ -10,16 +11,20 @@ import com.omaykan.rider.core.map.NavigationProgress
 import com.omaykan.rider.core.map.NavigationRoute
 import com.omaykan.rider.core.map.RouteRepository
 import com.omaykan.rider.core.map.StepProgress
+import com.omaykan.rider.core.map.decodePolyline
 import com.omaykan.rider.core.model.DeliveryAssignment
 import com.omaykan.rider.core.model.DeliveryStage
 import com.omaykan.rider.core.network.ApiException
+import com.omaykan.rider.core.network.dto.SupportDto
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlin.math.roundToInt
 
 /**
  * One job, opened.
@@ -37,6 +42,8 @@ data class JobDetailUiState(
     /** Degrees clockwise from north. Kept from the last good one when standing still. */
     val headingDeg: Double? = null,
     val step: StepProgress? = null,
+    /** How much of [route] is still ahead of [here]. Null until there is a fix. */
+    val metresLeft: Double? = null,
     val busy: Boolean = false,
     val error: String? = null,
     /**
@@ -46,7 +53,27 @@ data class JobDetailUiState(
      * close itself.
      */
     val everLoaded: Boolean = false,
-)
+) {
+    /** What is left of the road: all of it until there is a fix to measure from. */
+    val metresToGo: Double?
+        get() = metresLeft ?: route?.distanceMetres
+
+    /**
+     * The time for what is left, at the route's own average speed.
+     *
+     * Never "0 min" while there is still road to ride: rounding a last few
+     * hundred metres down to nothing reads as "you are there" when you are not.
+     */
+    val minutesToGo: Int?
+        get() {
+            val road = route ?: return null
+            val left = metresToGo ?: return null
+            if (road.distanceMetres <= 0.0) return road.durationMinutes
+
+            val minutes = (road.durationSeconds * (left / road.distanceMetres) / 60.0).roundToInt()
+            return if (left > NavigationProgress.ARRIVED_WITHIN_M) minutes.coerceAtLeast(1) else minutes
+        }
+}
 
 /**
  * The screen behind a tapped job: the road, the car, and the next instruction.
@@ -72,13 +99,42 @@ class JobDetailViewModel @Inject constructor(
     private val deliveries: DeliveryRepository,
     private val routes: RouteRepository,
     private val locations: LocationSource,
+    private val accounts: AccountRepository,
 ) : ViewModel() {
+
+    /**
+     * How to reach a human mid-job — the headset on the details bar.
+     *
+     * Null when the server has no channel set or cannot be reached; the screen
+     * says so rather than dialling nowhere. Not cached: it is fetched only when
+     * a rider reaches for it, which on most jobs is never.
+     */
+    suspend fun support(): SupportDto? = try {
+        accounts.support()
+    } catch (e: ApiException) {
+        null
+    }
 
     private val _state = MutableStateFlow(JobDetailUiState())
     val state: StateFlow<JobDetailUiState> = _state.asStateFlow()
 
     private var jobId: String? = null
     private var lastPoint: MapPoint? = null
+
+    /** The current route, decoded once, for counting down what is left of it. */
+    private var path: List<MapPoint> = emptyList()
+
+    /*
+     * The two long-running collectors, held so they can be stopped.
+     *
+     * This view model is scoped to the activity — there is no NavHost to give
+     * it a shorter life — so it outlives every job screen it serves. Before
+     * these were kept, closing a job left the location stream running (the GPS
+     * stayed on until the app was killed) and opening a second job started a
+     * second feed collector that kept writing the *first* job into the state.
+     */
+    private var feedCollector: Job? = null
+    private var locationCollector: Job? = null
 
     /** Where the current route was computed from. Null until there is one. */
     private var routedFrom: MapPoint? = null
@@ -106,9 +162,10 @@ class JobDetailViewModel @Inject constructor(
      */
     fun open(id: String) {
         if (jobId == id) return
+        close()
         jobId = id
 
-        viewModelScope.launch {
+        feedCollector = viewModelScope.launch {
             feed.state.collect { work ->
                 val job = work.active.firstOrNull { it.id == id }
                 val previous = _state.value.job
@@ -124,6 +181,25 @@ class JobDetailViewModel @Inject constructor(
         }
 
         watchLocation()
+    }
+
+    /**
+     * Stop following a job: no feed, no GPS, nothing on screen.
+     *
+     * Called when the job screen leaves composition, and by [open] before it
+     * points at another job. Also on a rotation, which disposes the screen and
+     * re-opens it a frame later — cheap, because RouteRepository caches.
+     */
+    fun close() {
+        feedCollector?.cancel()
+        feedCollector = null
+        locationCollector?.cancel()
+        locationCollector = null
+        jobId = null
+        lastPoint = null
+        routedFrom = null
+        path = emptyList()
+        _state.value = JobDetailUiState()
     }
 
     /**
@@ -146,14 +222,22 @@ class JobDetailViewModel @Inject constructor(
         val end = if (goingToShop) from else to
 
         routedFrom = start
+        val forJob = jobId
 
         viewModelScope.launch {
             val route = routes.route(start, end)
+
+            // A slow answer for a job that has since been closed must not
+            // land on the next one.
+            if (jobId != forJob) return@launch
+
+            path = route?.let { decodePolyline(it.polyline) }.orEmpty()
 
             _state.update {
                 it.copy(
                     route = route,
                     step = NavigationProgress.currentStep(route?.steps.orEmpty(), it.here),
+                    metresLeft = NavigationProgress.metresRemaining(path, it.here),
                 )
             }
         }
@@ -169,7 +253,7 @@ class JobDetailViewModel @Inject constructor(
     private fun watchLocation() {
         if (!locations.permitted()) return
 
-        viewModelScope.launch {
+        locationCollector = viewModelScope.launch {
             locations.fixes().collect { fix ->
                 val point = MapPoint(fix.lat, fix.lng)
 
@@ -189,6 +273,11 @@ class JobDetailViewModel @Inject constructor(
                         // rather than snapping to north.
                         headingDeg = heading ?: it.headingDeg,
                         step = NavigationProgress.currentStep(it.route?.steps.orEmpty(), point),
+                        // Counted down along the road on every fix, so the time
+                        // and distance on the sheet are live on both legs — not
+                        // only on the way to the shop, which is the only leg
+                        // that is ever re-routed.
+                        metresLeft = NavigationProgress.metresRemaining(path, point),
                     )
                 }
 

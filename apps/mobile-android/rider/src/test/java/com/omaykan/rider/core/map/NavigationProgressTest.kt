@@ -176,4 +176,49 @@ class NavigationProgressTest {
 
         assertNotNull(NavigationProgress.currentStep(huddled, at = MapPoint(16.4123, 120.5960)))
     }
+    // -- what is left of the road ---------------------------------------------
+
+    /** Three points up a meridian, about 1.1 km apart. */
+    private val road = listOf(
+        MapPoint(16.40, 120.60),
+        MapPoint(16.41, 120.60),
+        MapPoint(16.42, 120.60),
+    )
+
+    private val roadLength = NavigationProgress.cumulativeMetres(road).last()
+
+    @Test
+    fun `at the start the whole road is left`() {
+        val left = NavigationProgress.metresRemaining(road, road.first())
+
+        assertEquals(roadLength, left!!, 5.0)
+    }
+
+    @Test
+    fun `halfway along, half of it is`() {
+        val left = NavigationProgress.metresRemaining(road, MapPoint(16.41, 120.60))
+
+        assertEquals(roadLength / 2, left!!, 5.0)
+    }
+
+    /** The case this exists for: the leg to the door must count down. */
+    @Test
+    fun `it shrinks as the rider moves along`() {
+        val early = NavigationProgress.metresRemaining(road, MapPoint(16.403, 120.60))!!
+        val later = NavigationProgress.metresRemaining(road, MapPoint(16.415, 120.60))!!
+
+        assertTrue("$early then $later", later < early)
+    }
+
+    @Test
+    fun `at the end nothing is left`() {
+        val left = NavigationProgress.metresRemaining(road, road.last())
+
+        assertEquals(0.0, left!!, 1.0)
+    }
+
+    @Test
+    fun `no fix is no answer`() {
+        assertNull(NavigationProgress.metresRemaining(road, null))
+    }
 }

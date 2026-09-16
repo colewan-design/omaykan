@@ -221,9 +221,12 @@ fun FeeArt(modifier: Modifier = Modifier) = Scene(modifier) { palette ->
 fun RouteArt(modifier: Modifier = Modifier) = Scene(modifier) { palette ->
     ground(palette)
 
+    // Every coordinate below is inside the ground disc — centre (160, 138),
+    // radius 118 — so the scene reads as one object rather than as a building
+    // that has wandered off the edge of it.
     val road = Path().apply {
-        moveTo(84f, 194f)
-        cubicTo(120f, 120f, 190f, 210f, 230f, 106f)
+        moveTo(112f, 152f)
+        cubicTo(150f, 198f, 198f, 176f, 228f, 122f)
     }
     drawPath(
         path = road,
@@ -235,18 +238,24 @@ fun RouteArt(modifier: Modifier = Modifier) = Scene(modifier) { palette ->
         ),
     )
 
-    // The shop: a squat building with an awning.
+    // The shop: a squat building with an awning and a door.
     drawRoundRect(
         color = palette.surface,
-        topLeft = Offset(52f, 168f),
-        size = Size(64f, 56f),
+        topLeft = Offset(76f, 158f),
+        size = Size(64f, 52f),
         cornerRadius = CornerRadius(10f, 10f),
     )
     drawRoundRect(
         color = palette.accent,
-        topLeft = Offset(46f, 154f),
-        size = Size(76f, 22f),
+        topLeft = Offset(70f, 144f),
+        size = Size(76f, 20f),
         cornerRadius = CornerRadius(8f, 8f),
+    )
+    drawRoundRect(
+        color = palette.soft,
+        topLeft = Offset(98f, 178f),
+        size = Size(22f, 32f),
+        cornerRadius = CornerRadius(6f, 6f),
     )
 
     // The door: a pin, which is what the customer is on every other screen.

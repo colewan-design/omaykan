@@ -31,10 +31,85 @@ data class RiderDto(
     val phone: String = "",
     val licenseNumber: String = "",
     val plateNumber: String = "",
+    /**
+     * A path, not a full URL — `/api/riders/{id}/avatar?v=…`.
+     *
+     * Resolved against the same base URL as every other call, so a debug build
+     * pointed at a laptop loads the photo from the laptop. Null for a rider who
+     * has not uploaded one, which is the common case and not an error: the app
+     * draws the initial-letter avatar it always drew.
+     */
+    val photoUrl: String? = null,
+    val vehicle: VehicleDto = VehicleDto(),
+    val rating: RatingSummaryDto = RatingSummaryDto(),
     val status: String? = null,
     val reviewNote: String? = null,
     val reviewedAt: String? = null,
     val createdAt: String? = null,
+)
+
+/**
+ * `Rider::vehicleArray`.
+ *
+ * Every field defaulted, including the type: a server older than this build
+ * sends none of this, and a rider whose account decodes to "motorcycle" is far
+ * better off than one whose profile screen fails to load.
+ */
+@Serializable
+data class VehicleDto(
+    val type: String = "motorcycle",
+    val make: String? = null,
+    val model: String? = null,
+    val color: String? = null,
+    /** The server's own sentence — "red Honda Click". */
+    val label: String = "",
+    val plateNumber: String = "",
+)
+
+/**
+ * `Rider::ratingSummary`.
+ *
+ * `average` is null rather than zero for a rider nobody has rated. The
+ * distinction is the whole point: 0.0 out of 5 is the worst possible score,
+ * and showing it to somebody on their first day would be a lie told by a
+ * default value.
+ */
+@Serializable
+data class RatingSummaryDto(
+    val average: Double? = null,
+    val count: Int = 0,
+)
+
+/** One score, as `RiderRating::toRiderArray` sends it. */
+@Serializable
+data class RiderRatingDto(
+    val id: String = "",
+    val score: Int = 0,
+    val comment: String? = null,
+    val ticketNumber: JsonElement? = null,
+    val at: String? = null,
+)
+
+/** `RiderRatingController::index`. */
+@Serializable
+data class RatingsDto(
+    val summary: RatingSummaryDto = RatingSummaryDto(),
+    val confidenceThreshold: Int = 5,
+    val ratings: List<RiderRatingDto> = emptyList(),
+)
+
+/**
+ * `RiderSupportController::show`.
+ *
+ * Any of the three may be null, and null means *absent* rather than empty: the
+ * screen renders the channels it is given, so an unset SUPPORT_PHONE produces
+ * no call button rather than one that dials nowhere.
+ */
+@Serializable
+data class SupportDto(
+    val email: String? = null,
+    val phone: String? = null,
+    val hours: String? = null,
 )
 
 /** What register and login both answer with. */
@@ -205,12 +280,23 @@ data class PositionAckDto(
  * both: the email is the login handle and the address a reset link goes to, and
  * the licence number is the thing an operator actually approved. See
  * RiderAccountController.
+ *
+ * **To clear a vehicle field, send `""` and not null.** The Json in
+ * NetworkModule is configured `explicitNulls = false`, so a null property is
+ * omitted from the body entirely — which the server reads as "not sent, leave
+ * it alone". The empty string is the one value that survives the encoder and
+ * that RiderAccountController turns back into a null column, so it is how a
+ * rider who repainted a bike actually removes "red".
  */
 @Serializable
 data class ProfileUpdateRequestDto(
     val name: String? = null,
     val phone: String? = null,
     val plateNumber: String? = null,
+    val vehicleType: String? = null,
+    val vehicleMake: String? = null,
+    val vehicleModel: String? = null,
+    val vehicleColor: String? = null,
 )
 
 /**

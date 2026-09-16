@@ -8,6 +8,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -47,6 +51,8 @@ import com.omaykan.rider.core.designsystem.RiderCard
 import com.omaykan.rider.core.designsystem.RiderTextField
 import com.omaykan.rider.core.designsystem.RiderTheme
 import com.omaykan.rider.core.designsystem.SectionLabel
+import com.omaykan.rider.core.designsystem.PillShape
+import com.omaykan.rider.core.model.VehicleType
 import com.omaykan.rider.feature.common.Notice
 
 /**
@@ -200,6 +206,36 @@ fun RegisterScreen(
                     error = state.fieldErrors["plateNumber"],
                     enabled = !state.submitting,
                     capitalization = KeyboardCapitalization.Characters,
+                )
+
+                RegisterVehicleTypePicker(
+                    selected = state.vehicleType,
+                    enabled = !state.submitting,
+                    onSelect = viewModel::onVehicleTypeChange,
+                )
+
+                Field(
+                    value = state.vehicleColor,
+                    onChange = viewModel::onVehicleColorChange,
+                    label = "Colour (optional)",
+                    error = state.fieldErrors["vehicleColor"],
+                    enabled = !state.submitting,
+                )
+
+                Field(
+                    value = state.vehicleMake,
+                    onChange = viewModel::onVehicleMakeChange,
+                    label = "Make (optional)",
+                    error = state.fieldErrors["vehicleMake"],
+                    enabled = !state.submitting,
+                )
+
+                Field(
+                    value = state.vehicleModel,
+                    onChange = viewModel::onVehicleModelChange,
+                    label = "Model (optional)",
+                    error = state.fieldErrors["vehicleModel"],
+                    enabled = !state.submitting,
                     imeAction = ImeAction.Done,
                     last = true,
                 )
@@ -378,6 +414,62 @@ private fun DocumentPicker(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(top = 8.dp, start = 48.dp),
+            )
+        }
+    }
+}
+
+/**
+ * The six shapes, on the way in.
+ *
+ * Its own copy rather than the account screen's, because the two forms are
+ * built from different field primitives — this screen has a local `Field` with
+ * its own spacing rules — and sharing the chip would mean sharing that too.
+ * The list itself comes from VehicleType, so the two cannot drift on *what* is
+ * offered, only on how it is drawn.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RegisterVehicleTypePicker(
+    selected: VehicleType,
+    enabled: Boolean,
+    onSelect: (VehicleType) -> Unit,
+) {
+    Text(
+        text = "Type",
+        style = MaterialTheme.typography.bodySmall,
+        color = RiderTheme.colors.textSecondary,
+        modifier = Modifier.padding(top = 12.dp, bottom = 8.dp),
+    )
+
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        VehicleType.entries.forEach { type ->
+            val container =
+                if (type == selected) MaterialTheme.colorScheme.primary else RiderTheme.colors.fill
+            val content = if (type == selected) {
+                MaterialTheme.colorScheme.onPrimary
+            } else {
+                RiderTheme.colors.textSecondary
+            }
+
+            Text(
+                text = type.label,
+                style = MaterialTheme.typography.bodySmall,
+                color = content,
+                modifier = Modifier
+                    .clip(PillShape)
+                    .background(container)
+                    .selectable(
+                        selected = type == selected,
+                        enabled = enabled,
+                        role = Role.RadioButton,
+                        onClick = { onSelect(type) },
+                    )
+                    .padding(horizontal = 14.dp, vertical = 9.dp),
             )
         }
     }

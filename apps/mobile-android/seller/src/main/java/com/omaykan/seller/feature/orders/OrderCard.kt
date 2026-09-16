@@ -1,5 +1,7 @@
 package com.omaykan.seller.feature.orders
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,16 +14,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DeliveryDining
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PersonAdd
-import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.TwoWheeler
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -30,38 +32,40 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.omaykan.seller.core.designsystem.CircleIconButton
+import com.omaykan.seller.core.designsystem.InitialAvatar
 import com.omaykan.seller.core.designsystem.Pill
 import com.omaykan.seller.core.designsystem.PrimaryButton
 import com.omaykan.seller.core.designsystem.SecondaryButton
 import com.omaykan.seller.core.designsystem.SellerTheme
 import com.omaykan.seller.core.designsystem.SoftCard
 import com.omaykan.seller.core.designsystem.StageTrack
+import com.omaykan.seller.core.designsystem.TileShape
 import com.omaykan.seller.core.model.DeliveryStage
 import com.omaykan.seller.core.model.Money
 import com.omaykan.seller.core.model.OrderStatus
 import com.omaykan.seller.core.model.SellerOrder
+import com.omaykan.seller.core.model.formatQuantity
 import com.omaykan.seller.core.model.placedAtTimeLabel
+
+/** Lines shown before the rest fold into "+ 3 more". */
+private const val MAX_LINES = 4
 
 /**
  * One order, and everything a merchant can do about it.
  *
- * The card carries its own actions rather than opening a detail screen. A shop
- * marks an order ready with one hand while the other is holding a cup, and a
- * tap that costs a screen transition and a back press is a tap that gets put
- * off. The two actions that genuinely need more information — naming a rider,
- * and saying how the money arrived — open a sheet, because they need a keyboard
- * or a choice.
- *
- * The ordering of the buttons is the order of the work: feed the customer
- * first, then get it to them, then take the money.
- *
- * Read top to bottom the card answers four questions in the order a shop asks
- * them: whose is this and what is it worth, how far along is it, what is in the
- * bag, and where is it going. Everything a merchant can *press* is at the
- * bottom, in one band, so a thumb learns one place to go.
+ * Laid out the way the reference draws it — ticket and time, the customer
+ * with a way to ring them, the basket line by line, the total — and then,
+ * unlike the reference, the real decisions rather than one "Accept" button.
+ * There is nothing to accept: an order arrives already the shop's. What the
+ * shop does is move it on, get it to the door and take the money, and those
+ * stay on the card because a merchant marks an order ready with one hand while
+ * the other is holding a cup.
  */
 @Composable
 fun OrderCard(
@@ -76,28 +80,8 @@ fun OrderCard(
     SoftCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
             Header(order)
-
-            // Where the kitchen has got to, as a rail. Three segments, because
-            // there are exactly three kitchen states, and no labels because the
-            // pill below already names the one we are in — this is here to be
-            // read without being read.
-            StageTrack(
-                steps = OrderStatus.entries.size,
-                current = OrderStatus.entries.indexOf(order.status),
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(top = 14.dp),
-            )
-
-            Badges(order)
-
-            Text(
-                text = order.itemSummary,
-                style = MaterialTheme.typography.bodyMedium,
-                color = SellerTheme.colors.textSecondary,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 10.dp),
-            )
+            Customer(order)
+            Lines(order)
 
             if (order.isDelivery) {
                 DeliveryPanel(order)
@@ -117,92 +101,206 @@ fun OrderCard(
 }
 
 @Composable
+private fun statusTint(status: OrderStatus): Color = when (status) {
+    // Amber while the kitchen still owes it — the "New" orange of the
+    // reference, for the state every new order is born in.
+    OrderStatus.Preparing -> SellerTheme.colors.attention
+    OrderStatus.Ready -> MaterialTheme.colorScheme.primary
+    OrderStatus.Served -> SellerTheme.colors.success
+}
+
+@Composable
 private fun Header(order: SellerOrder) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        /*
-         * Pickup or delivery, said with a shape before it is said with a word.
-         * It is the first thing that changes what the shop does next, and it
-         * should survive being read upside-down across a counter.
-         *
-         * The tile turns orange when nobody is carrying the order yet, which
-         * makes "these three need a rider" answerable by scrolling rather than
-         * by reading.
-         */
-        val wanting = order.needsRider
-        Box(
-            Modifier
-                .size(46.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(
-                    if (wanting) {
-                        SellerTheme.colors.attention.copy(alpha = 0.16f)
-                    } else {
-                        SellerTheme.colors.accentSoft
-                    },
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = if (order.isDelivery) {
-                    Icons.Filled.DeliveryDining
-                } else {
-                    Icons.Filled.ShoppingBag
-                },
-                contentDescription = if (order.isDelivery) "Delivery" else "Pickup",
-                modifier = Modifier.size(24.dp),
-                tint = if (wanting) {
-                    SellerTheme.colors.attention
-                } else {
-                    SellerTheme.colors.onAccentSoft
-                },
+        Text(
+            text = order.ticketNumber?.let { "#$it" } ?: "Order",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+        )
+        Spacer(Modifier.width(8.dp))
+        Pill(text = order.status.label, tint = statusTint(order.status), dense = true)
+        if (!order.paid) {
+            Spacer(Modifier.width(6.dp))
+            Pill(text = "Unpaid", tint = SellerTheme.colors.warning, dense = true)
+        }
+        Spacer(Modifier.weight(1f))
+        // The clock time is what a shop reads down the list to find the
+        // ticket that has waited longest.
+        order.placedAtTimeLabel()?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = SellerTheme.colors.textTertiary,
+                maxLines = 1,
             )
         }
+    }
 
+    // Where the kitchen has got to, as a rail — read without being read.
+    StageTrack(
+        steps = OrderStatus.entries.size,
+        current = OrderStatus.entries.indexOf(order.status),
+        tint = statusTint(order.status),
+        modifier = Modifier.padding(top = 12.dp),
+    )
+}
+
+/**
+ * Who it is for, and a way to ring them.
+ *
+ * The phone button hands off to the dialler rather than placing the call, so
+ * it needs no permission and a mis-tap costs nothing.
+ */
+@Composable
+private fun Customer(order: SellerOrder) {
+    val context = LocalContext.current
+
+    Row(
+        Modifier.padding(top = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        InitialAvatar(text = order.customerName, size = 36)
         Column(
             Modifier
                 .weight(1f)
-                .padding(start = 12.dp),
+                .padding(horizontal = 10.dp),
         ) {
             Text(
-                text = order.ticketNumber?.let { "#$it" } ?: "Order",
+                text = order.customerName,
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-            )
-            Text(
-                // The name, and when it came in. The clock time is what a shop
-                // reads down the list to find the ticket that has been waiting
-                // longest — the list is newest-first, so "oldest" is furthest
-                // from the thumb and needs saying.
-                text = listOfNotNull(
-                    order.customerName.takeIf { it.isNotBlank() },
-                    order.placedAtTimeLabel(),
-                ).joinToString(" · "),
-                style = MaterialTheme.typography.bodySmall,
-                color = SellerTheme.colors.textSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            Text(
+                text = listOf(
+                    if (order.isDelivery) "Delivery" else "Pickup",
+                    "${order.itemCount} item${if (order.itemCount == 1) "" else "s"}",
+                ).joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = SellerTheme.colors.textTertiary,
+            )
+        }
+        order.customerPhone?.let { phone ->
+            CircleIconButton(
+                icon = Icons.Filled.Call,
+                contentDescription = "Call ${order.customerName}",
+                onClick = {
+                    runCatching {
+                        context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone")))
+                    }
+                },
+                background = SellerTheme.colors.accentSoft,
+                tint = SellerTheme.colors.onAccentSoft,
+                size = 36,
+            )
+        }
+    }
+}
+
+/** The basket, line by line, on a faint panel, with the total under it. */
+@Composable
+private fun Lines(order: SellerOrder) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp)
+            .clip(TileShape)
+            .background(SellerTheme.colors.fill.copy(alpha = 0.55f))
+            .padding(12.dp),
+    ) {
+        val shown = order.items.take(MAX_LINES)
+        shown.forEachIndexed { index, line ->
+            Row(Modifier.padding(top = if (index == 0) 0.dp else 8.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = line.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "${formatQuantity(line.quantity)} × ${Money.peso(line.unitPriceCents)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SellerTheme.colors.textTertiary,
+                    )
+                }
+                Text(
+                    text = Money.peso(line.lineTotalCents),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(start = 12.dp),
+                )
+            }
         }
 
+        val hidden = order.items.size - shown.size
+        if (hidden > 0) {
+            Text(
+                text = "+ $hidden more item${if (hidden == 1) "" else "s"}",
+                style = MaterialTheme.typography.bodySmall,
+                color = SellerTheme.colors.textTertiary,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+
+        HorizontalDivider(
+            Modifier.padding(vertical = 10.dp),
+            color = SellerTheme.colors.separator,
+        )
+
+        // Whatever the total holds beyond the basket and the delivery fee —
+        // VAT, on a shop that charges it. Without this line a ₱240 basket and
+        // a ₱49 fee sat above a ₱317.80 total that visibly did not add up.
+        val extraCents = order.totalCents - order.subtotalCents - order.deliveryFeeCents
+        if (order.deliveryFeeCents > 0) SummaryLine("Delivery fee", order.deliveryFeeCents)
+        if (extraCents > 0) SummaryLine("Tax", extraCents)
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Total",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = Money.peso(order.totalCents),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SummaryLine(label: String, cents: Long) {
+    Row(Modifier.padding(bottom = 4.dp)) {
         Text(
-            text = Money.peso(order.totalCents),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = SellerTheme.colors.textSecondary,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = Money.peso(cents),
+            style = MaterialTheme.typography.bodySmall,
+            color = SellerTheme.colors.textSecondary,
         )
     }
 }
 
 /**
- * Where the food is going, in its own tinted panel.
+ * Where the food is going, in its own peach panel.
  *
- * Set apart from the rest of the card because it is the half of the order that
- * belongs to somebody who is not in the shop. The rider's number is spelled out
- * rather than hidden behind a tap: it is what a shop reaches for when an order
- * goes quiet, and the phone's own dialler is one long-press away from any text
- * on screen.
+ * Set apart because it is the half of the order that belongs to somebody who
+ * is not in the shop. The rider's number is spelled out rather than hidden
+ * behind a tap: it is what a shop reaches for when an order goes quiet.
  */
 @Composable
 private fun DeliveryPanel(order: SellerOrder) {
@@ -216,10 +314,10 @@ private fun DeliveryPanel(order: SellerOrder) {
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(top = 12.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(SellerTheme.colors.accentSoft.copy(alpha = 0.6f))
-            .padding(horizontal = 12.dp, vertical = 12.dp),
+            .padding(top = 10.dp)
+            .clip(TileShape)
+            .background(SellerTheme.colors.accentSoft.copy(alpha = 0.7f))
+            .padding(12.dp),
     ) {
         order.deliveryAddress?.let { address ->
             PanelLine(
@@ -238,9 +336,9 @@ private fun DeliveryPanel(order: SellerOrder) {
             )
         }
 
-        // Four dots' worth of road: needs a rider, has one, picked up,
-        // delivered. Coloured orange while it is still waiting for a person,
-        // which is the only one of the four that is anybody's job.
+        // Needs a rider, has one, picked up, delivered. Amber while it is
+        // still waiting for a person, the only one of the four that is
+        // anybody's job.
         StageTrack(
             steps = DeliveryStage.entries.size,
             current = DeliveryStage.entries.indexOf(stage),
@@ -260,7 +358,7 @@ private fun DeliveryPanel(order: SellerOrder) {
 
 @Composable
 private fun PanelLine(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     text: String,
     tint: Color,
     topPadding: Int = 0,
@@ -286,33 +384,10 @@ private fun PanelLine(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun Badges(order: SellerOrder) {
-    FlowRow(
-        Modifier.padding(top = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Pill(
-            text = order.status.label,
-            tint = if (order.status == OrderStatus.Served) {
-                SellerTheme.colors.success
-            } else {
-                MaterialTheme.colorScheme.primary
-            },
-        )
-
-        // No pill for the delivery stage. The panel below names it, under its
-        // own track, and a card that said "Needs a rider" twice in four lines
-        // was the first thing anybody noticed about it.
-
-        if (!order.paid) {
-            Pill(text = "Unpaid", tint = SellerTheme.colors.warning)
-        }
-    }
-}
-
+/**
+ * Everything a merchant can press, in one band at the bottom, in the order of
+ * the work: feed the customer, get it to them, take the money.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Actions(
@@ -327,8 +402,7 @@ private fun Actions(
     val statusLabel = order.status.advanceLabel
     val deliveryLabel = order.deliveryStage?.advanceLabel
 
-    // A finished, paid, delivered order has nothing left to press, and an empty
-    // row of padding under it would read as something missing.
+    // A finished, paid, delivered order has nothing left to press.
     if (statusLabel == null && deliveryLabel == null && !order.needsRider && order.paid) return
 
     FlowRow(
@@ -338,10 +412,8 @@ private fun Actions(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        // The write in flight, shown where the buttons are rather than over
-        // the card. The buttons themselves are already inert — the screen
-        // disables every one of them while any order is saving — so this is
-        // here to say why, not to stop anything.
+        // The write in flight, shown where the buttons are. The buttons are
+        // already inert while any order is saving; this says why.
         if (busy) {
             Box(
                 Modifier.height(44.dp),
@@ -382,12 +454,8 @@ private fun Actions(
             )
         }
 
-        // And a way back into the rider sheet once somebody is on the order.
-        //
-        // Without this the sheet is reachable exactly once — before anybody is
-        // assigned — which strands the two things a merchant actually wants
-        // mid-delivery: the map showing where the rider is, and the button that
-        // puts the order back on the board. Found by running the app.
+        // A way back into the rider sheet once somebody is on the order — the
+        // map, and the button that puts the order back on the board.
         if (order.isDelivery && !order.needsRider) {
             val tracking = order.riderPosition != null
             SecondaryButton(

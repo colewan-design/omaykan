@@ -49,7 +49,7 @@ const ABOUT_NAV_CATEGORIES = [
 // and a person to write to. Nothing here points at a page we have not built.
 const TABS = [
   { label: 'About Us', href: '/about', current: true },
-  { label: 'Sell on Omaykan', href: '/signup', current: false },
+  { label: 'Sell on Omaykan', href: '/seller/signup', current: false },
   { label: 'Ride with Omaykan', href: '/rider', current: false },
   { label: 'Contact Us', href: supportMailto('Omaykan hello'), current: false },
 ]
@@ -160,7 +160,7 @@ const RIDER_BENEFITS = [
               <a :href="SHOP_HREF" class="ab-btn ab-btn--solid">
                 Start shopping<ArrowRight :size="17" :stroke-width="2.5" />
               </a>
-              <a href="/signup" class="ab-btn ab-btn--outline">
+              <a href="/seller/signup" class="ab-btn ab-btn--outline">
                 Sell on Omaykan<ArrowRight :size="17" :stroke-width="2.5" />
               </a>
             </div>
@@ -300,7 +300,7 @@ const RIDER_BENEFITS = [
               Whether you run a sari-sari store, a market stall, or a specialty shop, Omaykan gives
               you a simple way to sell online and reach more customers in your area.
             </p>
-            <a href="/signup" class="ab-btn ab-btn--solid">
+            <a href="/seller/signup" class="ab-btn ab-btn--solid">
               Become a seller<ArrowRight :size="17" :stroke-width="2.5" />
             </a>
           </div>

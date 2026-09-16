@@ -49,7 +49,7 @@ const promises = [
             Start shopping
             <ArrowRight :size="18" :stroke-width="2" />
           </a>
-          <a href="/signup" class="sfhero__ghost">Sell on Omaykan</a>
+          <a href="/seller/signup" class="sfhero__ghost">Sell on Omaykan</a>
         </div>
 
         <ul class="sfhero__promises">

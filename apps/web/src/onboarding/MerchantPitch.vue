@@ -5,7 +5,7 @@ import ParticleField from '@pos/web/landing/ParticleField.vue'
 import { vReveal } from '@pos/web/landing/reveal'
 import PartnerCarousel from './PartnerCarousel.vue'
 
-// The merchant pitch on /signup.
+// The merchant pitch on /seller/signup.
 //
 // This was PosMarketing.vue, and it sold a point-of-sale: "One app. Four
 // businesses", a register, a dashboard. Omaykan is an ecommerce platform now —

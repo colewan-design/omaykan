@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Calendar, Clock, Landmark, Menu, MinusCircle, PlusCircle, Power, Wallet } from '@lucide/vue'
+import { Calendar, ChevronDown, Clock, Landmark, LayoutDashboard, LogOut, Menu, MinusCircle, PlusCircle, Power } from '@lucide/vue'
+import { OPEN_APP_NAV } from '@pos/core/app/navDrawer'
 import { useAuthStore } from '@pos/core/stores/auth'
 import { usePosStore } from '@pos/core/stores/pos'
 import { formatCompactDate, formatCurrency } from '@pos/shared/index'
@@ -11,6 +12,7 @@ const store = usePosStore()
 const router = useRouter()
 
 const isManageOpen = ref(false)
+const isUserOpen = ref(false)
 const openingCashInput = ref('')
 const movementAmountInput = ref('')
 const movementReason = ref('')
@@ -32,9 +34,26 @@ const formattedDate = computed(() =>
 const formattedTime = computed(() =>
   new Intl.DateTimeFormat('en-PH', { hour: 'numeric', minute: '2-digit', hour12: true }).format(now.value),
 )
+const userInitials = computed(() => {
+  const parts = (auth.currentUser?.fullName || 'JD').trim().split(/\s+/).filter(Boolean)
+  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'JD'
+})
 
-function goToDashboard() {
+// Below the shell's breakpoint the nav rail is a drawer, and Register hides the
+// workspace topbar that would otherwise open it — so this button does.
+const openAppNav = inject(OPEN_APP_NAV, null)
+
+function openNav() {
+  if (openAppNav) {
+    openAppNav()
+    return
+  }
   void router.push({ name: 'dashboard' })
+}
+
+async function goToDashboard() {
+  isUserOpen.value = false
+  await router.push({ name: 'dashboard' })
 }
 
 async function handleSignOut() {
@@ -120,14 +139,22 @@ async function handleCloseShift() {
 
 <template>
   <section class="register-topbar">
-    <button class="register-topbar__icon-btn register-topbar__icon-btn--ghost" type="button" aria-label="Back to dashboard" @click="goToDashboard">
+    <button class="register-topbar__mobile-menu" type="button" aria-label="Open navigation" @click="openNav">
       <Menu :size="20" />
     </button>
 
+    <div class="register-topbar__brand">
+      <img src="/logo-mark.png" alt="" aria-hidden="true">
+      <span>
+        <strong>{{ store.settings.businessName || 'Omaykan' }}</strong>
+        <small>POS</small>
+      </span>
+    </div>
+
     <div class="register-topbar__datetime">
-      <span class="register-topbar__date"><Calendar :size="14" aria-hidden="true" />{{ formattedDate }}</span>
+      <span class="register-topbar__date"><Calendar :size="17" aria-hidden="true" />{{ formattedDate }}</span>
       <span class="register-topbar__sep" aria-hidden="true">–</span>
-      <span class="register-topbar__time"><Clock :size="14" aria-hidden="true" />{{ formattedTime }}</span>
+      <span class="register-topbar__time"><Clock :size="17" aria-hidden="true" />{{ formattedTime }}</span>
     </div>
 
     <div class="register-topbar__right">
@@ -138,12 +165,31 @@ async function handleCloseShift() {
         @click="openShiftManager"
       >
         <span class="register-topbar__dot" :class="{ 'register-topbar__dot--active': store.activeShift }" aria-hidden="true" />
-        <Wallet :size="14" aria-hidden="true" />
-        {{ store.activeShift ? 'Manage shift' : 'Open shift' }}
+        Open Shift
+        <ChevronDown :size="16" aria-hidden="true" />
       </button>
-      <button class="register-topbar__icon-btn register-topbar__icon-btn--danger" type="button" aria-label="Sign out" @click="handleSignOut">
-        <Power :size="18" />
+
+      <button class="register-topbar__end-shift" type="button" @click="openShiftManager">
+        <Power :size="20" />
+        <span>End Shift</span>
       </button>
+
+      <div class="register-topbar__user-wrap">
+        <button class="register-topbar__user" type="button" aria-label="Open user menu" @click="isUserOpen = !isUserOpen">
+          <span>{{ userInitials }}</span>
+          <ChevronDown :size="18" />
+        </button>
+        <div v-if="isUserOpen" class="register-topbar__user-menu">
+          <button type="button" @click="goToDashboard">
+            <LayoutDashboard :size="16" />
+            Dashboard
+          </button>
+          <button class="register-topbar__user-menu-danger" type="button" @click="handleSignOut">
+            <LogOut :size="16" />
+            Sign out
+          </button>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -546,5 +592,241 @@ async function handleCloseShift() {
   .shift-log__amount {
     justify-items: start;
   }
+}
+
+/* Seller POS utility header */
+.register-topbar {
+  gap: 24px;
+  min-height: 78px;
+  padding: 10px 26px;
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 4px 18px rgba(4, 71, 58, 0.035);
+}
+
+.register-topbar__mobile-menu {
+  display: none;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid #dbe7e4;
+  border-radius: 12px;
+  background: white;
+  color: #10201d;
+}
+
+.register-topbar__brand {
+  display: flex;
+  min-width: 164px;
+  align-items: center;
+  gap: 9px;
+}
+
+.register-topbar__brand img {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+}
+
+.register-topbar__brand > span {
+  display: grid;
+  gap: 0;
+}
+
+.register-topbar__brand strong,
+.register-topbar__brand small {
+  overflow: hidden;
+  max-width: 120px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.register-topbar__brand strong {
+  color: #073d35;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 22px;
+  letter-spacing: -0.025em;
+}
+
+.register-topbar__brand small {
+  color: #61726d;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 15px;
+}
+
+.register-topbar__datetime {
+  flex: 0 1 auto;
+  justify-content: flex-start;
+  gap: 0;
+  min-width: 0;
+  color: #273330;
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+}
+
+.register-topbar__date,
+.register-topbar__time {
+  gap: 9px;
+  min-height: 43px;
+  padding: 0 14px;
+  border: 1px solid #e0e8e6;
+  border-radius: 0;
+  background: #fff;
+}
+
+.register-topbar__date {
+  border-right: 0;
+  border-radius: 12px 0 0 12px;
+}
+
+.register-topbar__time {
+  border-left-color: #edf2f0;
+  border-radius: 0 12px 12px 0;
+}
+
+.register-topbar__sep {
+  display: none;
+}
+
+.register-topbar__right {
+  gap: 18px;
+  margin-left: auto;
+  flex: none;
+}
+
+.register-topbar__status {
+  gap: 9px;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid #d9e8e3;
+  border-radius: 12px;
+  background: #f3faf7;
+  color: #104f42;
+  font-size: 14px;
+}
+
+.register-topbar__status--active {
+  color: #0b5345;
+}
+
+.register-topbar__dot {
+  background: #36a95d;
+  box-shadow: 0 0 0 4px rgba(54, 169, 93, 0.09);
+}
+
+.register-topbar__dot--active {
+  background: #36a95d;
+  box-shadow: 0 0 0 4px rgba(54, 169, 93, 0.09);
+}
+
+.register-topbar__end-shift {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 18px;
+  border: 0;
+  border-left: 1px solid #e1e9e7;
+  background: transparent;
+  color: #14201e;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.register-topbar__user-wrap {
+  position: relative;
+}
+
+.register-topbar__user {
+  display: inline-flex;
+  min-height: 46px;
+  align-items: center;
+  gap: 14px;
+  padding: 0 4px 0 0;
+  border: 0;
+  background: transparent;
+  color: #20312d;
+}
+
+.register-topbar__user span {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 50%;
+  background: #06483c;
+  color: white;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.register-topbar__user-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  min-width: 150px;
+  padding: 7px;
+  border: 1px solid #dde8e5;
+  border-radius: 12px;
+  background: white;
+  box-shadow: 0 16px 32px rgba(3, 54, 45, 0.14);
+}
+
+.register-topbar__user-menu button {
+  display: flex;
+  width: 100%;
+  min-height: 38px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #20312d;
+  font-size: 13px;
+}
+
+.register-topbar__user-menu button:hover {
+  background: #f1f7f5;
+}
+
+.register-topbar__user-menu .register-topbar__user-menu-danger {
+  color: #b33d3d;
+}
+
+/* This header spans the shell's content column, not the viewport: with the nav
+   rail on screen it has ~328px less to work with, so these thresholds sit that
+   much above the widths they actually describe. */
+@media (max-width: 1748px) {
+  .register-topbar { gap: 14px; }
+  .register-topbar__brand { min-width: auto; }
+}
+
+/* Rail on screen and the column narrow enough that even the compact header runs
+   out of room. The clock is the one thing here a cashier can read off the till
+   itself, so it goes first. */
+@media (min-width: 1081px) and (max-width: 1200px) {
+  .register-topbar__datetime { display: none; }
+}
+
+@media (max-width: 720px) {
+  .register-topbar {
+    min-height: 64px;
+    gap: 10px;
+    padding: 8px 12px;
+  }
+
+  .register-topbar__mobile-menu { display: grid; }
+  .register-topbar__brand { flex: 1; min-width: 0; }
+  .register-topbar__brand > span,
+  .register-topbar__datetime,
+  .register-topbar__end-shift { display: none; }
+  .register-topbar__status { padding: 0 10px; }
+  .register-topbar__status svg { display: none; }
 }
 </style>

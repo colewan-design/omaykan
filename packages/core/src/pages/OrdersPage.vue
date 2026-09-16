@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { ArrowRight, Ban, CreditCard, Printer, ReceiptText, Search, Wallet, X } from '@lucide/vue'
 import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import ChartCard from '@pos/core/components/ChartCard.vue'
+import DeliveryBoard from '@pos/core/components/DeliveryBoard.vue'
 import MetricCard from '@pos/core/components/MetricCard.vue'
 import RangeSelector, { type Range } from '@pos/core/components/RangeSelector.vue'
 import { useAuthStore } from '@pos/core/stores/auth'
@@ -276,6 +277,12 @@ const rangeCaption = computed(() => {
           <RangeSelector v-model="range" />
         </div>
       </div>
+    </section>
+
+    <!-- Above the history, because a delivery still out is the one thing on
+         this page that is about right now rather than about the record. -->
+    <section class="orders-deliveries">
+      <DeliveryBoard />
     </section>
 
     <section class="orders-kpis">

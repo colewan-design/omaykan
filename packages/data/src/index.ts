@@ -1266,7 +1266,7 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
    * The image lives in AppSettings as a data URL and never had anywhere to go:
    * until now the only things that read it were the receipt header and the
    * settings avatar, both on this device. The storefront directory and the
-   * partner carousel on /signup read it off the store record instead, so it
+   * partner carousel on /seller/signup read it off the store record instead, so it
    * has to be pushed.
    *
    * Guarded by a stored fingerprint rather than by "did this save change it",

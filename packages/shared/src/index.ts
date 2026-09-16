@@ -1224,3 +1224,74 @@ export function categoryTagVar(categoryId: string): string {
   }
   return `var(${categoryTagVars[hash % categoryTagVars.length]})`
 }
+
+// -- A shop's own page ---------------------------------------------------------
+//
+// The link a seller hands out. With a shop domain configured it is the shop's
+// own subdomain, `https://<slug>.omaykan.com`; without one (a laptop, a preview
+// build) it is `/shop/<slug>` on whatever origin is serving. Built and read
+// here, in one place, because the till's Settings and Dashboard write it and
+// the storefront's shop entry parses it back — and a link the two disagreed
+// about would be a link that opens nothing.
+
+export const STOREFRONT_PATH_PREFIX = '/shop/'
+
+/**
+ * Labels that are the platform's, never a shop's. Signup refuses these as
+ * slugs too (SignupController::RESERVED_SLUGS) — keep the two lists together.
+ */
+export const RESERVED_SHOP_SUBDOMAINS: readonly string[] = [
+  'www', 'api', 'app', 'admin', 'mail', 'smtp', 'imap', 'pop', 'ftp', 'cdn',
+  'static', 'assets', 'shop', 'shops', 'store', 'stores', 'rider', 'riders',
+  'seller', 'sellers', 'help', 'support', 'status', 'blog', 'docs', 'dev',
+  'staging', 'test', 'demo', 'platform', 'dashboard', 'account', 'cart',
+  'checkout', 'reverb', 'ws', 'omaykan',
+]
+
+/** A slug that can stand as one DNS label: lowercase, digits, inner hyphens, ≤ 63. */
+export function isShopSubdomainLabel(label: string): boolean {
+  return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label) && !RESERVED_SHOP_SUBDOMAINS.includes(label)
+}
+
+export function storefrontPath(slug: string): string {
+  return `${STOREFRONT_PATH_PREFIX}${encodeURIComponent(slug)}`
+}
+
+/**
+ * The full link to a shop's page.
+ *
+ * `rootDomain` is the bare domain shops hang off (`omaykan.com`), blank for
+ * none. A slug that cannot be a hostname — an old one with an underscore, say —
+ * falls back to the path form on `origin` rather than producing a dead link.
+ */
+export function storefrontUrl(slug: string, options: { rootDomain?: string; origin: string }): string {
+  const root = (options.rootDomain ?? '').trim().toLowerCase()
+  if (root !== '' && isShopSubdomainLabel(slug)) return `https://${slug}.${root}`
+  return `${options.origin.replace(/\/+$/, '')}${storefrontPath(slug)}`
+}
+
+/** The slug a shop subdomain names, or '' for the root, `www`, or any other host. */
+export function slugFromShopHost(hostname: string, rootDomain: string): string {
+  const host = hostname.trim().toLowerCase().replace(/\.$/, '')
+  const root = rootDomain.trim().toLowerCase()
+  if (root === '' || !host.endsWith(`.${root}`)) return ''
+  const label = host.slice(0, -(root.length + 1))
+  return isShopSubdomainLabel(label) ? label : ''
+}
+
+/**
+ * The slug in a `/shop/<slug>` path, or '' for any other path.
+ *
+ * A trailing slash is tolerated — it is what a link pasted into a chat app
+ * often grows — but anything deeper is not a shop page.
+ */
+export function slugFromStorefrontPath(pathname: string): string {
+  if (!pathname.startsWith(STOREFRONT_PATH_PREFIX)) return ''
+  const rest = pathname.slice(STOREFRONT_PATH_PREFIX.length).replace(/\/$/, '')
+  if (rest === '' || rest.includes('/')) return ''
+  try {
+    return decodeURIComponent(rest)
+  } catch {
+    return ''
+  }
+}

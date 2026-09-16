@@ -80,8 +80,8 @@ function backToTop() {
 
       <div>
         <p class="fd-footer__title">Sell</p>
-        <a href="/signup">Become a merchant</a>
-        <!-- The rider portal, not /signup: that form asks for a business name
+        <a href="/seller/signup">Become a merchant</a>
+        <!-- The rider portal, not /seller/signup: that form asks for a business name
              and a business mode, which is a dead end for someone with a bike. -->
         <a href="/rider">Become a rider</a>
         <a href="/about#for-shops">Seller pricing</a>

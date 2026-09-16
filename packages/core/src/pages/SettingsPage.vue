@@ -8,7 +8,7 @@ import {
   Trash2,
 } from '@lucide/vue'
 import { computed, onMounted, ref, watch } from 'vue'
-import { businessModeLabel } from '@pos/shared/index'
+import { businessModeLabel, storefrontUrl as storefrontUrlFor } from '@pos/shared/index'
 import MenuRow from '@pos/core/components/MenuRow.vue'
 import SettingsGroup from '@pos/core/components/SettingsGroup.vue'
 import ToggleSwitch from '@pos/core/components/ToggleSwitch.vue'
@@ -67,7 +67,10 @@ const storefrontLinkCopied = ref(false)
  */
 const storefrontUrl = computed(() =>
   store.settings.storefrontSlug
-    ? `${window.location.origin}/?shop=${store.settings.storefrontSlug}`
+    ? storefrontUrlFor(store.settings.storefrontSlug, {
+        rootDomain: import.meta.env.VITE_SHOP_ROOT_DOMAIN,
+        origin: window.location.origin,
+      })
     : '',
 )
 

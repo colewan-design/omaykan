@@ -45,8 +45,14 @@ const props = withDefaults(
     accountBanner?: boolean
     categoryNav?: boolean
     fallbackCategories?: Array<{ id: string; name: string }>
+    /**
+     * Where the cart icon goes. A shop subdomain points it at the main site's
+     * cart with the basket handed over, since the two origins do not share one.
+     */
+    cartHref?: string
   }>(),
   {
+    cartHref: '/cart',
     shopHref: '#shop',
     activeCategory: '',
     accountBanner: true,
@@ -331,7 +337,7 @@ defineExpose({ clear: () => (searchTerm.value = '') })
         </div>
 
         <a href="/about" class="fd-link">Our story</a>
-        <a href="/signup" class="fd-link fd-link--sell">Sell with us</a>
+        <a href="/seller/signup" class="fd-link fd-link--sell">Sell with us</a>
       </nav>
 
       <form class="fd-search" role="search" @submit.prevent="submitSearch">
@@ -414,7 +420,7 @@ defineExpose({ clear: () => (searchTerm.value = '') })
       </a>
 
       <a
-        href="/cart"
+        :href="props.cartHref"
         class="fd-iconlink"
         :aria-label="cart.itemCount.value > 0 ? `Cart, ${cart.itemCount.value} items` : 'Cart'"
       >

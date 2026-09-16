@@ -1,4 +1,4 @@
-# /signup — image prompts
+# /seller/signup — image prompts
 
 Every image slot on the merchant signup page, as it stands after the ecommerce
 restructure. The page is `apps/web/src/onboarding/OnboardingPage.vue`; the pitch and all

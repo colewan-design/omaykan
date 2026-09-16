@@ -8,7 +8,7 @@ import { consumePendingInitialSettings, readStaffTenant } from '@pos/web/tenantB
 // per organization/store. A browser that only ever uses the build-time
 // VITE_POS_ORGANIZATION_SLUG/STORE_CODE tenant never needs this — it's the
 // same tenant forever. But once a browser opts into multi-tenancy (signs up
-// or pairs via /signup), switching which tenant it's bound to must wipe
+// or pairs via /seller/signup), switching which tenant it's bound to must wipe
 // that cache first, or a stale session/catalog from whatever tenant this
 // browser used previously leaks into the new one.
 const CACHE_OWNER_KEY = 'pos_cache_tenant_owner'

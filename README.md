@@ -133,6 +133,40 @@ Products whose catalog entry names no stock quantity — salon services, mostly 
 are seeded with `track_inventory` off, because the storefront drops any tracked
 product sitting at zero.
 
+### The beachhead sellers
+
+A second, smaller set — the kind of merchant
+[positioning.md §6](documentation/positioning.md) actually targets first, rather
+than a demo tenant:
+
+```bash
+php artisan db:seed --class=LocalSellerSeeder
+```
+
+| Organization | Sells as | Sign in as | Products |
+| --- | --- | --- | --- |
+| `balili-highland-farm` | Farm produce | `farmer` | 16 |
+| `nenas-market-stall` | Public market stall | `market` | 20 |
+| `lourdes-mini-grocery` | Mini grocery | `minigrocery` | 28 |
+
+Password `password`, same as the demo sellers. All three run in business mode
+`grocery` — it is the only mode in `Store::ONLINE_MODES` that fits any of them,
+and a mode outside that list is kept out of the shop directory entirely. What
+tells them apart on a directory card is `business_type_label`.
+
+Their catalog **is** written into the seeder, unlike `DemoSellerSeeder`'s.
+Nothing in the client renders these three, so there is no TypeScript for the
+JSON to stay in step with, and the prices belong next to the seller they are
+for. Tax rate is 0 rather than 12: tax is added on top of `price_cents` at
+checkout, and all three are small non-VAT merchants — charging 12% over a market
+stall's kasim would break the price-parity covenant in the one place a customer
+can see it.
+
+These three are seeded on the VPS as of 2026-09-13. Product photos are reused
+from the `/products/*.jpg` set the demo catalog already ships; a line with no
+match there carries no photo, and none of the three has uploaded a shopfront
+image, so the directory card falls back to a picture off the shelf.
+
 ### Which shop the landing page shows
 
 `GET /api/stores` is the public shop directory, and the landing page browses it
@@ -221,14 +255,19 @@ needs these rewrites (nginx `try_files`, or equivalent):
 | `/` | `index.html` |
 | `/landing` | `landing.html` |
 | `/app`, `/app/*` | `app.html` |
+| `/app.html` | 301 redirect to `/app` |
 | `/about` | `about.html` |
-| `/signup` | `signup.html` |
+| `/seller/signup` | `signup.html` |
+| `/signup` | 301 redirect to `/seller/signup` |
 | `/account` | `account.html` |
+| `/cart` | `cart.html` |
 | `/rider` | `rider.html` |
 | `/platform-admin` | `platform-admin.html` |
 | `/support-inbox` | `support-inbox.html` |
 
-`/api/*` proxies to the Laravel backend. The client build also needs the
+`/signup` redirects rather than 404s because the seller Android app opens
+that URL (`SIGNUP_URL` in `ExternalLinks.kt`) and installed copies cannot be
+re-pointed. `/api/*` proxies to the Laravel backend. The client build also needs the
 `VITE_API_BASE` / `VITE_REVERB_*` / `VITE_POS_*` variables set at build time — see
 `apps/web/.env.example`.
 

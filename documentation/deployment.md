@@ -12,12 +12,24 @@ build's environment lived only on one laptop.
 | | |
 |---|---|
 | Host | `187.124.138.58`, root over SSH |
-| Serves | `omaykan.com`, `www.omaykan.com`, `baguioonlinemarket.salidumay.com` |
+| Serves | `omaykan.com`, `www.omaykan.com`, and every shop at `<slug>.omaykan.com` (§6a) |
 | OS | Ubuntu 24.04, nginx 1.24, PHP 8.3-FPM, PostgreSQL 16, Redis |
 | Static build | `/var/www/omaykan/web` |
 | Laravel app | `/var/www/omaykan/backend` (front controller `public/index.php`) |
 | Database | PostgreSQL, database `omaykan`, user `omaykan`, local socket only |
-| nginx site | `/etc/nginx/sites-available/omaykan` |
+| nginx site | `/etc/nginx/sites-available/omaykan`, and `omaykan-shops` for the shop subdomains |
+| Certificates | `omaykan.com` (apex + www, nginx authenticator) and `omaykan-shops` (`*.omaykan.com`, DNS-01, §6a) |
+
+**The old `baguioonlinemarket.salidumay.com` address was removed on
+2026-09-16.** It had been an alias of this site, and the main certificate was
+named after it. The alias left `server_name`, `omaykan.com` + `www` got their
+own certificate, and the old one was deleted. Two weeks of logs showed 62 of
+about 14,000 requests arriving through it. Its DNS record still points here,
+so it now lands on another tenant's default server with a certificate error.
+Pre-change `/etc/nginx` and `/etc/letsencrypt`:
+`/root/pre-salidumay-removal-20260916-144425.tgz`.
+`sites-available/baguioonlinemarket` is a disabled leftover from before the
+move to `/var/www/omaykan` and is not loaded.
 
 It is a **shared** box. Other projects (`vault`, `project-tracker`, `portfolio`,
 `uniglobal`, `metaclean`, `xponent-global`, `goodboy-care-app`, `colewan-drive`)
@@ -104,6 +116,21 @@ ssh omaykan "cd /var/www/omaykan &&
 **The build bakes in the environment.** See §4 — this is the step that has
 already broken production once.
 
+**A moved public path needs its nginx block before the swap, not after.** The
+21:26 deploy moved the seller signup form from `/signup` to `/seller/signup`,
+and the nginx edit went in first *on purpose*: the new bundle's "Sell with us"
+links all point at the new path, so swapping the tree first would have left
+them broken for as long as the edit took. The reverse order is free — the old
+bundle never links to `/seller/signup`, so the block sits unused until the
+swap. See §3.3.
+
+**An unmapped path does not 404 here, it returns 200.** `location / { try_files
+$uri $uri/ /index.html; }` catches everything, so a missing entry block serves
+the storefront landing page under the wrong URL, with a 200 and no error
+anywhere. `/seller/signup` was checked before the deploy and returned exactly
+that. **Curl the new path and read the `<title>`** — the status code will not
+tell you.
+
 ### 3.2 Backend
 
 ```bash
@@ -159,6 +186,81 @@ sudo -u www-data env HOME=/tmp php artisan ...
 ### 3.3 Rollback
 
 Directory swaps are reversible.
+
+**Updated 2026-09-14, 13:28.** nginx-only. `/app.html` now 301s to `/app`, so
+the staff app has one public URL instead of two. **No directory swap, no
+build** — the frontend and backend releases below are still what is running,
+and there is nothing to roll a tree back to.
+
+Pre-edit config: `/root/nginx-omaykan.bak-20260914-132808-app-html-redirect`.
+Restore it and `nginx -t && systemctl reload nginx` to undo. Four lines
+replaced the two `/app` blocks:
+
+```nginx
+location = /app.html       { return 301 /app; }
+location = /app            { try_files /app.html =404; }
+location ^~ /app/          { try_files $uri @staff_app; }
+location @staff_app        { try_files /app.html =404; }
+```
+
+**The named location is the whole trick, and it is not cosmetic.** `/app/`'s
+old fallback was `try_files $uri /app.html`, where `/app.html` is the last
+parameter and therefore an *internal redirect*, not a file read — it re-enters
+location matching. Adding the 301 without restructuring would have sent every
+deep link through it: `/app/auth` finds no file, internally redirects to
+`/app.html`, matches the new exact block and 301s the browser to `/app`,
+dropping the route. The router is `createWebHistory('/app/')`
+([router.ts:31](../packages/core/src/app/router.ts#L31)) and the landing and
+merchant footers both link `/app/auth`, so that would have broken merchant
+sign-in from the public site. A named location is a file read, not a rematch.
+
+Nothing in any bundle or app linked to `/app.html` — the Vue entries use `/app`
+and `/app/auth`, the seller Android app's `REGISTER_URL` is already
+`$WEB_ORIGIN/app`, and the dev server has aliased `/app` since
+[vite.config.ts:26](../apps/web/vite.config.ts#L26). The old path was only ever
+reachable because `location /`'s `try_files $uri` served the raw file. The
+redirect is therefore a courtesy to bookmarks, not load-bearing the way
+`/signup` is.
+
+The other entries are still reachable at their raw `.html` paths
+(`/account.html`, `/cart.html`, `/landing.html`, ...). Same one-line fix each,
+but only `/app.html` was asked for.
+
+**Updated 2026-09-13, 21:26.** Frontend-only, and the fifth deploy of the day:
+the seller signup form moved from `/signup` to `/seller/signup`. No backend, no
+migration, no schema — the 09:26 backend release below is still what is
+running.
+
+| | Roll back to | Holds |
+|---|---|---|
+| Frontend | `web.bak-20260913-212608-seller-signup-route` | the 18:20 build, signup links pointing at `/signup` |
+| Backend | `backend.bak-20260913-092614-product-gallery` | unchanged since 09:26 |
+
+**This deploy also edited nginx, which the directory swap does not undo.** The
+pre-edit config is at `/root/nginx-omaykan.bak-20260913-212608-seller-signup`.
+Four lines changed, replacing the two `/signup` blocks:
+
+```nginx
+location = /seller/signup  { try_files /signup.html =404; }
+location ^~ /seller/signup/ { try_files $uri /signup.html; }
+location = /signup         { return 301 /seller/signup; }
+location ^~ /signup/       { return 301 /seller/signup; }
+```
+
+**Rolling the frontend back alone is safe and needs no nginx change.** The
+entry is still built as `signup.html` in every generation, so `/seller/signup`
+serves the old build's form and `/signup` still reaches it one redirect later.
+Restoring the old config alongside an old tree is also fine. The one
+combination that breaks is the old config with the *new* tree: `/signup` then
+serves a form whose own links point at `/seller/signup`, which nothing maps.
+
+`/signup` redirects rather than 404s because `SIGNUP_URL` in the seller Android
+app (`ExternalLinks.kt`) opens it and installed copies cannot be re-pointed.
+The constant is updated in the repo, but that only reaches users who update the
+app — **the redirect is load-bearing indefinitely, not a transitional
+courtesy.**
+
+The API endpoint is untouched and still `POST /api/signup`; only the page moved.
 
 **Updated 2026-09-13, 18:20.** Frontend-only, and the fourth deploy of the
 day: the Google button on the staff sign-in card. No backend, no migration, no
@@ -525,6 +627,82 @@ thing standing between the next developer and a confusing failure.
   there is no longer a dev/prod database split. The lock described in
   [e2e-findings.md §3.3](./e2e-findings.md) cannot recur; the ten-run suite was
   replayed on PostgreSQL with identical results and no flake.
+
+---
+
+## 6a. Shop subdomains — `<slug>.omaykan.com`
+
+**Status 2026-09-16, 14:36 UTC: server set up, frontend and backend not yet
+deployed.** Every shop's shareable page is its own subdomain. The wildcard `*`
+A record points at this box, the certificate and server block below are live,
+and `https://<slug>.omaykan.com/` answers 404 until a build containing
+`shop.html` is deployed. `/api/` already works there, and every other path
+302s to the main site. Pre-edit nginx: `/root/nginx-backup-20260916-143527-shop-subdomains.tgz`;
+to undo, remove the `sites-enabled/omaykan-shops` symlink and reload.
+
+**How it works.** A subdomain serves `shop.html` at `/`, which reads the shop
+from the host. It serves nothing else of the site: every other page, the cart
+included, redirects to `omaykan.com`, because sign-in, Google sign-in (Google
+refuses wildcard origins) and checkout live there. Checkout carries the basket
+across in the link (`/cart?basket=…`, see `apps/web/src/commerce/basketHandoff.ts`).
+The build needs `VITE_SHOP_ROOT_DOMAIN=omaykan.com` in `.env.production`.
+Signup never gives out a slug that cannot be a subdomain (reserved names such as
+`app` and `api`, or longer than 63 characters); see `SignupController::RESERVED_SLUGS`.
+
+**1. Certificate.** A wildcard needs a DNS-01 challenge, so it cannot be issued
+by the `nginx`/`webroot` plugins this box uses today. DNS is on Hostinger
+(`dns-parking.com` nameservers). A cert issued with `--manual` does not renew on
+its own; use a DNS plugin with an API token so renewal stays automatic.
+
+```bash
+certbot certonly --cert-name omaykan-shops -d 'omaykan.com' -d '*.omaykan.com' \
+  --preferred-challenges dns <DNS plugin flags>
+```
+
+**2. nginx.** A second `server` block beside the existing one. The exact names
+in the existing block (`omaykan.com`, `www.omaykan.com`) take precedence over
+the regex, so the main site is unaffected.
+
+```nginx
+server {
+    listen 443 ssl; listen [::]:443 ssl;
+    server_name "~^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.omaykan\.com$";
+    ssl_certificate     /etc/letsencrypt/live/omaykan-shops/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/omaykan-shops/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+
+    root /var/www/omaykan/web;
+
+    # The shop's page, and the public API it reads the shop and menu from.
+    location = /            { try_files /shop.html =404; }
+    location ^~ /api/       { root /var/www/omaykan/backend/public; try_files $uri /index.php$is_args$args; }
+    location ~ ^/index\.php(/|$) {
+        root /var/www/omaykan/backend/public;
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php8.3-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        fastcgi_param DOCUMENT_ROOT $realpath_root;
+        internal;
+    }
+    location ^~ /assets/    { expires 1y; add_header Cache-Control "public, immutable"; try_files $uri =404; }
+
+    # Other pages' entry files are the main site's business.
+    location ~ \.html$      { return 302 https://omaykan.com$request_uri; }
+    # Images and icons the page uses are served here; anything else goes home.
+    location /              { try_files $uri @main_site; }
+    location @main_site     { return 302 https://omaykan.com$request_uri; }
+}
+
+server {
+    listen 80; listen [::]:80;
+    server_name "~^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.omaykan\.com$";
+    location ^~ /.well-known/acme-challenge/ { root /var/www/html; }
+    location / { return 301 https://$host$request_uri; }
+}
+```
+
+**3. Deploy** with `VITE_SHOP_ROOT_DOMAIN=omaykan.com` in the build environment,
+then check `https://<slug>.omaykan.com/` opens that shop.
 
 ---
 

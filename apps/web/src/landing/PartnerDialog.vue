@@ -95,7 +95,7 @@ onBeforeUnmount(() => {
         <div class="partner__actions">
           <!-- Counts as an answer: someone heading to signup should not be
                asked again on the way back. -->
-          <a href="/signup" class="partner__cta" @click="remember">Register as a seller</a>
+          <a href="/seller/signup" class="partner__cta" @click="remember">Register as a seller</a>
           <button type="button" class="partner__later" @click="dismiss">Maybe later</button>
         </div>
       </div>

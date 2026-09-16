@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import BrandLogo from '@pos/core/components/BrandLogo.vue'
 
-// /signup had no chrome at all: a merchant who landed here from a shared link
+// /seller/signup had no chrome at all: a merchant who landed here from a shared link
 // had no way back to the marketplace and no way to reach the form except
 // scrolling past the whole pitch. This is the merchant-side header — separate
 // from FdHeader, which carries a cart and a category rail that mean nothing on

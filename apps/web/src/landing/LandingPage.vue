@@ -432,7 +432,7 @@ function clearSearch() {
                   No sales commission. Keep 100% of your product sales.
                 </p>
 
-                <a href="/signup" class="fd-seller__cta">List your store</a>
+                <a href="/seller/signup" class="fd-seller__cta">List your store</a>
                 <p class="fd-seller__note">Free while we're in early access.</p>
 
                 <ul class="fd-seller__list">

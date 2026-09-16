@@ -201,6 +201,12 @@ class DatabaseSeeder extends Seeder
             // approved account has a password in this repository, and a rider
             // token reads live customer addresses and phone numbers.
             $this->call(RiderSeeder::class);
+
+            // Shelves without a till: DemoSellerSeeder gives every demo shop a
+            // catalog, and until this ran none of them had ever sold anything,
+            // so the seller dashboard opened on ₱0.00 and an empty chart. Runs
+            // last because it sells what the seeders above put on the shelf.
+            $this->call(DemoOrderSeeder::class);
         }
     }
 }

@@ -46,6 +46,22 @@ class SignupController extends Controller
 
     private const BUSINESS_MODES = ['coffee-shop', 'grocery', 'restaurant', 'nail-salon'];
 
+    /**
+     * The slug is also the shop's subdomain — `<slug>.omaykan.com` — so it has
+     * to be one DNS label, and never one of the platform's own hosts. Keep this
+     * list in step with RESERVED_SHOP_SUBDOMAINS in packages/shared.
+     */
+    private const RESERVED_SLUGS = [
+        'www', 'api', 'app', 'admin', 'mail', 'smtp', 'imap', 'pop', 'ftp', 'cdn',
+        'static', 'assets', 'shop', 'shops', 'store', 'stores', 'rider', 'riders',
+        'seller', 'sellers', 'help', 'support', 'status', 'blog', 'docs', 'dev',
+        'staging', 'test', 'demo', 'platform', 'dashboard', 'account', 'cart',
+        'checkout', 'reverb', 'ws', 'omaykan',
+    ];
+
+    /** A DNS label is 63 at most; this leaves room for a "-50" suffix. */
+    private const SLUG_BASE_MAX = 59;
+
     public function store(Request $request, GoogleIdentityVerifier $verifier): JsonResponse
     {
         // Two doors into the same signup. With `googleCredential` the owner's
@@ -247,13 +263,22 @@ class SignupController extends Controller
     /**
      * Slugs are derived from the business name, so two merchants with the same
      * name collide. Suffix until free.
+     *
+     * Cut to fit a DNS label, and a name that comes out as a reserved host —
+     * a shop called "App" — is never handed out bare: it starts suffixed.
      */
     private function uniqueSlug(string $businessName): string
     {
-        $base = str()->slug($businessName) ?: 'store';
+        $base = trim(substr(str()->slug($businessName), 0, self::SLUG_BASE_MAX), '-') ?: 'my-shop';
         $candidate = $base;
 
         for ($attempt = 2; $attempt <= 50; $attempt++) {
+            if (in_array($candidate, self::RESERVED_SLUGS, true)) {
+                $candidate = "{$base}-{$attempt}";
+
+                continue;
+            }
+
             if (! Organization::query()->where('slug', $candidate)->exists()) {
                 return $candidate;
             }

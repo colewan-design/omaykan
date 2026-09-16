@@ -164,6 +164,30 @@ class SignupApiTest extends TestCase
         $this->assertSame('hill-station-cafe-2', $second['organizationSlug']);
     }
 
+    public function test_a_business_named_like_a_platform_host_never_gets_that_subdomain(): void
+    {
+        $slug = $this->postJson('/api/signup', $this->payload(['businessName' => 'App']))
+            ->assertCreated()->json('organizationSlug');
+
+        $this->assertSame('app-2', $slug);
+    }
+
+    public function test_a_long_business_name_still_makes_one_dns_label(): void
+    {
+        $name = str_repeat('Highland ', 12);
+
+        $first = $this->postJson('/api/signup', $this->payload(['businessName' => $name]))
+            ->assertCreated()->json('organizationSlug');
+        $second = $this->postJson('/api/signup', $this->payload(['businessName' => $name, 'username' => 'someoneelse']))
+            ->assertCreated()->json('organizationSlug');
+
+        foreach ([$first, $second] as $slug) {
+            $this->assertLessThanOrEqual(63, strlen($slug));
+            $this->assertMatchesRegularExpression('/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/', $slug);
+        }
+        $this->assertNotSame($first, $second);
+    }
+
     public function test_a_custom_business_type_label_can_differ_from_the_starter_setup(): void
     {
         $response = $this->postJson('/api/signup', $this->payload([

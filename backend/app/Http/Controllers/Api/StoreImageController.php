@@ -16,7 +16,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  *
  * Two halves that belong together. The register pushes the image here when the
  * owner changes it (packages/data saveSettings), and anywhere a customer meets
- * the shop — the directory, the partner carousel on /signup — reads it back
+ * the shop — the directory, the partner carousel on /seller/signup — reads it back
  * out through show().
  *
  * The register holds that image as a data URL, so that is what arrives: this

@@ -70,7 +70,7 @@ class DemoSellerSeeder extends Seeder
     /**
      * @return array{categories: array<int, array<string, mixed>>, products: array<int, array<string, mixed>>}
      */
-    private function loadCatalog(): array
+    protected function loadCatalog(): array
     {
         $path = database_path('seeders/data/demo-catalog.json');
 
@@ -96,7 +96,7 @@ class DemoSellerSeeder extends Seeder
      *
      * @return array<int, array<string, mixed>>
      */
-    private function sellers(): array
+    protected function sellers(): array
     {
         return [
             [
@@ -166,7 +166,7 @@ class DemoSellerSeeder extends Seeder
      * @param  array<string, mixed>  $seller
      * @return array{0: Organization, 1: Store}
      */
-    private function seedSeller(array $seller): array
+    protected function seedSeller(array $seller): array
     {
         $organization = Organization::query()->firstOrCreate(
             ['slug' => $seller['slug']],
@@ -208,7 +208,11 @@ class DemoSellerSeeder extends Seeder
             [
                 'name' => $seller['owner']['name'],
                 'username' => $seller['owner']['username'],
-                'password' => Hash::make('password'),
+                // Every seeded owner gets 'password' unless its entry names
+                // another — SmLocalSeeder does, so a local SM can be given the
+                // same password as the deployed one without that password
+                // being written down in this repository.
+                'password' => Hash::make($seller['owner']['password'] ?? 'password'),
                 'email_verified_at' => now(),
                 'status' => 'active',
             ],
@@ -255,7 +259,7 @@ class DemoSellerSeeder extends Seeder
         return [$organization, $store];
     }
 
-    private function seedRoles(Organization $organization): void
+    protected function seedRoles(Organization $organization): void
     {
         $roles = [
             'admin' => ['name' => 'Admin', 'permissions' => permissionsFor(APP_PAGE_KEYS)],
@@ -286,7 +290,7 @@ class DemoSellerSeeder extends Seeder
     /**
      * @param  array{categories: array<int, array<string, mixed>>, products: array<int, array<string, mixed>>}  $catalog
      */
-    private function seedCatalog(Organization $organization, Store $store, string $businessMode, array $catalog): void
+    protected function seedCatalog(Organization $organization, Store $store, string $businessMode, array $catalog): void
     {
         $products = array_values(array_filter(
             $catalog['products'],

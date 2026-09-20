@@ -23,7 +23,20 @@ use RuntimeException;
  */
 class PayMongoGateway
 {
-    private const BASE = 'https://api.paymongo.com/v2';
+    /**
+     * Two versions, and the split is not a preference.
+     *
+     * Creating a checkout session is v2, which is what PayMongo tells new
+     * integrations to use. **Reading one back is v1** — `GET
+     * /v2/checkout_sessions/{id}` does not exist and answers
+     * `{"code":"not_found","detail":"The requested route does not exist"}`,
+     * which `readCheckout` turned into a null session and a payment that
+     * never settled. Found by running a real test payment end to end; no
+     * amount of reading their documentation would have said so.
+     */
+    private const CREATE_BASE = 'https://api.paymongo.com/v2';
+
+    private const READ_BASE = 'https://api.paymongo.com/v1';
 
     /** Configured at all? Without keys every gateway path stays shut. */
     public function enabled(): bool
@@ -47,7 +60,7 @@ class PayMongoGateway
             throw new RuntimeException('Refusing to open a checkout for a zero price.');
         }
 
-        $response = $this->request()->post(self::BASE.'/checkout_sessions', [
+        $response = $this->request()->post(self::CREATE_BASE.'/checkout_sessions', [
             'data' => [
                 'attributes' => [
                     'line_items' => [[
@@ -98,7 +111,7 @@ class PayMongoGateway
      */
     public function readCheckout(string $sessionId): ?array
     {
-        $response = $this->request()->get(self::BASE.'/checkout_sessions/'.$sessionId);
+        $response = $this->request()->get(self::READ_BASE.'/checkout_sessions/'.$sessionId);
 
         return $response->successful() ? ($response->json('data') ?? null) : null;
     }

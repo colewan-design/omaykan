@@ -150,6 +150,39 @@ class SubscriptionGatewayTest extends TestCase
         $this->assertTrue($subscription->current_period_ends_at->greaterThan(now()->addDays(39)));
     }
 
+    /**
+     * Create is v2, read is v1.
+     *
+     * Pinned by a test because it is exactly the kind of asymmetry a tidy-up
+     * would "fix" into one constant, and the failure it causes is silent: a
+     * 404 becomes a null session becomes a payment that never settles, with
+     * nothing in the log to say the URL was wrong.
+     */
+    public function test_a_session_is_created_on_v2_and_read_back_on_v1(): void
+    {
+        config(['paymongo.secret_key' => 'sk_test_x']);
+        $subscription = $this->subscription();
+
+        Http::fake([
+            'api.paymongo.com/v2/checkout_sessions' => Http::response([
+                'data' => ['id' => self::SESSION, 'attributes' => ['checkout_url' => 'https://checkout.paymongo.com/x']],
+            ], 200),
+            'api.paymongo.com/v1/checkout_sessions/*' => Http::response([
+                'data' => ['id' => self::SESSION, 'attributes' => ['payments' => []]],
+            ], 200),
+        ]);
+
+        $gateway = app(\App\Services\Billing\PayMongoGateway::class);
+        $gateway->openCheckout($subscription, 'https://omaykan.com/ok', 'https://omaykan.com/no');
+        $gateway->readCheckout(self::SESSION);
+
+        Http::assertSent(fn ($request) => $request->method() === 'POST'
+            && $request->url() === 'https://api.paymongo.com/v2/checkout_sessions');
+
+        Http::assertSent(fn ($request) => $request->method() === 'GET'
+            && $request->url() === 'https://api.paymongo.com/v1/checkout_sessions/'.self::SESSION);
+    }
+
     /** Without keys the gateway path stays shut rather than half-working. */
     public function test_the_gateway_is_disabled_without_a_key(): void
     {

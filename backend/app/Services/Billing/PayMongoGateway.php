@@ -73,10 +73,9 @@ class PayMongoGateway
                         'amount' => $amount,
                         'currency' => 'PHP',
                     ]],
-                    // GCash only, deliberately: it is how merchants already
-                    // pay, and adding cards would mean a conversation about
-                    // chargebacks nobody has had yet.
-                    'payment_method_types' => ['gcash'],
+                    // Whatever the install offers. See config/paymongo.php
+                    // for why the list is what it is.
+                    'payment_method_types' => config('paymongo.payment_methods'),
                     'success_url' => $successUrl,
                     'cancel_url' => $cancelUrl,
                     'description' => 'Omaykan subscription',

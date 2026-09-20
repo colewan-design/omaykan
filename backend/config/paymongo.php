@@ -29,6 +29,30 @@ return [
     'secret_key' => env('PAYMONGO_SECRET_KEY'),
 
     /*
+     * What a merchant may pay with.
+     *
+     * Verified against the account rather than guessed: every one of these
+     * renders on the hosted checkout — QRPh, cards, the three e-wallets, and
+     * BPI under online banking. A method the account has not enabled is
+     * accepted when the session is created and then simply does not appear,
+     * which is a confusing way to find out, so change this list only against
+     * a checkout you have actually opened.
+     *
+     * `billease` and `atome` are deliberately absent. They are buy-now-pay-
+     * later, and putting a shop owner into instalment debt for a ₱499
+     * subscription is not a thing to offer by default. Both work if you add
+     * them — that is what the environment variable is for.
+     *
+     * Fees differ per method and come out of the subscription revenue: cards
+     * cost more than e-wallets, which cost more than QRPh. Worth a look at
+     * PayMongo's pricing before widening this.
+     */
+    'payment_methods' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('PAYMONGO_PAYMENT_METHODS', 'gcash,paymaya,grab_pay,card,qrph,dob')),
+    ))),
+
+    /*
      * The webhook endpoint's own secret, which is a different thing from the
      * key above and does not appear on the dashboard's API keys page. It is
      * shown once, when the endpoint is created under Developers → Webhooks,

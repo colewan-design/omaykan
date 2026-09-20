@@ -1718,7 +1718,9 @@ const recentOrders = computed(() =>
 }
 
 .empty {
-  margin: 0;
+  /* The only thing in a card that has nothing to show: park it in the middle
+     of whatever height the row hands the card. */
+  margin: auto 0;
   padding: 22px 0;
   color: var(--page-faint);
   font-size: 14px;
@@ -1897,7 +1899,15 @@ const recentOrders = computed(() =>
 .grid {
   display: grid;
   gap: 16px;
-  align-items: start;
+  /* Cards share the height of their row, so a quiet card no longer ends
+     halfway up its neighbour. */
+  align-items: stretch;
+}
+
+/* And a floor for the case the row cannot fix on its own: every card in it
+   is empty, or the grid has collapsed to one column. */
+.grid > .card {
+  min-height: 300px;
 }
 
 .grid--queue     { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
@@ -2621,6 +2631,12 @@ const recentOrders = computed(() =>
     grid-column: 1 / -1;
   }
 
+  /* Alone on its row it has no neighbour to match, and a full-width card held
+     at the shared floor is mostly empty band. */
+  .grid--analytics > .card:last-child {
+    min-height: 220px;
+  }
+
   .donut {
     grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
@@ -2667,6 +2683,11 @@ const recentOrders = computed(() =>
   .grid--analytics > :last-child {
     grid-column: auto;
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* One card per row: nothing to line up with, so ask for less height. */
+  .grid > .card {
+    min-height: 240px;
   }
 
   .hero {

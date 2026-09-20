@@ -235,6 +235,26 @@ class SubscriptionGatewayTest extends TestCase
         });
     }
 
+    /** The configured methods are what the checkout offers, in order. */
+    public function test_the_configured_payment_methods_are_sent(): void
+    {
+        config([
+            'paymongo.secret_key' => 'sk_test_x',
+            'paymongo.payment_methods' => ['gcash', 'card', 'qrph'],
+        ]);
+        $subscription = $this->subscription();
+
+        Http::fake(['api.paymongo.com/v2/checkout_sessions' => Http::response([
+            'data' => ['id' => self::SESSION, 'attributes' => ['checkout_url' => 'https://checkout.paymongo.com/x']],
+        ], 200)]);
+
+        app(\App\Services\Billing\PayMongoGateway::class)
+            ->openCheckout($subscription, 'https://omaykan.com/ok', 'https://omaykan.com/no');
+
+        Http::assertSent(fn ($request) => ($request->data()['data']['attributes']['payment_method_types'] ?? null)
+            === ['gcash', 'card', 'qrph']);
+    }
+
     /** Without keys the gateway path stays shut rather than half-working. */
     public function test_the_gateway_is_disabled_without_a_key(): void
     {

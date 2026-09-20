@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\CustomerConversationController;
 use App\Http\Controllers\Api\CustomerOrderController;
 use App\Http\Controllers\Api\CustomerPaymentMethodController;
 use App\Http\Controllers\Api\OnlineOrderController;
+use App\Http\Controllers\Api\PayMongoWebhookController;
 use App\Http\Controllers\Api\PlatformAdminAuthController;
 use App\Http\Controllers\Api\PlatformAdminController;
 use App\Http\Controllers\Api\PlatformAdminInboxController;
@@ -113,6 +114,18 @@ Route::get('/app-releases/{slug}', [AppReleaseController::class, 'show'])
 
 // Public self-serve signup. Throttled hard: it creates an organization, a
 // store and a user account on every successful call.
+/*
+ * PayMongo's webhook. Public and unauthenticated by necessity — PayMongo is
+ * not signed in — so the signature is the only thing standing in front of it.
+ * See PayMongoWebhookController, which refuses anything it cannot verify.
+ *
+ * Throttled generously rather than tightly: retries are how PayMongo recovers
+ * from our downtime, and a limit low enough to bite during a retry storm
+ * would turn a blip into lost payments.
+ */
+Route::post('/webhooks/paymongo', [PayMongoWebhookController::class, 'handle'])
+    ->middleware('throttle:120,1');
+
 Route::post('/signup', [SignupController::class, 'store'])
     ->middleware('throttle:5,1');
 

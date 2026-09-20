@@ -52,6 +52,44 @@ class PayMongoWebhookApiTest extends TestCase
             ->assertJson(['received' => true]);
     }
 
+    /**
+     * The first real delivery failed on this.
+     *
+     * A session's client key is `cs_<id>_client_<random>` and sits in the
+     * payload beside the id, so a scan for `cs_` finds both. Settling the
+     * client key looks up a session that does not exist, and the payment sat
+     * unsettled with only "settlement for an unknown session" in the log.
+     */
+    public function test_a_client_key_is_trimmed_to_the_session_id(): void
+    {
+        config(['paymongo.webhook_secret' => self::SECRET, 'paymongo.mode' => 'test']);
+
+        $settled = [];
+        $this->app->bind(\App\Services\Billing\GatewaySettlement::class, function () use (&$settled) {
+            return new class($settled) extends \App\Services\Billing\GatewaySettlement
+            {
+                public function __construct(private array &$seen) {}
+
+                public function settle(string $sessionId): bool
+                {
+                    $this->seen[] = $sessionId;
+
+                    return false;
+                }
+            };
+        });
+
+        $payload = json_encode(['data' => ['attributes' => ['data' => [
+            'id' => 'cs_abc123',
+            'attributes' => ['client_key' => 'cs_abc123_client_zzz999'],
+        ]]]]);
+
+        $this->deliver($payload, $this->sign($payload, time()))->assertOk();
+
+        // Both spellings collapse to one lookup, on the real id.
+        $this->assertSame(['cs_abc123'], $settled);
+    }
+
     public function test_an_unconfigured_endpoint_says_so_rather_than_refusing(): void
     {
         config(['paymongo.webhook_secret' => '']);

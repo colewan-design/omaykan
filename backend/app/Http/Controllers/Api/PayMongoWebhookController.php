@@ -105,10 +105,12 @@ class PayMongoWebhookController extends Controller
     }
 
     /**
-     * Every `cs_…` identifier the payload mentions, in no particular order.
+     * Every checkout session the payload mentions, in no particular order.
      *
-     * A checkout session id is recognisable on sight, which is what makes a
-     * search like this reasonable where guessing a path is not.
+     * A session id is recognisable on sight, which is what makes a search
+     * like this reasonable where guessing a path is not — PayMongo's payload
+     * differs between event types and their documentation does not pin down
+     * where the id sits for each.
      */
     private function sessionIds(?array $event): array
     {
@@ -118,9 +120,20 @@ class PayMongoWebhookController extends Controller
         $payload = $event ?? [];
 
         array_walk_recursive($payload, function ($value) use (&$found) {
-            if (is_string($value) && str_starts_with($value, 'cs_')) {
-                $found[$value] = true;
+            if (! is_string($value) || ! str_starts_with($value, 'cs_')) {
+                return;
             }
+
+            /*
+             * A checkout session's *client key* is its id with a suffix:
+             * `cs_<id>_client_<random>`. It is in the payload beside the id
+             * and starts the same way, so a naive scan picks it up and looks
+             * up a session that does not exist — which is exactly what
+             * happened on the first live delivery, logged as "settlement for
+             * an unknown session". Trimming at `_client_` turns either form
+             * into the id, and the set dedupes the two into one lookup.
+             */
+            $found[strstr($value, '_client_', true) ?: $value] = true;
         });
 
         return array_keys($found);

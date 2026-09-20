@@ -9,12 +9,16 @@ use Illuminate\Database\Eloquent\Model;
 /**
  * One manual transfer a merchant says they made, and what an operator decided.
  *
- * Collection is deliberately manual and will stay that way — there is no
- * gateway and none planned (documentation/plan.md §4a). This is what "manual"
- * is made of: the merchant's claim, the operator's review, and the period the
- * payment bought.
+ * Two provenances, told apart by `source`.
  *
- * Accepting one is the only thing that calls
+ * `manual` is the original meaning and still the default: the merchant's
+ * claim, an operator's review, and the period the payment bought. `paymongo`
+ * is a hosted GCash checkout that settled — nobody typed it and nobody needs
+ * to believe the merchant for it to be true, so it is written straight to
+ * `accepted` and never appears in the operator's queue
+ * (documentation/plan.md §4a, changed 2026-09-20).
+ *
+ * Either way, accepting one is the only thing that calls
  * `SubscriptionBilling::recordPayment()` with a date.
  */
 class SubscriptionPayment extends Model
@@ -30,9 +34,17 @@ class SubscriptionPayment extends Model
     /** An operator could not match it, with a reason the merchant sees. */
     public const STATUS_REJECTED = 'rejected';
 
+    /** Written by an operator reviewing a claim, or by a gateway settlement. */
+    public const SOURCE_MANUAL = 'manual';
+
+    public const SOURCE_PAYMONGO = 'paymongo';
+
     protected $fillable = [
         'id',
         'subscription_id',
+        'source',
+        'provider_session_id',
+        'provider_payment_id',
         'organization_id',
         'status',
         'reference',

@@ -5,10 +5,13 @@
 | PayMongo
 |--------------------------------------------------------------------------
 |
-| Credentials only. Nothing here decides whether the gateway is used — that
-| question is still open (documentation/plan.md §4a says manual transfer and
-| no gateway; this is the groundwork for changing that answer, not the answer
-| itself). An unconfigured install behaves exactly as it does today.
+| Credentials only, and the switch that follows from them: with a secret key
+| the merchant gets a Pay button, without one the install behaves exactly as
+| it did before the gateway existed.
+|
+| Taking a payment is settled (documentation/plan.md §4a, 2026-09-20).
+| Cutting somebody off for not making one is a different decision and has not
+| been made — that stays behind BILLING_ENFORCE in config/billing.php.
 |
 | Both values are secrets and belong in the server's untracked .env, never in
 | .env.example with a value and never in a client bundle. PayMongo's own

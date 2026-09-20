@@ -152,6 +152,8 @@ export interface SubscriptionPaymentRecord {
  * should see that rather than be surprised by it.
  */
 export interface SubscriptionOverview {
+  /** Whether the server can open a PayMongo checkout at all. */
+  gatewayReady?: boolean
   plan: { id: string; amountCents: number }
   subscription: {
     status: string
@@ -358,6 +360,20 @@ export interface PosRepository {
     amountCents: number
     note?: string
   }): Promise<void>
+  /**
+   * "Pay now." Opens a PayMongo checkout and returns where to send the
+   * merchant. Rejects with the server's reason when the gateway is off.
+   */
+  startSubscriptionCheckout(): Promise<{ id: string; checkoutUrl: string }>
+  /**
+   * The merchant came back from GCash. Asks the server to settle, and
+   * returns what the payment is now.
+   *
+   * Not load-bearing: the webhook settles the same checkout. This is so the
+   * screen in front of the merchant turns paid immediately rather than
+   * whenever the notification arrives.
+   */
+  settleSubscriptionCheckout(sessionId: string): Promise<{ status: string }>
   loadOrderingState(): Promise<OrderingState | null>
   /** Pause (optionally until a time) or reopen. Needs the Orders page. */
   setOrderingPaused(paused: boolean, resumesAt?: string | null): Promise<OrderingState>
@@ -3376,6 +3392,28 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         // appear.
         return null
       }
+    },
+
+    async startSubscriptionCheckout() {
+      if (!(await isOnlineSyncEnabled()) || !(await readSyncSession())) {
+        throw new Error('Paying online needs a connection to Omaykan. Try again when this till is online.')
+      }
+
+      return backendFetch<{ id: string; checkoutUrl: string }>(
+        '/api/seller/subscription/checkout',
+        { method: 'POST', body: '{}' },
+      )
+    },
+
+    async settleSubscriptionCheckout(sessionId) {
+      if (!(await isOnlineSyncEnabled()) || !(await readSyncSession())) {
+        throw new Error('Confirming a payment needs a connection to Omaykan.')
+      }
+
+      return backendFetch<{ status: string }>(
+        '/api/seller/subscription/checkout/settle',
+        { method: 'POST', body: JSON.stringify({ sessionId }) },
+      )
     },
 
     async submitSubscriptionPayment(input) {

@@ -7,16 +7,15 @@ import { getPosRepository } from '@pos/core/services/runtime'
 /**
  * What the shop owes us, and how it says it paid.
  *
- * There is no payment gateway and none planned — collection is a manual
- * transfer an operator matches by hand (documentation/plan.md §4a). Before
- * this panel a merchant had *no way at all* to tell us they had paid: the one
- * reference column was written at signup by a form that stopped sending it,
- * and nothing displayed it.
+ * Two ways to pay, and the panel leads with the one that finishes by itself:
+ * GCash through PayMongo, which settles without anybody reviewing it, and the
+ * manual transfer underneath for a shop that would rather send money the way
+ * it always has (documentation/plan.md §4a).
  *
- * So the job here is narrow and honest: show the current price, take a
- * reference, and show what happened to it. It deliberately does not look like
- * a checkout — there is nothing to charge, and a button that implied otherwise
- * would lead somewhere that cannot take the money.
+ * The Pay button only appears when the server says the gateway is configured
+ * — `/checkout` answers 503 otherwise, and an install with no keys shows
+ * exactly what it showed before: a price, a reference field, and what happened
+ * to it.
  *
  * Renders nothing on a till with no server behind it, or for anyone but the
  * owner: the endpoint answers 403 and the repository turns that into null.
@@ -31,6 +30,11 @@ const note = ref('')
 const saving = ref(false)
 const error = ref('')
 const sent = ref(false)
+
+const payingOnline = ref(false)
+const gatewayError = ref('')
+/** Hidden until the server proves it can take a payment. See `probeGateway`. */
+const gatewayReady = ref(false)
 
 const pending = computed(() =>
   overview.value?.payments.find((payment) => payment.status === 'submitted') ?? null,
@@ -112,8 +116,54 @@ async function submit() {
   }
 }
 
+/**
+ * Send the merchant to GCash.
+ *
+ * The row is written server-side before this returns, so an abandoned
+ * checkout is still something an operator can look up rather than a gap.
+ */
+async function payOnline() {
+  payingOnline.value = true
+  gatewayError.value = ''
+
+  try {
+    const checkout = await repository.startSubscriptionCheckout()
+    // Remembered because the merchant leaves the app entirely; on the way
+    // back there is nothing else to say which checkout they were on.
+    sessionStorage.setItem('omaykan.subscription.checkout', checkout.id)
+    window.location.href = checkout.checkoutUrl
+  } catch (err) {
+    gatewayError.value = err instanceof Error ? err.message : 'Could not open the payment page.'
+    payingOnline.value = false
+  }
+}
+
+/**
+ * Coming back from GCash.
+ *
+ * Only ever an accelerator: the webhook settles the same checkout whether or
+ * not the merchant returns to this screen. So a failure here is swallowed —
+ * telling somebody their payment failed when it has merely not been confirmed
+ * yet would be worse than saying nothing.
+ */
+async function settleOnReturn() {
+  const sessionId = sessionStorage.getItem('omaykan.subscription.checkout')
+
+  if (!sessionId) return
+
+  sessionStorage.removeItem('omaykan.subscription.checkout')
+
+  try {
+    await repository.settleSubscriptionCheckout(sessionId)
+  } catch {
+    // Left to the webhook.
+  }
+}
+
 onMounted(async () => {
+  await settleOnReturn()
   overview.value = await repository.loadSubscription()
+  gatewayReady.value = overview.value?.gatewayReady ?? false
   // Pre-fill with what we are actually asking for, so the common case is one
   // field and a button.
   amountPesos.value = (overview.value?.plan.amountCents ?? 0) / 100
@@ -137,8 +187,27 @@ onMounted(async () => {
       before anything changes.
     </p>
 
+    <!--
+      Pay online first, because it is the path that finishes by itself. The
+      manual route stays underneath, unchanged, for a shop that would rather
+      send money the way it always has — and it is the only route at all on
+      an install with no PayMongo keys.
+    -->
+    <div v-if="gatewayReady && !pending" class="subs__pay">
+      <button type="button" class="subs__paybtn" :disabled="payingOnline" @click="payOnline">
+        {{ payingOnline ? 'Opening GCash…' : `Pay ${priceLabel} with GCash` }}
+      </button>
+      <p class="subs__payhint">
+        Opens GCash. Your subscription updates as soon as the payment clears —
+        nobody has to check it by hand.
+      </p>
+      <p v-if="gatewayError" class="subs__error">{{ gatewayError }}</p>
+    </div>
+
     <p class="subs__how">
-      Send your {{ overview.howToPay.method.toLowerCase() }}, then record the
+      <template v-if="gatewayReady">Would rather transfer it yourself? Send your</template>
+      <template v-else>Send your</template>
+      {{ overview.howToPay.method.toLowerCase() }}, then record the
       reference below so we can match it. Questions:
       <a :href="`mailto:${overview.howToPay.supportEmail}`">{{ overview.howToPay.supportEmail }}</a>.
     </p>
@@ -396,5 +465,32 @@ onMounted(async () => {
 .subs__when {
   flex: none;
   color: var(--text-secondary);
+}
+
+.subs__pay {
+  margin: 0 0 1rem;
+}
+
+.subs__paybtn {
+  width: 100%;
+  padding: 0.85rem 1rem;
+  border: 0;
+  border-radius: 0.6rem;
+  background: #0f7a3d;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.subs__paybtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.subs__payhint {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+  opacity: 0.75;
 }
 </style>

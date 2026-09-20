@@ -705,6 +705,12 @@ export function createDemoPosRepository(): PosRepository {
       return null
     },
 
+    async startSubscriptionCheckout(): Promise<{ id: string; checkoutUrl: string }> {
+      throw new Error('The demo till cannot take a payment.')
+    },
+    async settleSubscriptionCheckout(): Promise<{ status: string }> {
+      return { status: 'submitted' }
+    },
     async submitSubscriptionPayment() {
       throw new Error('The demo has no subscription to pay for.')
     },

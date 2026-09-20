@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\Billing\GatewaySettlement;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -22,14 +23,12 @@ use Illuminate\Support\Facades\Log;
  * called. An unverified endpoint is therefore not a leak — it is a button on
  * the open internet that marks any subscription paid.
  *
- * ## What it does not do yet
+ * ## What it does not do
  *
- * Nothing. It verifies, logs and returns 200. Recording a payment is
- * deliberately absent: `SubscriptionPayment` today means "a merchant says
- * they transferred money and an operator agreed", and a gateway payment is a
- * different claim with a different provenance. Wiring one into the other
- * before that is decided would put unreviewed rows in the operator's queue.
- * See documentation/plan.md §4a — no gateway is still the standing decision.
+ * Decide anything. It verifies, pulls out any checkout session the payload
+ * mentions, and hands it to `GatewaySettlement`, which re-reads the session
+ * from PayMongo with our own key before believing a word of it. The body is a
+ * pointer, never evidence.
  *
  * ## Signature format
  *
@@ -46,7 +45,7 @@ use Illuminate\Support\Facades\Log;
  */
 class PayMongoWebhookController extends Controller
 {
-    public function handle(Request $request): JsonResponse
+    public function handle(Request $request, GatewaySettlement $settlement): JsonResponse
     {
         $secret = (string) config('paymongo.webhook_secret');
 
@@ -78,6 +77,22 @@ class PayMongoWebhookController extends Controller
         ]);
 
         /*
+         * Find a checkout session id anywhere in the payload, and settle it.
+         *
+         * Deliberately shape-agnostic. PayMongo's payload differs between
+         * event types and their documentation does not pin down where the
+         * session id sits for each, so rather than guess at one path this
+         * looks in the places it can be and gives up quietly otherwise. That
+         * is safe because the id is only a *pointer*: GatewaySettlement reads
+         * the session back from PayMongo with our own key and believes that,
+         * not this body. A wrong guess settles nothing; a missed one is
+         * caught when the merchant returns from GCash, or by the next retry.
+         */
+        foreach ($this->sessionIds($event) as $sessionId) {
+            $settlement->settle($sessionId);
+        }
+
+        /*
          * 200 regardless of what the event was.
          *
          * PayMongo retries anything that is not a success, so answering 4xx
@@ -87,6 +102,28 @@ class PayMongoWebhookController extends Controller
          * business, not a delivery failure.
          */
         return response()->json(['received' => true]);
+    }
+
+    /**
+     * Every `cs_…` identifier the payload mentions, in no particular order.
+     *
+     * A checkout session id is recognisable on sight, which is what makes a
+     * search like this reasonable where guessing a path is not.
+     */
+    private function sessionIds(?array $event): array
+    {
+        $found = [];
+        // Bound to a variable first: array_walk_recursive takes its subject
+        // by reference, and `$event ?? []` is a temporary it cannot bind to.
+        $payload = $event ?? [];
+
+        array_walk_recursive($payload, function ($value) use (&$found) {
+            if (is_string($value) && str_starts_with($value, 'cs_')) {
+                $found[$value] = true;
+            }
+        });
+
+        return array_keys($found);
     }
 
     /**

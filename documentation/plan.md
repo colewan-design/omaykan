@@ -33,7 +33,7 @@ Honest current state, so the phases below start from reality.
 
 - **Signup and subscription record** (`api/signup.ts`) — creates org, store, owner, pairing code, and a subscription at `status: 'pending_verification'` on a `standard-monthly` plan. Price is a **₱499 placeholder** collected by manual GCash transfer to a placeholder number; there is no gateway, no recurring billing, and no enforcement against non-payers.
 
-**Not built:** rider side (entirely), loyalty, discounts, customer list/broadcast, price comparison, savings counter, automated subscription billing. Online payment collection is not built and is **not planned** — for customer orders or for the merchant subscription. See §4a.
+**Not built:** rider side (entirely), loyalty, discounts, customer list/broadcast, price comparison, savings counter. Online payment collection for **customer orders** is not built and is **not planned** (§4a). The **merchant subscription** takes PayMongo as of 2026-09-20.
 
 Full page-by-page status is in [feature-log.md](./feature-log.md).
 
@@ -65,7 +65,7 @@ Two customer storefronts exist and have **drifted apart**: the mobile one suppor
 | Legacy backend | Firebase / Firestore + `api/*.ts` on `server/` | Live today, being retired |
 | On-device DB (merchant) | IndexedDB (mirrored to `localStorage`) today; SQLite is the target | See §4 |
 | Customer payments | **COD only** — settled at handover | No gateway, deliberately. See §4a |
-| Merchant subscription | Manual GCash transfer, verified by an operator | No gateway either, deliberately as of 2026-09-20. See §4a |
+| Merchant subscription | PayMongo hosted GCash checkout, or a manual transfer an operator verifies | Gateway added 2026-09-20. See §4a |
 
 ---
 
@@ -154,11 +154,15 @@ What COD costs us, and must be designed for in Phase 3:
 - **Change handling.** The rider must know the exact amount due and carry change. Show change-due prominently.
 - **Cash reconciliation across a rider.** Money collected in the field has to land against the shift — the shift and cash-movement model already exists to hang this on.
 
-**The merchant's own subscription is not COD** — nobody hands us cash at a door — but as of **2026-09-20 it is under the same no-gateway decision**. It stays a manual GCash transfer with an operator verifying the reference by eye. A recurring-billing integration (PayMongo, Xendit) is **not planned**, and the earlier note here that it "still needs a real collection method" no longer describes an open task. See [subscription-and-suspension.md §6.3](./subscription-and-suspension.md).
+**The merchant's own subscription takes a gateway. Customer orders still do not.** The two were briefly under one no-gateway decision; as of **2026-09-20 they are separate decisions**, because the arguments above are about *customer* money and only some of them survive the move to a subscription.
 
-The reasoning is mostly the same as above, minus the customer-facing parts: no processor fees, no compliance surface opened while BIR is unresolved, and nothing to build or keep working. What it costs us is an operator's attention per merchant per month, and no way to dun anybody automatically — acceptable at tens of merchants, not at hundreds.
+A merchant can now pay through **PayMongo**, with hosted GCash checkout, and the subscription settles itself. The manual transfer stays beside it for a shop that would rather send money the way it always has, and an install with no PayMongo keys behaves exactly as it did before — the Pay button does not appear. See [subscription-and-suspension.md §6.3](./subscription-and-suspension.md).
 
-Revisit both — COD-only and the subscription gateway — when volume makes the fees and the compliance work worth it. Not before.
+What changed the answer: the manual route costs an operator's attention per merchant per month and gives no way to dun anybody automatically. That is fine at tens of merchants and not at hundreds, and building it after the volume arrives means building it under pressure. The objections that did not carry over are the customer-facing ones — a subscription is one predictable charge to a business we already have a relationship with, not a stranger at a door, so there is no float to hold, no change to make and no cash to reconcile.
+
+What it does cost: processor fees on subscription revenue, and a compliance surface opened while BIR is unresolved. The second is why **enforcement stays off** (`BILLING_ENFORCE`) — taking a payment and cutting somebody off for not making one are different decisions, and only the first has been made.
+
+**COD-only for customer orders is untouched** and still holds for every reason above. Revisit it when volume makes the fees and the compliance work worth it. Not before.
 
 ---
 
@@ -227,7 +231,7 @@ The two features that carry the entire story.
 
 ### Phase 3 — Money
 
-- **COD is the only customer payment path** (§4a) — no gateway work here. What this phase owes it: order confirmation the merchant can trust, a no-show/cancellation path, and change-due visibility for the rider.
+- **COD is the only customer payment path** (§4a) — no gateway work here; the subscription gateway is a separate decision. What this phase owes it: order confirmation the merchant can trust, a no-show/cancellation path, and change-due visibility for the rider.
 - **Real subscription billing** — replace the manual-GCash-to-a-placeholder-number flow and the `pending_verification` status with automated collection, a real price, and a grace window so a failed charge never shuts off a working till mid-day.
 - Minimum order values for delivery (basket-size constraint — [positioning.md §7](./positioning.md)).
 

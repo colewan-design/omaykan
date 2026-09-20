@@ -6,6 +6,8 @@ use App\Http\Controllers\Concerns\ActsForAStore;
 use App\Http\Controllers\Controller;
 use App\Models\PlatformSetting;
 use App\Models\Subscription;
+use App\Services\Billing\GatewaySettlement;
+use App\Services\Billing\PayMongoGateway;
 use App\Models\SubscriptionPayment;
 use App\Services\Billing\SubscriptionBilling;
 use Illuminate\Http\JsonResponse;
@@ -39,7 +41,7 @@ class SellerSubscriptionController extends Controller
     use ActsForAStore;
 
     /** What the shop owes, what it has sent, and where that got to. */
-    public function show(Request $request): JsonResponse
+    public function show(Request $request, PayMongoGateway $gateway): JsonResponse
     {
         $context = $this->storeContext($request);
         $this->abortUnlessOwner($context->role);
@@ -59,6 +61,10 @@ class SellerSubscriptionController extends Controller
             // signup. This is the number the operator edits in Settings →
             // Subscription, and quoting it here is what makes that control
             // actually reach a merchant.
+            // Whether this install can actually take a payment. The panel
+            // hides its Pay button on false rather than offering one that
+            // answers 503.
+            'gatewayReady' => $gateway->enabled(),
             'plan' => [
                 'id' => $plan['id'],
                 'amountCents' => (int) $plan['amountCents'],
@@ -144,6 +150,93 @@ class SellerSubscriptionController extends Controller
             'status' => $payment->status,
             'message' => 'Thanks — we will check this against our records and confirm by email.',
         ], 201);
+    }
+
+    /**
+     * "Let me pay now." Opens a PayMongo checkout and hands back the URL.
+     *
+     * The opposite provenance from `storePayment` above: nothing here is a
+     * claim to be reviewed. The row is written before the merchant leaves so
+     * that an abandoned checkout is still something we can look up, and it is
+     * marked `source = paymongo` so it never appears in the operator's queue
+     * of things to verify by hand.
+     *
+     * 503 rather than 404 when unconfigured: the gateway is an install-level
+     * fact, and a merchant who is told "not found" goes looking for a button
+     * they did not lose.
+     */
+    public function startGatewayPayment(Request $request, PayMongoGateway $gateway): JsonResponse
+    {
+        $context = $this->storeContext($request);
+        $this->abortUnlessOwner($context->role);
+
+        abort_unless($gateway->enabled(), 503, 'Online payment is not switched on.');
+
+        $subscription = Subscription::query()
+            ->where('organization_id', $context->organizationId())
+            ->first();
+
+        abort_if($subscription === null, 404, 'This shop has no subscription on record.');
+
+        $plan = PlatformSetting::current()->planSettings();
+        $amount = (int) ($plan['amountCents'] ?? 0);
+
+        $checkout = $gateway->openCheckout(
+            $subscription,
+            rtrim(config('app.url'), '/').'/app.html#/settings?subscription=paid',
+            rtrim(config('app.url'), '/').'/app.html#/settings?subscription=cancelled',
+        );
+
+        $payment = SubscriptionPayment::query()->create([
+            'subscription_id' => $subscription->id,
+            'organization_id' => $subscription->organization_id,
+            'status' => SubscriptionPayment::STATUS_SUBMITTED,
+            'source' => 'paymongo',
+            'provider_session_id' => $checkout['id'],
+            // PayMongo's own id is the reference; there is nothing for the
+            // merchant to type and nothing for an operator to match by eye.
+            'reference' => $checkout['id'],
+            'amount_cents' => $amount,
+            'submitted_by_user_id' => $context->user->id,
+        ]);
+
+        return response()->json([
+            'id' => $payment->id,
+            'checkoutUrl' => $checkout['url'],
+        ], 201);
+    }
+
+    /**
+     * The merchant came back from GCash. Settle, if PayMongo agrees.
+     *
+     * Not the source of truth and not required: the webhook settles the same
+     * checkout through the same service. This exists so a merchant who is
+     * looking at the screen sees it turn paid immediately rather than
+     * whenever the notification lands.
+     */
+    public function settleGatewayPayment(Request $request, GatewaySettlement $settlement): JsonResponse
+    {
+        $context = $this->storeContext($request);
+        $this->abortUnlessOwner($context->role);
+
+        $validated = $request->validate([
+            'sessionId' => ['required', 'string', 'max:120'],
+        ]);
+
+        $payment = SubscriptionPayment::query()
+            ->where('provider_session_id', $validated['sessionId'])
+            ->where('organization_id', $context->organizationId())
+            ->first();
+
+        // Scoped to the caller's own organization, so one merchant cannot
+        // poke at another's checkout by guessing a session id.
+        abort_if($payment === null, 404, 'No such payment.');
+
+        $settlement->settle($validated['sessionId']);
+
+        return response()->json([
+            'status' => $payment->fresh()->status,
+        ]);
     }
 
     /**

@@ -420,6 +420,12 @@ Route::middleware(['auth:sanctum', 'merchant.token'])->group(function () {
     Route::post('/seller/subscription/payments', [SellerSubscriptionController::class, 'storePayment'])
         ->middleware('throttle:10,1');
 
+    // Pay now, through PayMongo. Opens a hosted GCash checkout and returns
+    // the URL; `settle` is the merchant coming back from it. Both are shut
+    // unless the install has PayMongo keys.
+    Route::post('/seller/subscription/checkout', [SellerSubscriptionController::class, 'startGatewayPayment']);
+    Route::post('/seller/subscription/checkout/settle', [SellerSubscriptionController::class, 'settleGatewayPayment']);
+
     // The till publishing its own shop's photo. Scoped to the calling
     // device's store, like the sync and seller-order endpoints above.
     Route::put('/seller/store-image', [StoreImageController::class, 'update']);

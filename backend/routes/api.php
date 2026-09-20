@@ -10,9 +10,12 @@ use App\Http\Controllers\Api\CustomerAuthController;
 use App\Http\Controllers\Api\CustomerConversationController;
 use App\Http\Controllers\Api\CustomerOrderController;
 use App\Http\Controllers\Api\CustomerPaymentMethodController;
+use App\Http\Controllers\Api\LoyaltyController;
 use App\Http\Controllers\Api\OnlineOrderController;
 use App\Http\Controllers\Api\PayMongoWebhookController;
 use App\Http\Controllers\Api\PlatformAdminAuthController;
+use App\Http\Controllers\Api\ProductImageController;
+use App\Http\Controllers\Api\PromoCodeController;
 use App\Http\Controllers\Api\PlatformAdminController;
 use App\Http\Controllers\Api\PlatformAdminInboxController;
 use App\Http\Controllers\Api\PlatformAnalyticsController;
@@ -30,6 +33,7 @@ use App\Http\Controllers\Api\RiderReviewController;
 use App\Http\Controllers\Api\SellerConversationController;
 use App\Http\Controllers\Api\SellerOrderController;
 use App\Http\Controllers\Api\SellerRiderController;
+use App\Http\Controllers\Api\SellerSubscriptionController;
 use App\Http\Controllers\Api\SignupController;
 use App\Http\Controllers\Api\StaffRoleController;
 use App\Http\Controllers\Api\StaffAuthController;
@@ -39,8 +43,10 @@ use App\Http\Controllers\Api\RiderAvatarController;
 use App\Http\Controllers\Api\RiderRatingController;
 use App\Http\Controllers\Api\RiderSupportController;
 use App\Http\Controllers\Api\StoreImageController;
+use App\Http\Controllers\Api\StoreOrderingController;
 use App\Http\Controllers\Api\StorefrontCatalogController;
 use App\Http\Controllers\Api\ShiftController;
+use App\Http\Controllers\Api\RegisterOrderController;
 use App\Http\Controllers\Api\SyncController;
 
 Route::get('/user', function (Request $request) {
@@ -68,9 +74,19 @@ Route::post('/staff/auth/google', [StaffAuthController::class, 'google'])
 Route::post('/online-orders', [OnlineOrderController::class, 'store'])
     ->middleware('throttle:20,1');
 
+// What a basket would cost — subtotal, promo code, VAT, delivery — before it is
+// ordered. Same arithmetic as checkout. Read-only, so throttled like the catalog.
+Route::post('/online-orders/quote', [OnlineOrderController::class, 'quote'])
+    ->middleware('throttle:60,1');
+
 // Order tracking. The UUID in the path is the capability — see the controller.
 Route::get('/online-orders/{order}', [OnlineOrderController::class, 'show'])
     ->middleware('throttle:60,1');
+
+// A phone asking to be told when a rider takes this order. Same capability as
+// tracking: whoever holds the UUID can already watch the order.
+Route::post('/online-orders/{order}/push-token', [OnlineOrderController::class, 'registerPushToken'])
+    ->middleware('throttle:20,1');
 
 // The storefront's product list. Replaces the storefront reading Firestore
 // directly, which is what forced Firebase credentials into the client.
@@ -89,6 +105,13 @@ Route::get('/stores', [StoreDirectoryController::class, 'index'])
 // these — one request each, all at once.
 Route::get('/stores/{store}/image', [StoreImageController::class, 'show'])
     ->middleware('throttle:240,1');
+
+// Product photos. Public for the same reason, and throttled more loosely
+// still: a menu page is a dozen of these at once. The file name is pinned to
+// `{uuid}.{ext}` here, so the controller never sees a path.
+Route::get('/product-images/{file}', [ProductImageController::class, 'show'])
+    ->where('file', ProductImageController::FILE_PATTERN)
+    ->middleware('throttle:600,1');
 
 /*
  * A rider's photograph.
@@ -359,6 +382,11 @@ Route::middleware(['auth:sanctum', 'merchant.token'])->group(function () {
     Route::get('/sync/bootstrap', [SyncController::class, 'bootstrap']);
     Route::post('/sync/push', [SyncController::class, 'push']);
     Route::get('/sync/pull', [SyncController::class, 'pull']);
+    // A sale at the till, recorded before the cashier finishes it — or
+    // refused, with the reason. See RegisterOrderController.
+    Route::post('/register/orders', [RegisterOrderController::class, 'store']);
+    Route::post('/register/orders/{order}/void', [RegisterOrderController::class, 'void'])
+        ->whereUuid('order');
     Route::get('/shifts/current', [ShiftController::class, 'current']);
     Route::get('/shifts/history', [ShiftController::class, 'history']);
     Route::post('/shifts/open', [ShiftController::class, 'open']);
@@ -378,9 +406,49 @@ Route::middleware(['auth:sanctum', 'merchant.token'])->group(function () {
     Route::post('/seller/online-orders/{order}/delivery-stage', [SellerOrderController::class, 'updateDeliveryStage']);
     Route::post('/seller/online-orders/{order}/status', [SellerOrderController::class, 'updateStatus']);
     Route::post('/seller/online-orders/{order}/settle-payment', [SellerOrderController::class, 'settlePayment']);
+    /*
+     * The shop's subscription, and the manual transfers it has told us about.
+     *
+     * Note what these are *not* behind: every other write in this group is
+     * refused for an unpaid tenant, but the screen where a merchant pays us
+     * cannot be one of them. See SellerSubscriptionController.
+     *
+     * Throttled because the submission is a free-text claim, not a charge —
+     * there is nothing downstream to rate-limit it for us.
+     */
+    Route::get('/seller/subscription', [SellerSubscriptionController::class, 'show']);
+    Route::post('/seller/subscription/payments', [SellerSubscriptionController::class, 'storePayment'])
+        ->middleware('throttle:10,1');
+
     // The till publishing its own shop's photo. Scoped to the calling
     // device's store, like the sync and seller-order endpoints above.
     Route::put('/seller/store-image', [StoreImageController::class, 'update']);
+    // The shop's own "not taking orders right now", with an optional resume
+    // time. Any role with the Orders page — see StoreOrderingController.
+    // A product photo, uploaded before the product event that names it. The
+    // till does not need this — sync pulls inline photos out by itself — but
+    // the seller app is always online when a photo is picked.
+    Route::post('/seller/product-images', [ProductImageController::class, 'store'])
+        ->middleware('throttle:60,1');
+    // Promo and voucher codes: the shop's list, and the till's check of one
+    // typed at the counter. See PromoCodeController.
+    Route::get('/seller/promo-codes', [PromoCodeController::class, 'index']);
+    Route::post('/seller/promo-codes', [PromoCodeController::class, 'store']);
+    Route::patch('/seller/promo-codes/{promoCode}', [PromoCodeController::class, 'update']);
+    Route::delete('/seller/promo-codes/{promoCode}', [PromoCodeController::class, 'destroy']);
+    Route::post('/seller/promo-codes/check', [PromoCodeController::class, 'check'])
+        ->middleware('throttle:60,1');
+    // Points. Reading is for anyone at the register; changing the rules or
+    // correcting a balance needs the Customers page. See LoyaltyController.
+    Route::get('/seller/loyalty', [LoyaltyController::class, 'show']);
+    Route::put('/seller/loyalty', [LoyaltyController::class, 'update']);
+    Route::get('/seller/loyalty/balances', [LoyaltyController::class, 'balances']);
+    Route::post('/seller/loyalty/check', [LoyaltyController::class, 'check'])
+        ->middleware('throttle:60,1');
+    Route::get('/seller/customers/{posCustomer}/loyalty', [LoyaltyController::class, 'customer']);
+    Route::post('/seller/customers/{posCustomer}/loyalty/adjust', [LoyaltyController::class, 'adjust']);
+    Route::get('/seller/ordering', [StoreOrderingController::class, 'show']);
+    Route::put('/seller/ordering', [StoreOrderingController::class, 'update']);
     // Customer messages, answered by whoever is signed in to the shop. A shop
     // replies but never starts one — see SellerConversationController.
     Route::get('/seller/conversations', [SellerConversationController::class, 'index']);

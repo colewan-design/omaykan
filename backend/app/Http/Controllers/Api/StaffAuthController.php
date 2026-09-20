@@ -7,6 +7,8 @@ use App\Models\OrganizationMembership;
 use App\Models\Store;
 use App\Models\StoreMembership;
 use App\Models\User;
+use App\Services\Billing\TenantAccess;
+use App\Services\Billing\TenantAccessDenied;
 use App\Services\GoogleIdentity;
 use App\Services\GoogleIdentityException;
 use App\Services\GoogleIdentityVerifier;
@@ -171,7 +173,7 @@ class StaffAuthController extends Controller
             'storeId' => ['required', 'string'],
         ]);
 
-        $store = Store::query()->with('organization')->find($validated['storeId']);
+        $store = Store::query()->with('organization.subscription')->find($validated['storeId']);
 
         // Same message whether the store does not exist or the account has no
         // membership for it: a signed-in cashier should not be able to probe
@@ -183,6 +185,20 @@ class StaffAuthController extends Controller
             403,
             'This account does not have access to that store.',
         );
+
+        // Refused here as well as in StoreContextResolver. The resolver alone
+        // would be safe — every request made with the token would 403 — but it
+        // would mint a working-looking token first and let the till find out
+        // one call later, with nothing on screen to say why. At the door, the
+        // refusal is the answer to the question the person just asked.
+        //
+        // An unpaid shop still gets its token: its staff keep read access, and
+        // the verdict rides along in `store.tenantAccess` for the till to show.
+        $access = $store->organization?->accessVerdict() ?? TenantAccess::Suspended;
+
+        if (! $access->allowsStaffAccess()) {
+            throw TenantAccessDenied::for($access);
+        }
 
         $token = $user->createToken(
             "staff:{$store->id}",
@@ -203,6 +219,7 @@ class StaffAuthController extends Controller
                 'organizationId' => $store->organization_id,
                 'organizationSlug' => $store->organization?->slug,
                 'role' => $role,
+                'tenantAccess' => $access->value,
             ],
         ]);
     }
@@ -318,7 +335,7 @@ class StaffAuthController extends Controller
             ->pluck('membership_role', 'store_id');
 
         $stores = Store::query()
-            ->with('organization')
+            ->with('organization.subscription')
             ->where('status', 'active')
             ->where(function ($query) use ($orgRoles, $storeRoles) {
                 $query->whereIn('organization_id', $orgRoles->keys())
@@ -334,6 +351,10 @@ class StaffAuthController extends Controller
             'businessMode' => $store->business_mode,
             'organizationSlug' => $store->organization?->slug,
             'role' => $storeRoles[$store->id] ?? $orgRoles[$store->organization_id],
+            // Marked rather than hidden. A manager whose shop vanished from
+            // the picker files a bug; one whose shop says "suspended" rings
+            // support, which is the outcome anybody wants.
+            'tenantAccess' => ($store->organization?->accessVerdict() ?? TenantAccess::Suspended)->value,
         ])->values()->all();
     }
 

@@ -8,14 +8,21 @@ use App\Mail\OnlineOrderConfirmationMail;
 use App\Models\InventoryAdjustment;
 use App\Models\InventoryLevel;
 use App\Models\Order;
+use App\Models\OrderDiscount;
 use App\Models\OrderItem;
+use App\Models\OrderPushToken;
 use App\Models\Organization;
 use App\Models\Product;
+use App\Models\ProductStoreOverride;
+use App\Models\PromoCode;
 use App\Models\Store;
+use App\Services\Billing\TenantAccessDenied;
 use App\Services\DeliveryQuoter;
+use App\Services\OrderPricing;
 use App\Services\OutsideDeliveryAreaException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
@@ -33,6 +40,9 @@ use Illuminate\Validation\ValidationException;
  */
 class OnlineOrderController extends Controller
 {
+    /** Phones per order: a household, not a broadcast list. */
+    private const PUSH_TOKENS_PER_ORDER = 5;
+
     public function __construct(private readonly DeliveryQuoter $quoter)
     {
     }
@@ -88,6 +98,11 @@ class OnlineOrderController extends Controller
             'fulfillment.lng' => ['nullable', 'numeric', 'between:-180,180', 'required_with:fulfillment.lat'],
 
             'paymentMethod' => ['nullable', Rule::in(['cash', 'ewallet'])],
+
+            // A promo or voucher code. Checked inside the order's transaction,
+            // with the code's row locked, so two shoppers cannot both take its
+            // last use. See recordOrder.
+            'promoCode' => ['nullable', 'string', 'max:40'],
         ], [
             // The storefront mirrors the cart into localStorage, so a line put
             // there by an older catalog outlives the visit that created it and
@@ -97,18 +112,7 @@ class OnlineOrderController extends Controller
             'items.*.productId.uuid' => 'Your cart is out of date. Please empty it and add your items again.',
         ]);
 
-        $organization = Organization::query()
-            ->where('slug', $data['orgSlug'])
-            ->first();
-
-        abort_if($organization === null, 404, "Organization '{$data['orgSlug']}' not found.");
-
-        $store = Store::query()
-            ->where('organization_id', $organization->id)
-            ->where('code', $data['storeCode'])
-            ->first();
-
-        abort_if($store === null, 404, "Store '{$data['storeCode']}' not found under '{$data['orgSlug']}'.");
+        [$organization, $store] = $this->tradingStore($data['orgSlug'], $data['storeCode']);
 
         $fulfillment = $data['fulfillment'];
         $isDelivery = $fulfillment['method'] === 'delivery';
@@ -190,6 +194,37 @@ class OnlineOrderController extends Controller
     }
 
     /**
+     * Remember a phone that wants a push when a rider takes this order.
+     *
+     * Delivery orders only; nobody rides a pickup. Capped per order, because
+     * the UUID travels freely as a tracking link and a link should not be a
+     * way to fill a table.
+     */
+    public function registerPushToken(Request $request, Order $order): Response
+    {
+        abort_unless($order->isOnline(), 404);
+        abort_unless($order->fulfillment_method === 'delivery', 422, 'Only delivery orders have a rider to announce.');
+
+        $data = $request->validate([
+            'token' => ['required', 'string', 'max:512'],
+        ]);
+
+        $tokens = OrderPushToken::query()->where('order_id', $order->id);
+
+        if (! (clone $tokens)->where('token', $data['token'])->exists()) {
+            abort_if(
+                $tokens->count() >= self::PUSH_TOKENS_PER_ORDER,
+                422,
+                'This order already has as many phones watching it as it can take.',
+            );
+
+            OrderPushToken::query()->create(['order_id' => $order->id, 'token' => $data['token']]);
+        }
+
+        return response()->noContent();
+    }
+
+    /**
      * Tell the store's register that an order arrived.
      *
      * OrderPlaced is a ShouldBroadcast event, so this only ever writes a job
@@ -248,12 +283,27 @@ class OnlineOrderController extends Controller
         ?string $customerAccountId = null,
     ): Order {
         $lines = $this->priceLines($data['items'], $organization, $store, $data['businessMode']);
+        $guest = $data['guest'];
 
-        $subtotalCents = array_sum(array_column($lines, 'lineTotalCents'));
-        $taxCents = array_sum(array_column($lines, 'taxCents'));
+        // Locked, so the redemption count this reads cannot change under it
+        // before the order that uses the code is written.
+        [$promo, $requestedDiscount] = $this->applyPromo(
+            $data['promoCode'] ?? null,
+            $organization,
+            array_sum(array_column($lines, 'lineTotalCents')),
+            $customerAccountId,
+            isset($guest['phone']) ? trim($guest['phone']) : null,
+            lock: true,
+        );
+
+        // The same arithmetic the till and the storefront's quote use: VAT per
+        // line, on what is left of the line after its share of the discount.
+        $priced = OrderPricing::price($lines, $requestedDiscount);
+        $subtotalCents = $priced['subtotalCents'];
+        $discountCents = $priced['discountCents'];
+        $taxCents = $priced['taxCents'];
 
         $orderId = (string) str()->uuid();
-        $guest = $data['guest'];
 
         $order = Order::query()->create([
             'id' => $orderId,
@@ -276,8 +326,9 @@ class OnlineOrderController extends Controller
             'table_number' => null,
             'payment_method' => $data['paymentMethod'] ?? 'cash',
             'subtotal_cents' => $subtotalCents,
+            'discount_cents' => $discountCents,
             'tax_cents' => $taxCents,
-            'total_cents' => $subtotalCents + $taxCents + $deliveryFeeCents,
+            'total_cents' => $subtotalCents - $discountCents + $taxCents + $deliveryFeeCents,
             'business_date' => now($store->timezone)->toDateString(),
             'completed_at' => null,
             'fulfillment_method' => $fulfillment['method'],
@@ -309,6 +360,7 @@ class OnlineOrderController extends Controller
                 'quantity' => $line['quantity'],
                 'unit_price_cents' => $line['unitPriceCents'],
                 'line_total_cents' => $line['lineTotalCents'],
+                'tax_rate' => $line['taxRatePercent'],
             ]);
 
             if ($line['trackInventory']) {
@@ -316,7 +368,194 @@ class OnlineOrderController extends Controller
             }
         }
 
+        if ($promo !== null && $discountCents > 0) {
+            OrderDiscount::query()->create([
+                'order_id' => $order->id,
+                'kind' => OrderDiscount::KIND_PROMO,
+                'amount_cents' => $discountCents,
+                'percent' => $promo->kind === PromoCode::KIND_PERCENT ? $promo->value / 100 : null,
+                'reason' => $promo->code,
+                'promo_code_id' => $promo->id,
+            ]);
+        }
+
         return $order;
+    }
+
+    /**
+     * What this basket would cost, before it is ordered: subtotal, any promo
+     * code's discount, VAT, and the delivery fee — the same arithmetic the
+     * order itself is priced with, so the number the shopper agrees to is the
+     * number they are charged.
+     *
+     * A code that does not apply is not an error here: the basket is priced
+     * without it and `promo.message` says why, so the cart can show the reason
+     * beside the code field. Stock and availability are checked the way
+     * checkout checks them, so a problem surfaces before the shopper has typed
+     * an address.
+     */
+    public function quote(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'orgSlug' => ['required', 'string'],
+            'storeCode' => ['required', 'string'],
+            'businessMode' => ['required', Rule::in(Store::ONLINE_MODES)],
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.productId' => ['required', 'uuid'],
+            'items.*.quantity' => ['required', 'numeric', 'gt:0'],
+            'fulfillment.method' => ['nullable', Rule::in(['pickup', 'delivery'])],
+            'fulfillment.lat' => ['nullable', 'numeric', 'between:-90,90', 'required_with:fulfillment.lng'],
+            'fulfillment.lng' => ['nullable', 'numeric', 'between:-180,180', 'required_with:fulfillment.lat'],
+            'guest.phone' => ['nullable', 'string', 'max:40'],
+            'promoCode' => ['nullable', 'string', 'max:40'],
+        ]);
+
+        [$organization, $store] = $this->tradingStore($data['orgSlug'], $data['storeCode']);
+        $customer = $request->user('customer');
+
+        $lines = $this->priceLines($data['items'], $organization, $store, $data['businessMode']);
+        $subtotal = array_sum(array_column($lines, 'lineTotalCents'));
+
+        $promo = null;
+        $promoResult = null;
+        $discount = 0;
+
+        if (($data['promoCode'] ?? '') !== '') {
+            try {
+                [$promo, $discount] = $this->applyPromo(
+                    $data['promoCode'],
+                    $organization,
+                    $subtotal,
+                    $customer?->getKey(),
+                    $data['guest']['phone'] ?? $customer?->phone,
+                    lock: false,
+                );
+                $promoResult = ['ok' => true, 'code' => $promo->code, 'description' => $promo->describe()];
+            } catch (ValidationException $e) {
+                $promoResult = [
+                    'ok' => false,
+                    'code' => PromoCode::normalise($data['promoCode']),
+                    'message' => $e->errors()['promoCode'][0] ?? 'That code does not apply.',
+                ];
+            }
+        }
+
+        $deliveryFeeCents = 0;
+        if (($data['fulfillment']['method'] ?? 'pickup') === 'delivery') {
+            try {
+                $deliveryFeeCents = $this->quoter->quote(
+                    $store,
+                    isset($data['fulfillment']['lat']) ? (float) $data['fulfillment']['lat'] : null,
+                    isset($data['fulfillment']['lng']) ? (float) $data['fulfillment']['lng'] : null,
+                )['feeCents'];
+            } catch (OutsideDeliveryAreaException $e) {
+                throw ValidationException::withMessages(['fulfillment.address' => $e->getMessage()]);
+            }
+        }
+
+        $priced = OrderPricing::price($lines, $discount);
+
+        return response()->json([
+            'subtotalCents' => $priced['subtotalCents'],
+            'discountCents' => $priced['discountCents'],
+            'taxCents' => $priced['taxCents'],
+            'deliveryFeeCents' => $deliveryFeeCents,
+            'totalCents' => $priced['totalCents'] + $deliveryFeeCents,
+            'promo' => $promoResult,
+        ]);
+    }
+
+    /**
+     * The organization and store a storefront request names, refused unless it
+     * may take an order right now. Shared by checkout and its quote, so the
+     * two can never disagree about whether a shop is open.
+     *
+     * @return array{0: Organization, 1: Store}
+     */
+    private function tradingStore(string $orgSlug, string $storeCode): array
+    {
+        $organization = Organization::query()
+            ->with('subscription')
+            ->where('slug', $orgSlug)
+            ->first();
+
+        abort_if($organization === null, 404, "Organization '{$orgSlug}' not found.");
+
+        $store = Store::query()
+            ->where('organization_id', $organization->id)
+            ->where('code', $storeCode)
+            ->first();
+
+        abort_if($store === null, 404, "Store '{$storeCode}' not found under '{$orgSlug}'.");
+
+        // Checked here and not only by the catalog. The storefront mirrors its
+        // cart into localStorage, so a checkout can arrive long after the page
+        // that built it — from before the shop was suspended, or from a tab
+        // nobody closed. The catalog refusing is a courtesy; this is the rule.
+        //
+        // The store's own status too, which this endpoint never checked: the
+        // catalog 404s an inactive store, and an order for one used to go
+        // straight through regardless.
+        if ($store->status !== 'active' || ! $organization->accessVerdict()->allowsStorefront()) {
+            throw TenantAccessDenied::forStorefront();
+        }
+
+        // The shop's own pause, as against the platform closing it above. A
+        // 422 with the resume time, not the 404: the shop is there and
+        // trading, and the shopper can come back at four.
+        if ($store->isOrderingPaused()) {
+            abort(422, $store->orderingPausedMessage());
+        }
+
+        return [$organization, $store];
+    }
+
+    /**
+     * A promo code, checked: the code and how much it takes off, or no code.
+     *
+     * A code that does not apply is a 422 on `promoCode` with the reason — "has
+     * expired", "needs an order of at least ₱500" — and never a silent full
+     * price: a shopper who typed a code and was charged in full would be right
+     * to feel cheated.
+     *
+     * @return array{0: ?PromoCode, 1: int}
+     */
+    private function applyPromo(
+        ?string $code,
+        Organization $organization,
+        int $subtotalCents,
+        ?string $customerAccountId,
+        ?string $guestPhone,
+        bool $lock,
+    ): array {
+        if ($code === null || trim($code) === '') {
+            return [null, 0];
+        }
+
+        $promo = PromoCode::query()
+            ->where('organization_id', $organization->id)
+            ->where('code', PromoCode::normalise($code))
+            ->when($lock, fn ($query) => $query->lockForUpdate())
+            ->first();
+
+        if ($promo === null) {
+            throw ValidationException::withMessages([
+                'promoCode' => 'That code isn\'t valid for this shop.',
+            ]);
+        }
+
+        $verdict = $promo->evaluate([
+            'subtotalCents' => $subtotalCents,
+            'channel' => PromoCode::CHANNEL_ONLINE,
+            'customerAccountId' => $customerAccountId,
+            'guestPhone' => $guestPhone,
+        ]);
+
+        if (! $verdict['ok']) {
+            throw ValidationException::withMessages(['promoCode' => $verdict['message']]);
+        }
+
+        return [$promo, $verdict['discountCents']];
     }
 
     /**
@@ -355,6 +594,23 @@ class OnlineOrderController extends Controller
                 ]);
             }
 
+            // The branch's own price and availability, as the storefront
+            // catalog shows them. Without this the shopper saw one price and
+            // was charged the organization's.
+            $override = ProductStoreOverride::query()
+                ->where('store_id', $store->id)
+                ->where('product_id', $product->id)
+                ->first();
+
+            // is_available is nullable — null means "no opinion, inherit".
+            if ($override?->is_available === false) {
+                throw ValidationException::withMessages([
+                    'items' => "'{$product->name}' is not available.",
+                ]);
+            }
+
+            $unitPriceCents = (int) ($override?->price_cents ?? $product->price_cents);
+
             if ($product->track_inventory) {
                 $level = InventoryLevel::query()
                     ->where('organization_id', $organization->id)
@@ -378,17 +634,18 @@ class OnlineOrderController extends Controller
                 }
             }
 
-            $lineTotalCents = (int) round($product->price_cents * $quantity);
+            $lineTotalCents = (int) round($unitPriceCents * $quantity);
 
             $lines[] = [
                 'productId' => $product->id,
                 'name' => $product->name,
                 'quantity' => $quantity,
-                'unitPriceCents' => $product->price_cents,
+                'unitPriceCents' => $unitPriceCents,
                 'lineTotalCents' => $lineTotalCents,
                 // tax_rate is stored as a percentage (12.00), unlike the
                 // Firestore field it replaces, which held a fraction (0.12).
-                'taxCents' => (int) round($lineTotalCents * ((float) $product->tax_rate) / 100),
+                // Tax itself is computed by OrderPricing, after any discount.
+                'taxRatePercent' => (float) $product->tax_rate,
                 'trackInventory' => (bool) $product->track_inventory,
             ];
         }

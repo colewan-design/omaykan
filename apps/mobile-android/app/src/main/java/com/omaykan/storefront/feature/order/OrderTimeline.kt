@@ -55,9 +55,12 @@ internal fun trackSteps(order: TrackedOrder): List<TrackStep> {
             "Order placed" to null,
             "Preparing" to "The shop is putting your order together.",
             "Ready" to "Packed, and waiting for a rider.",
-            "On the way" to when (order.deliveryStage) {
-                "picked_up" -> "The rider has your order."
-                else -> "A rider is on their way to the shop."
+            // Named for what is true: a rider who has only accepted is not
+            // carrying anything yet, and "On the way" reads as if they were.
+            // Same words as the Orders tab and the website.
+            when (order.deliveryStage) {
+                "assigned" -> "Rider assigned" to "A rider is on their way to the shop."
+                else -> "On the way" to "The rider has your order."
             },
             "Delivered" to "Handed over at your address.",
         )

@@ -68,6 +68,7 @@ internal fun BootstrapDto.toCatalog(baseUrl: String): Catalog {
                 active = dto.isActive,
                 businessModes = dto.businessModes.orEmpty(),
                 unitLabel = dto.unitLabel?.takeIf { it.isNotBlank() },
+                description = dto.description?.takeIf { it.isNotBlank() },
                 imageUrl = dto.imageUrl?.takeIf { it.isNotBlank() }?.let { absoluteUrl(it, baseUrl) },
                 // No inventory row yet reads as nothing on the shelf — the
                 // storefront catalog makes the same call (`?? 0`) and hides

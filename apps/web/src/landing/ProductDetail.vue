@@ -540,6 +540,10 @@ function addToCart() {
              filed; a blank one is left out rather than printed as "—". -->
         <section class="pdp__facts">
           <h2 class="pdp__factstitle">Product details</h2>
+          <!-- The shop's own words about it, as written. Plain text: white-space
+               is kept so a merchant's line breaks survive, and nothing is
+               rendered as HTML. -->
+          <p v-if="product.description" class="pdp__description">{{ product.description }}</p>
           <dl>
             <div v-if="product.brand">
               <dt>Brand</dt>
@@ -916,6 +920,14 @@ function addToCart() {
 
 .pdp__trust,
 .pdp__shop,
+.pdp__description {
+  margin: 0 0 14px;
+  white-space: pre-line;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: inherit;
+}
+
 .pdp__facts {
   margin-top: 20px;
   border: 1px solid var(--sf-rule);

@@ -35,6 +35,7 @@ const form = reactive({
   photos: [] as string[],
   brand: '',
   packagingType: '',
+  description: '',
   barcode: '',
   outOfStock: false,
   taxRate: 0.12,
@@ -64,6 +65,7 @@ watch(
       form.photos = [p.imageUrl ?? '', ...(p.photoUrls ?? [])].filter((url) => url !== '')
       form.brand = p.brand ?? ''
       form.packagingType = p.packagingType ?? ''
+      form.description = p.description ?? ''
       form.barcode = p.barcode
       form.outOfStock = p.outOfStock ?? false
       form.taxRate = p.taxRate
@@ -81,6 +83,7 @@ watch(
       form.photos = []
       form.brand = ''
       form.packagingType = ''
+      form.description = ''
       form.barcode = ''
       form.outOfStock = false
       form.taxRate = 0.12
@@ -216,6 +219,7 @@ async function save() {
     photoUrls: form.photos.slice(1),
     brand: form.brand.trim() || undefined,
     packagingType: form.packagingType.trim() || undefined,
+    description: form.description.trim() || undefined,
     outOfStock: form.trackInventory ? form.stockQty === 0 : form.outOfStock,
     stockQty: form.trackInventory ? form.stockQty : undefined,
     lowStockThreshold: form.trackInventory ? form.lowStockThreshold : undefined,
@@ -445,6 +449,18 @@ function handleKeydown(e: KeyboardEvent) {
               <div class="ps-field">
                 <p class="section-label">Packaging <span class="section-label--optional">(optional)</span></p>
                 <input v-model="form.packagingType" class="sheet-input" type="text" placeholder="Can, sachet, bottle…" />
+              </div>
+
+              <!-- Description: shown on the storefront's product page -->
+              <div class="ps-field">
+                <p class="section-label">Description <span class="section-label--optional">(optional, shown online)</span></p>
+                <textarea
+                  v-model="form.description"
+                  class="sheet-input ps-textarea"
+                  rows="3"
+                  maxlength="2000"
+                  placeholder="Hand-rolled every morning. Good for six."
+                />
               </div>
 
               <!-- Divider -->

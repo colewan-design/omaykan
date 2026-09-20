@@ -11,6 +11,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { businessModeLabel, storefrontUrl as storefrontUrlFor } from '@pos/shared/index'
 import MenuRow from '@pos/core/components/MenuRow.vue'
 import SettingsGroup from '@pos/core/components/SettingsGroup.vue'
+import SubscriptionPanel from '@pos/core/components/SubscriptionPanel.vue'
 import ToggleSwitch from '@pos/core/components/ToggleSwitch.vue'
 import { usePosStore } from '@pos/core/stores/pos'
 import type { Appearance, AppSettings, BusinessMode, Theme } from '@pos/shared/index'
@@ -27,11 +28,6 @@ const businessModeOptions = (['coffee-shop', 'grocery', 'restaurant', 'nail-salo
   value: mode,
   label: businessModeLabel(mode),
 }))
-
-const syncModeOptions = [
-  { value: 'local-only', label: 'Local-only' },
-  { value: 'online-sync', label: 'Online sync' },
-]
 
 const appearanceOptions = [
   { value: 'system', label: 'System' },
@@ -265,18 +261,16 @@ function handleBusinessImageChange(event: Event) {
             />
           </SettingsGroup>
 
-          <SettingsGroup id="data-sync" label="Data & Sync">
-            <MenuRow
-              label="Sync mode"
-              :options="syncModeOptions"
-              :model-value="store.settings.syncMode"
-              ariaLabel="Sync mode"
-              @update:model-value="(value) => updateSetting('syncMode', value as AppSettings['syncMode'])"
-            />
-
+          <!-- Renders nothing unless the server answers, which it does only
+               for the owner of a till that is connected. -->
+          <SettingsGroup
+            id="subscription"
+            label="Subscription"
+            description="What Omaykan costs, and the transfers you've told us about."
+          >
+            <SubscriptionPanel />
             <template #footnote>
-              Local-only keeps all data on this device. Switch to Online sync to back up sales and share your
-              catalog across registers.
+              Nothing is charged automatically — you send the transfer, we match it by hand.
             </template>
           </SettingsGroup>
         </div>

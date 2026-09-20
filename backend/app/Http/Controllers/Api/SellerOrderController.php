@@ -46,7 +46,7 @@ class SellerOrderController extends Controller
             // `rider` for the live position, `store` for the map's pickup pin.
             // Both are read for every row now, so neither may be a lazy load
             // across a hundred orders.
-            ->with(['items', 'payments', 'rider', 'store'])
+            ->with(['items', 'payments', 'rider', 'store', 'discounts'])
             ->where('organization_id', $context->organizationId())
             ->where('store_id', $context->storeId())
             ->orderByDesc('created_at')
@@ -353,6 +353,8 @@ class SellerOrderController extends Controller
             'status' => $order->order_status ?? 'preparing',
             'paymentMethod' => $order->payment_method ?? 'cash',
             'subtotalCents' => (int) $order->subtotal_cents,
+            'discountCents' => (int) $order->discount_cents,
+            'discountLabel' => $order->discountLabel(),
             'taxCents' => (int) $order->tax_cents,
             'totalCents' => (int) $order->total_cents,
             // Read back off the payment, since that is where the tender lives.
@@ -392,8 +394,8 @@ class SellerOrderController extends Controller
             'route' => $order->routeEndpointsArray(),
             'deliveryFeeCents' => (int) ($order->delivery_fee_cents ?? 0),
             'voidedAt' => $order->deleted_at?->toIso8601String(),
-            'voidedByUserId' => null,
-            'voidReason' => null,
+            'voidedByUserId' => $order->voided_by_user_id,
+            'voidReason' => $order->void_reason,
             'paymentConfirmedAt' => $order->payment_confirmed_at?->toIso8601String(),
             'paymentConfirmedByUserId' => $order->payment_confirmed_by_user_id,
         ];

@@ -8,28 +8,35 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
-/** --radius-sm through --radius-xl. */
+/** Softer and smaller than Material's, the way the reference's cards are cut. */
 val OmaykanShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
+    extraSmall = RoundedCornerShape(6.dp),
     small = RoundedCornerShape(8.dp),
-    medium = RoundedCornerShape(12.dp),
-    large = RoundedCornerShape(16.dp),
+    medium = RoundedCornerShape(10.dp),
+    large = RoundedCornerShape(14.dp),
     extraLarge = RoundedCornerShape(22.dp),
 )
 
+/*
+ * Terracotta is `primary`, so every Material control that reaches for the
+ * accent on its own — a TextButton, a spinner, a focused field — lands on the
+ * same colour as the buttons the screens draw by hand. The forest is
+ * `secondary`: the frame, not the thing to press.
+ */
 private val LightScheme = lightColorScheme(
-    primary = AccentLight,
-    onPrimary = AccentTextOnLight,
-    primaryContainer = AccentLight,
-    onPrimaryContainer = AccentTextOnLight,
-    secondary = AccentLight,
-    onSecondary = AccentTextOnLight,
+    primary = CtaLight,
+    onPrimary = OnCtaLight,
+    primaryContainer = PeachLight,
+    onPrimaryContainer = TextPrimaryLight,
+    secondary = ForestLight,
+    onSecondary = OnForestLight,
+    secondaryContainer = PeachLight,
+    onSecondaryContainer = TextPrimaryLight,
     tertiary = WarningLight,
-    onTertiary = AccentTextOnLight,
-    background = Color(0xFFFFFFFF),
+    onTertiary = OnCtaLight,
+    background = BgBaseLight,
     onBackground = TextPrimaryLight,
     surface = BgElevatedLight,
     onSurface = TextPrimaryLight,
@@ -37,22 +44,26 @@ private val LightScheme = lightColorScheme(
     onSurfaceVariant = TextSecondaryLight,
     surfaceContainer = BgElevatedLight,
     surfaceContainerHigh = BgElevatedLight,
+    surfaceContainerHighest = FillLight,
     surfaceContainerLow = BgBaseLight,
+    surfaceContainerLowest = BgElevatedLight,
     outline = SeparatorLight,
     outlineVariant = SeparatorLight,
     error = DangerLight,
-    onError = AccentTextOnLight,
+    onError = OnCtaLight,
 )
 
 private val DarkScheme = darkColorScheme(
-    primary = AccentDark,
-    onPrimary = AccentTextOnDark,
-    primaryContainer = AccentDark,
-    onPrimaryContainer = AccentTextOnDark,
-    secondary = AccentDark,
-    onSecondary = AccentTextOnDark,
+    primary = CtaDark,
+    onPrimary = OnCtaDark,
+    primaryContainer = PeachDark,
+    onPrimaryContainer = TextPrimaryDark,
+    secondary = ForestDark,
+    onSecondary = OnForestDark,
+    secondaryContainer = PeachDark,
+    onSecondaryContainer = TextPrimaryDark,
     tertiary = WarningDark,
-    onTertiary = AccentTextOnDark,
+    onTertiary = OnCtaDark,
     background = BgBaseDark,
     onBackground = TextPrimaryDark,
     surface = BgElevatedDark,
@@ -61,60 +72,28 @@ private val DarkScheme = darkColorScheme(
     onSurfaceVariant = TextSecondaryDark,
     surfaceContainer = BgElevatedDark,
     surfaceContainerHigh = BgElevatedDark,
+    surfaceContainerHighest = FillDark,
     surfaceContainerLow = BgBaseDark,
+    surfaceContainerLowest = BgBaseDark,
     outline = SeparatorDark,
     outlineVariant = SeparatorDark,
     error = DangerDark,
-    onError = AccentTextOnDark,
+    onError = BgBaseDark,
 )
 
 /**
- * No dynamic colour. The accent is the brand's, and on this product it is also
- * the thing that says "this is the same shop you saw on the web" — handing it
- * to the phone's wallpaper would trade that away for novelty.
+ * No dynamic colour. The palette is the brand's, and handing it to the phone's
+ * wallpaper would trade the one thing that makes every screen read as the same
+ * market for novelty.
  */
 @Composable
 fun OmaykanTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    val extended = if (darkTheme) {
-        OmaykanColors(
-            accentPressed = AccentPressedDark,
-            success = SuccessDark,
-            warning = WarningDark,
-            textSecondary = TextSecondaryDark,
-            textTertiary = TextTertiaryDark,
-            separator = SeparatorDark,
-            fill = FillDark,
-            ink = InkDark,
-            onInk = OnInkDark,
-            promo = PromoDark,
-            onPromo = OnPromoDark,
-            promoAlt = PromoAltDark,
-            onPromoAlt = OnPromoAltDark,
-            tags = TagsDark,
-        )
-    } else {
-        OmaykanColors(
-            accentPressed = AccentPressedLight,
-            success = SuccessLight,
-            warning = WarningLight,
-            textSecondary = TextSecondaryLight,
-            textTertiary = TextTertiaryLight,
-            separator = SeparatorLight,
-            fill = FillLight,
-            ink = InkLight,
-            onInk = OnInkLight,
-            promo = PromoLight,
-            onPromo = OnPromoLight,
-            promoAlt = PromoAltLight,
-            onPromoAlt = OnPromoAltLight,
-            tags = TagsLight,
-        )
-    }
-
-    CompositionLocalProvider(LocalOmaykanColors provides extended) {
+    CompositionLocalProvider(
+        LocalOmaykanColors provides if (darkTheme) DarkExtended else LightExtended,
+    ) {
         MaterialTheme(
             colorScheme = if (darkTheme) DarkScheme else LightScheme,
             typography = OmaykanTypography,

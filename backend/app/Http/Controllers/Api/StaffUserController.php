@@ -57,7 +57,7 @@ class StaffUserController extends Controller
      */
     public function store(Request $request)
     {
-        $context = $this->storeContext($request);
+        $context = $this->writableStoreContext($request);
 
         abort_unless($context->isManager(), 403, 'Only an admin or manager can add staff.');
 
@@ -148,7 +148,7 @@ class StaffUserController extends Controller
 
     public function updateRole(Request $request, User $user)
     {
-        $context = $this->storeContext($request);
+        $context = $this->writableStoreContext($request);
 
         abort_unless($context->isManager(), 403, 'Only an admin or manager can change roles.');
 

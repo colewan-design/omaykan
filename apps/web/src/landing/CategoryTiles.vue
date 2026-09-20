@@ -156,7 +156,7 @@ function open(categoryId: string, event: MouseEvent) {
 
 .sfcat__count {
   font-size: 12.5px;
-  color: rgba(251, 248, 243, 0.82);
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .sfcat__go {
@@ -167,7 +167,7 @@ function open(categoryId: string, event: MouseEvent) {
   place-items: center;
   width: 30px;
   height: 30px;
-  border: 1.5px solid rgba(251, 248, 243, 0.85);
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
   border-radius: 50%;
   transition: background 150ms, border-color 150ms;
 }

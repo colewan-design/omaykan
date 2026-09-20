@@ -14,7 +14,7 @@ import AddEmployeeSheet from '@pos/core/components/AddEmployeeSheet.vue'
 import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import ToggleSwitch from '@pos/core/components/ToggleSwitch.vue'
 import { useAuthStore } from '@pos/core/stores/auth'
-import { appPageKeys, appPageLabel, type AppPageKey } from '@pos/shared/index'
+import { appPageKeys, appPageLabel, maxDiscountPercentFor, type AppPageKey } from '@pos/shared/index'
 
 const auth = useAuthStore()
 const showAddEmployee = ref(false)
@@ -123,6 +123,11 @@ function renameActiveRole(name: string) {
 function updateRolePermission(page: AppPageKey, allowed: boolean) {
   if (!activeRole.value || isLockedSystemRole.value) return
   void auth.setRolePermission(activeRole.value.id, page, allowed)
+}
+
+function updateRoleDiscountLimit(event: Event) {
+  if (!activeRole.value || activeRole.value.id === 'admin') return
+  void auth.setRoleDiscountLimit(activeRole.value.id, Number((event.target as HTMLInputElement).value))
 }
 
 function updateRoleManageStaff(allowed: boolean) {
@@ -317,6 +322,24 @@ function removeActiveRole() {
                 :ariaLabel="`Let ${activeRole.name} manage staff`"
                 :disabled="isLockedSystemRole"
                 @update:model-value="updateRoleManageStaff"
+              />
+            </div>
+            <!-- Money authority, so owner-only like the switch above. Admin is
+                 always 100% and is not offered. -->
+            <div v-if="activeRole.id !== 'admin'" class="emp-perm-row">
+              <span class="emp-perm-row__label">
+                Discount limit
+                <span class="emp-perm-row__hint">The most this role can take off a sale on its own, in %</span>
+              </span>
+              <input
+                :value="maxDiscountPercentFor(activeRole)"
+                class="sheet-input emp-discount-limit"
+                type="number"
+                min="0"
+                max="100"
+                step="1"
+                :aria-label="`Discount limit for ${activeRole.name}, percent`"
+                @change="updateRoleDiscountLimit"
               />
             </div>
           </div>
@@ -760,5 +783,11 @@ function removeActiveRole() {
   .emp-perm-row {
     padding: var(--space-2) var(--space-3);
   }
+}
+
+/* The discount limit sits where a toggle would; a toggle is 44px wide. */
+.emp-discount-limit {
+  width: 76px;
+  text-align: right;
 }
 </style>

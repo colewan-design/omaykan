@@ -1,5 +1,8 @@
 package com.omaykan.seller.feature.products
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -62,14 +66,12 @@ import com.omaykan.seller.core.model.Money
 /**
  * "Add Product" / "Edit Product".
  *
- * The fields are the ones this platform actually stores and the register
- * actually writes: name, category, price, stock, the low-stock line, and
- * whether it is on sale. The reference also draws a photo picker, a unit
- * dropdown and a description box. None of those has anywhere to go — there is
- * no upload endpoint for product photos, the sync event that writes a product
- * carries no unit, and a product has no description column — so the form does
- * not offer them. A photo the product already has is shown, and so is its
- * unit, as facts rather than as fields.
+ * Name, category, price, stock, the low-stock line, whether it is on sale —
+ * and, since there is somewhere for them to go, the photo, the unit and a
+ * description. A picked photo is scaled down and uploaded straight away
+ * (`POST /seller/product-images`); Save then sends only its URL. The product's
+ * extra gallery shots are edited on the register and are left untouched here.
+ * See documentation/merchant-features.md §4.
  */
 @Composable
 fun ProductEditorScreen(
@@ -132,16 +134,15 @@ private fun Form(state: ProductEditorUiState, viewModel: ProductEditorViewModel,
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            if (!product?.imageUrl.isNullOrBlank()) {
-                RemoteThumb(
-                    url = product?.imageUrl,
-                    fallback = Icons.Filled.Inventory2,
-                    contentDescription = product?.name,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(180.dp),
-                )
-            }
+            PhotoField(
+                url = form.imageUrl,
+                name = form.name,
+                uploading = state.uploadingPhoto,
+                error = state.photoError,
+                enabled = enabled,
+                onPick = viewModel::onPhotoPicked,
+                onRemove = viewModel::onRemovePhoto,
+            )
 
             if (!state.canEdit) {
                 Note(
@@ -181,10 +182,18 @@ private fun Form(state: ProductEditorUiState, viewModel: ProductEditorViewModel,
                 error = state.priceError,
                 prefix = "₱",
                 placeholder = "180",
-                // The unit is shown, not edited: the register owns it, and
-                // the sync event that saves this form cannot carry one.
-                supporting = product?.unitLabel?.let { "Per $it" },
+                supporting = form.unit.trim().takeIf { it.isNotEmpty() }?.let { "Per $it" },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+            )
+
+            FormField(
+                label = "Unit",
+                value = form.unit,
+                onValueChange = viewModel::onUnit,
+                enabled = enabled,
+                placeholder = "kg, pack, bundle",
+                supporting = "What one of the price buys. Leave empty for a single item.",
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
             )
 
             product?.branchPriceCents?.let { branch ->
@@ -230,6 +239,18 @@ private fun Form(state: ProductEditorUiState, viewModel: ProductEditorViewModel,
                     tint = SellerTheme.colors.textSecondary,
                 )
             }
+
+            FormField(
+                label = "Description",
+                value = form.description,
+                onValueChange = viewModel::onDescription,
+                enabled = enabled,
+                singleLine = false,
+                minLines = 3,
+                placeholder = "Picked this morning in La Trinidad.",
+                supporting = "Shown on your storefront's product page. ${form.description.length}/$DESCRIPTION_MAX",
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+            )
 
             ActiveCard(active = form.active, enabled = enabled, onChange = viewModel::onActive)
 
@@ -335,6 +356,81 @@ private fun CategoryPicker(
                 style = MaterialTheme.typography.bodySmall,
                 color = SellerTheme.colors.textTertiary,
                 modifier = Modifier.padding(top = 4.dp, start = 4.dp),
+            )
+        }
+    }
+}
+
+/**
+ * The product's main photo: the one every card, order line and storefront tile
+ * shows. Picked with the system photo picker, which needs no storage
+ * permission.
+ */
+@Composable
+private fun PhotoField(
+    url: String?,
+    name: String,
+    uploading: Boolean,
+    error: String?,
+    enabled: Boolean,
+    onPick: (android.net.Uri) -> Unit,
+    onRemove: () -> Unit,
+) {
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri?.let(onPick)
+    }
+
+    Column {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(180.dp)
+                .clip(ButtonShape)
+                .background(SellerTheme.colors.fill)
+                .clickable(enabled = enabled && !uploading) {
+                    picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            if (!url.isNullOrBlank()) {
+                RemoteThumb(
+                    url = url,
+                    fallback = Icons.Filled.Inventory2,
+                    contentDescription = name.ifBlank { null },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else if (!uploading) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Filled.AddAPhoto, contentDescription = null, tint = SellerTheme.colors.textSecondary)
+                    Text(
+                        text = if (enabled) "Add a photo" else "No photo",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = SellerTheme.colors.textSecondary,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
+            }
+            if (uploading) CircularProgressIndicator(strokeWidth = 2.dp)
+        }
+
+        if (enabled && !url.isNullOrBlank() && !uploading) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 8.dp)) {
+                SecondaryButton(
+                    label = "Change photo",
+                    onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    height = 40,
+                    modifier = Modifier.weight(1f),
+                )
+                SecondaryButton(label = "Remove", onClick = onRemove, height = 40, modifier = Modifier.weight(1f))
+            }
+        }
+
+        error?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = SellerTheme.colors.danger,
+                modifier = Modifier.padding(top = 6.dp),
             )
         }
     }

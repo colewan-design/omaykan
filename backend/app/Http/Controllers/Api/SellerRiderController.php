@@ -105,7 +105,7 @@ class SellerRiderController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
-        $context = $this->storeContext($request);
+        $context = $this->writableStoreContext($request);
 
         $validated = $request->validate([
             'riderId' => ['nullable', 'uuid'],
@@ -150,7 +150,7 @@ class SellerRiderController extends Controller
     /** Rename, renumber, or re-note one. The link to an account is not editable. */
     public function update(Request $request, StoreSavedRider $savedRider): JsonResponse
     {
-        $context = $this->storeContext($request);
+        $context = $this->writableStoreContext($request);
         $this->authorizeSavedRider($savedRider, $context);
 
         $validated = $request->validate([
@@ -181,7 +181,7 @@ class SellerRiderController extends Controller
      */
     public function destroy(Request $request, StoreSavedRider $savedRider): JsonResponse
     {
-        $context = $this->storeContext($request);
+        $context = $this->writableStoreContext($request);
         $this->authorizeSavedRider($savedRider, $context);
 
         $savedRider->delete();

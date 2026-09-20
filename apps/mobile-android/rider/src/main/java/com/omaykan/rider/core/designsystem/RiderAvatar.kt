@@ -11,7 +11,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import coil3.compose.SubcomposeAsyncImage
+import coil3.compose.AsyncImage
 import com.omaykan.rider.BuildConfig
 
 /**
@@ -35,12 +35,19 @@ import com.omaykan.rider.BuildConfig
  * photo changes the URL and Coil fetches the new one. Nothing has to reach into
  * the cache.
  *
- * ## Why the fallback is on both states, not just failure
+ * ## Why the letter is underneath rather than swapped in
  *
- * `loading` gets the letter too. A disc that is empty for the length of a
- * network round trip and then fills is worse on a job card than one that shows
- * the letter and quietly becomes a face — the card would jump, and on a slow
- * connection the rider's own header would flicker on every cold start.
+ * The letter is drawn first and the photograph over it, so it stands in while
+ * the fetch is in flight and stays put if the fetch fails. A disc that is empty
+ * for the length of a network round trip and then fills is worse on a job card
+ * than one that shows the letter and quietly becomes a face — the card would
+ * jump, and on a slow connection the rider's own header would flicker on every
+ * cold start.
+ *
+ * Layering gets that without watching Coil's load state, which keeps this off
+ * SubcomposeAsyncImage: subcomposition runs during layout and cannot be
+ * skipped, so it costs on every frame a rider is on screen, and a day's job
+ * list scrolls past plenty of them.
  */
 @Composable
 fun RiderAvatar(
@@ -67,7 +74,8 @@ fun RiderAvatar(
             .background(container),
         contentAlignment = Alignment.Center,
     ) {
-        SubcomposeAsyncImage(
+        letter()
+        AsyncImage(
             model = photoUrl.absolute(),
             contentDescription = null,
             // Cropped rather than fitted: these are phone photographs of
@@ -75,8 +83,6 @@ fun RiderAvatar(
             // with letterboxing in it looks like a bug.
             contentScale = ContentScale.Crop,
             modifier = Modifier.size(size).clip(PillShape),
-            loading = { letter() },
-            error = { letter() },
         )
     }
 }

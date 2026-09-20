@@ -12,6 +12,7 @@ import com.omaykan.storefront.core.network.dto.MessageDto
 import com.omaykan.storefront.core.network.dto.RegisterRequestDto
 import com.omaykan.storefront.core.network.dto.RegistrationDto
 import com.omaykan.storefront.core.network.dto.PlaceOrderRequestDto
+import com.omaykan.storefront.core.network.dto.PushTokenRequestDto
 import com.omaykan.storefront.core.network.dto.PlaceOrderResponseDto
 import com.omaykan.storefront.core.network.dto.ResetPasswordRequestDto
 import com.omaykan.storefront.core.network.dto.SavedAddressRequestDto
@@ -70,6 +71,16 @@ interface OmaykanApi {
     /** 60/min. Public, keyed on the order's UUID — the forwardable link. */
     @GET("api/online-orders/{orderId}")
     suspend fun trackOrder(@Path("orderId") orderId: String): TrackedOrderDto
+
+    /**
+     * 20/min, 204. Same capability as tracking. Asks the server to push to
+     * this phone when a rider takes the order; delivery orders only (422).
+     */
+    @POST("api/online-orders/{orderId}/push-token")
+    suspend fun registerPushToken(
+        @Path("orderId") orderId: String,
+        @Body request: PushTokenRequestDto,
+    )
 
     /*
      * Customer accounts. Every one of these is a convenience and none of them

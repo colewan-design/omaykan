@@ -1,51 +1,65 @@
 package com.omaykan.storefront.feature.cart
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.ShoppingCart
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.omaykan.storefront.core.designsystem.CtaButton
+import com.omaykan.storefront.core.designsystem.ForestTopBar
+import com.omaykan.storefront.core.designsystem.HeartToggle
 import com.omaykan.storefront.core.designsystem.MessageState
+import com.omaykan.storefront.core.designsystem.MountainScene
 import com.omaykan.storefront.core.designsystem.OmaykanTheme
+import com.omaykan.storefront.core.designsystem.QuantityBox
 import com.omaykan.storefront.core.designsystem.RemoteImage
+import com.omaykan.storefront.core.designsystem.softCard
 import com.omaykan.storefront.core.model.CartLine
 import com.omaykan.storefront.core.model.Money
 
+/**
+ * The basket for one shop, laid out to the reference: a card per line with its
+ * photo, heart, price, stepper and bin; the sums; one terracotta button; and
+ * the mountains along the bottom of the screen.
+ *
+ * Where the reference prints a shipping fee, this says the fee comes at
+ * checkout — it is quoted server-side from the shop's pin and the drop-off's,
+ * and a plausible number here would be a number that turns out wrong at the
+ * door. The total is named an estimate for the same reason.
+ */
 @Composable
 fun CartScreen(
     onCheckout: () -> Unit,
@@ -55,253 +69,251 @@ fun CartScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val cart = state.cart
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
-    ) {
-        CartTopBar(title = "Cart", subtitle = state.shopName, onBack = onBack)
+    Column(Modifier.fillMaxSize()) {
+        ForestTopBar(title = "Your Cart", subtitle = state.shopName, onBack = onBack)
 
         if (cart.isEmpty && cart.unavailableIds.isEmpty()) {
             MessageState(
                 title = "Your cart is empty",
                 detail = "Add something from the shelf and it will wait for you here.",
                 icon = Icons.Outlined.ShoppingCart,
+                actionLabel = "Back to the shelf",
+                onAction = onBack,
             )
             return@Column
         }
 
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            // Told, not silently dropped: someone who put these in a basket
-            // deserves to know they went, rather than arriving at checkout
-            // with a total that quietly shrank.
-            if (cart.unavailableIds.isNotEmpty()) {
-                item {
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(OmaykanTheme.colors.warning.copy(alpha = 0.14f))
-                            .padding(12.dp),
-                    ) {
-                        Text(
-                            text = if (cart.unavailableIds.size == 1) {
-                                "One item is no longer on the shelf."
-                            } else {
-                                "${cart.unavailableIds.size} items are no longer on the shelf."
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        TextButton(
-                            onClick = viewModel::dropUnavailable,
-                            contentPadding = PaddingValues(0.dp),
+        /*
+         * A plain scrolling column at least one screen tall, not a lazy list.
+         *
+         * A basket is a handful of lines, and this is what lets the mountains
+         * sit on the bottom edge of the screen when it is short — the way the
+         * reference has them — instead of stopping halfway down the page as a
+         * strip, while still scrolling up under the button when it is long.
+         */
+        BoxWithConstraints(Modifier.weight(1f)) {
+            val viewport = maxHeight
+
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .heightIn(min = viewport),
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(
+                    Modifier.padding(top = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    // Told, not silently dropped: someone who put these in a
+                    // basket deserves to know they went, rather than arriving
+                    // at checkout with a total that quietly shrank.
+                    if (cart.unavailableIds.isNotEmpty()) {
+                        Column(
+                            Modifier
+                                .padding(horizontal = 16.dp)
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(OmaykanTheme.colors.warning.copy(alpha = 0.14f))
+                                .padding(12.dp),
                         ) {
-                            Text("Remove them")
+                            Text(
+                                text = if (cart.unavailableIds.size == 1) {
+                                    "One item is no longer on the shelf."
+                                } else {
+                                    "${cart.unavailableIds.size} items are no longer on the shelf."
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            TextButton(
+                                onClick = viewModel::dropUnavailable,
+                                contentPadding = PaddingValues(0.dp),
+                            ) {
+                                Text("Remove them")
+                            }
                         }
                     }
-                }
-            }
 
-            items(cart.lines, key = { it.product.id }) { line ->
-                CartRow(
-                    line = line,
-                    onIncrement = { viewModel.increment(line.product.id) },
-                    onDecrement = { viewModel.setQuantity(line.product.id, line.quantity - 1) },
-                    onRemove = { viewModel.remove(line.product.id) },
+                    cart.lines.forEach { line ->
+                        key(line.product.id) {
+                            CartRow(
+                                line = line,
+                                saved = viewModel.savedKey(line.product.id) in state.savedIds,
+                                onToggleSaved = { viewModel.toggleSaved(line.product.id) },
+                                onIncrement = { viewModel.increment(line.product.id) },
+                                onDecrement = {
+                                    viewModel.setQuantity(line.product.id, line.quantity - 1)
+                                },
+                                onRemove = { viewModel.remove(line.product.id) },
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                            )
+                        }
+                    }
+
+                    Totals(
+                        estimateCents = cart.estimatedSubtotalCents,
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 6.dp),
+                    )
+
+                    Column(Modifier.padding(horizontal = 16.dp)) {
+                        CtaButton(
+                            text = "Proceed to Checkout",
+                            onClick = onCheckout,
+                            enabled = !cart.isEmpty,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        // Said plainly, and said before they commit: the shop
+                        // prices the order, not the phone.
+                        Text(
+                            text = "The shop confirms prices at checkout. You pay when you get your order.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = OmaykanTheme.colors.textTertiary,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp),
+                        )
+                    }
+                }
+
+                // Runs under the navigation bar on purpose: it is scenery, and
+                // stopping short of the edge would leave a cream band below it.
+                MountainScene(
+                    lines = listOf("Local shops", "Honest prices"),
+                    modifier = Modifier.padding(top = 20.dp),
                 )
             }
         }
-
-        CartFooter(
-            estimateCents = cart.estimatedSubtotalCents,
-            enabled = !cart.isEmpty,
-            onCheckout = onCheckout,
-        )
     }
 }
 
 @Composable
 private fun CartRow(
     line: CartLine,
+    saved: Boolean,
+    onToggleSaved: () -> Unit,
     onIncrement: () -> Unit,
     onDecrement: () -> Unit,
     onRemove: () -> Unit,
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .border(1.dp, OmaykanTheme.colors.separator, RoundedCornerShape(16.dp))
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        RemoteImage(
-            url = line.product.imageUrl,
-            contentDescription = line.product.name,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .size(64.dp)
-                .clip(RoundedCornerShape(12.dp)),
-        )
-        Column(
-            Modifier
-                .weight(1f)
-                .padding(horizontal = 12.dp),
-        ) {
-            Text(
-                text = line.product.name,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = Money.peso(line.lineTotalCents),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(top = 2.dp),
-            )
-            Text(
-                text = "${Money.peso(line.product.priceCents)} each",
-                style = MaterialTheme.typography.bodySmall,
-                color = OmaykanTheme.colors.textTertiary,
-            )
-        }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Stepper(
-                quantity = line.quantity,
-                onIncrement = onIncrement,
-                onDecrement = onDecrement,
-            )
-            TextButton(onClick = onRemove, contentPadding = PaddingValues(4.dp)) {
-                Text("Remove", style = MaterialTheme.typography.bodySmall)
-            }
-        }
-    }
-}
-
-@Composable
-fun Stepper(
-    quantity: Double,
-    onIncrement: () -> Unit,
-    onDecrement: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        StepperButton(Icons.Filled.Remove, "One fewer", onDecrement)
-        Text(
-            text = if (quantity % 1.0 == 0.0) quantity.toInt().toString() else quantity.toString(),
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(horizontal = 12.dp),
-        )
-        StepperButton(Icons.Filled.Add, "One more", onIncrement)
-    }
-}
-
-@Composable
-private fun StepperButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    description: String,
-    onClick: () -> Unit,
-) {
-    Box(
-        Modifier
-            .size(30.dp)
-            .clip(CircleShape)
-            .background(OmaykanTheme.colors.fill)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(icon, contentDescription = description, modifier = Modifier.size(16.dp))
-    }
-}
-
-@Composable
-private fun CartFooter(estimateCents: Long, enabled: Boolean, onCheckout: () -> Unit) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(16.dp)
-            .navigationBarsPadding(),
-    ) {
-        Row(verticalAlignment = Alignment.Bottom) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = "Estimated total",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = OmaykanTheme.colors.textSecondary,
-                )
-                Text(
-                    text = Money.peso(estimateCents),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-        }
-        // Said plainly, and said before they commit: the shop prices the order,
-        // not the phone. Any delivery fee lands at the next step.
-        Text(
-            text = "The shop confirms prices at checkout. Delivery is quoted there too.",
-            style = MaterialTheme.typography.bodySmall,
-            color = OmaykanTheme.colors.textTertiary,
-            modifier = Modifier.padding(top = 4.dp),
-        )
-        Button(
-            onClick = onCheckout,
-            enabled = enabled,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 12.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = OmaykanTheme.colors.ink,
-                contentColor = OmaykanTheme.colors.onInk,
-            ),
-        ) {
-            Text("Checkout", modifier = Modifier.padding(vertical = 4.dp))
-        }
-    }
-}
-
-@Composable
-internal fun CartTopBar(title: String, subtitle: String, onBack: () -> Unit) {
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .softCard()
+            .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(OmaykanTheme.colors.fill)
-                .clickable(onClick = onBack),
-            contentAlignment = Alignment.Center,
+                .size(86.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(OmaykanTheme.colors.fill),
         ) {
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
-                modifier = Modifier.size(20.dp),
+            RemoteImage(
+                url = line.product.imageUrl,
+                contentDescription = line.product.name,
+                modifier = Modifier.fillMaxSize(),
+            )
+            HeartToggle(
+                saved = saved,
+                onToggle = onToggleSaved,
+                size = 13.dp,
+                idleTint = Color(0xFF2A2420),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(3.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.85f)),
             )
         }
-        Column(Modifier.padding(start = 12.dp)) {
+
+        Column(
+            Modifier
+                .weight(1f)
+                .padding(start = 12.dp),
+        ) {
             Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
+                text = line.product.name,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                color = OmaykanTheme.colors.ink,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
-            if (subtitle.isNotBlank()) {
+            Text(
+                text = Money.peso(line.product.priceCents),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = OmaykanTheme.colors.ink,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+            if (line.quantity != 1.0) {
                 Text(
-                    text = subtitle,
+                    text = "${Money.peso(line.lineTotalCents)} for this line",
                     style = MaterialTheme.typography.bodySmall,
-                    color = OmaykanTheme.colors.textSecondary,
+                    color = OmaykanTheme.colors.textTertiary,
                 )
             }
+            QuantityBox(
+                quantity = line.quantity,
+                onIncrement = onIncrement,
+                onDecrement = onDecrement,
+                compact = true,
+                modifier = Modifier.padding(top = 8.dp),
+            )
         }
+
+        IconButton(onClick = onRemove, modifier = Modifier.align(Alignment.Bottom)) {
+            Icon(
+                Icons.Outlined.DeleteOutline,
+                contentDescription = "Remove ${line.product.name}",
+                tint = OmaykanTheme.colors.textSecondary,
+            )
+        }
+    }
+}
+
+@Composable
+private fun Totals(estimateCents: Long, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth()) {
+        TotalLine("Subtotal", Money.peso(estimateCents))
+        TotalLine("Delivery", "Quoted at checkout", muted = true)
+        HorizontalDivider(
+            color = OmaykanTheme.colors.separator,
+            modifier = Modifier.padding(vertical = 10.dp),
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Estimated Total",
+                style = MaterialTheme.typography.titleLarge,
+                color = OmaykanTheme.colors.ink,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = Money.peso(estimateCents),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = OmaykanTheme.colors.ink,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TotalLine(label: String, value: String, muted: Boolean = false) {
+    Row(Modifier.padding(vertical = 3.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = OmaykanTheme.colors.ink,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = if (muted) FontWeight.Normal else FontWeight.SemiBold,
+            color = if (muted) OmaykanTheme.colors.textSecondary else OmaykanTheme.colors.ink,
+        )
     }
 }

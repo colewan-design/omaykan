@@ -126,7 +126,7 @@ onBeforeUnmount(() => {
   width: min(460px, 100%);
   padding: 34px 34px 28px;
   border-radius: 14px;
-  background: #fbf8f3;
+  background: #ffffff;
   box-shadow: 0 24px 60px rgba(23, 35, 28, 0.28);
   animation: partner-rise 0.22s ease-out;
 }
@@ -159,7 +159,7 @@ onBeforeUnmount(() => {
   line-height: 1;
   cursor: pointer;
 }
-.partner__x:hover { background: #ede5d8; color: #231d18; }
+.partner__x:hover { background: #eeeeee; color: #231d18; }
 
 .partner__eyebrow {
   margin: 0 0 10px;

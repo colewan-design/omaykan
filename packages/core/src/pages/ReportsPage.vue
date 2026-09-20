@@ -67,6 +67,9 @@ const reportOrders = computed(() =>
 
 const grossSales = computed(() => reportOrders.value.reduce((sum, order) => sum + order.totalCents, 0))
 const taxCollected = computed(() => reportOrders.value.reduce((sum, order) => sum + order.taxCents, 0))
+// What came off, over the period. A discount nobody sees at the end of the day
+// is indistinguishable from money gone missing.
+const discountsGiven = computed(() => reportOrders.value.reduce((sum, order) => sum + (order.discountCents ?? 0), 0))
 const netSales = computed(() => grossSales.value - taxCollected.value)
 const orderCount = computed(() => reportOrders.value.length)
 const averageOrder = computed(() => orderCount.value > 0 ? Math.round(grossSales.value / orderCount.value) : 0)
@@ -186,6 +189,7 @@ const rangeCaption = computed(() => {
       <MetricCard label="Gross Sales" :value="formatCurrency(grossSales)" />
       <MetricCard label="Net Sales" :value="formatCurrency(netSales)" />
       <MetricCard label="Tax Collected" :value="formatCurrency(taxCollected)" />
+      <MetricCard label="Discounts Given" :value="formatCurrency(discountsGiven)" />
       <MetricCard label="Orders / Avg Ticket" :value="`${orderCount} / ${formatCurrency(averageOrder)}`" />
     </section>
 
@@ -406,7 +410,8 @@ const rangeCaption = computed(() => {
 }
 
 .reports-kpis {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  /* Five figures: gross, net, tax, discounts, orders. Wraps before it squeezes. */
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
 }
 
 .reports-view-switch {

@@ -104,17 +104,4 @@ class ProductDetailViewModel @Inject constructor(
             snackbar.send("Added to cart", actionLabel = "View cart")
         }
     }
-
-    /**
-     * The same add, then straight to the basket.
-     *
-     * No snackbar here — the shopper is about to be looking at the cart itself,
-     * and a message announcing what is on the screen behind it is noise.
-     */
-    fun buyNow(onAdded: () -> Unit) {
-        viewModelScope.launch {
-            cartRepository.add(ref, route.productId, quantity.value)
-            onAdded()
-        }
-    }
 }

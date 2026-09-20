@@ -8,6 +8,7 @@ import com.omaykan.storefront.core.data.CatalogRepository
 import com.omaykan.storefront.core.data.OrderRepository
 import com.omaykan.storefront.core.model.TrackedOrder
 import com.omaykan.storefront.core.network.ApiException
+import com.omaykan.storefront.core.push.PushRegistrar
 import com.omaykan.storefront.navigation.OrderRoute
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
@@ -60,6 +61,7 @@ class OrderViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repository: OrderRepository,
     private val catalogRepository: CatalogRepository,
+    private val pushRegistrar: PushRegistrar,
 ) : ViewModel() {
 
     private val route = savedStateHandle.toRoute<OrderRoute>()
@@ -121,6 +123,9 @@ class OrderViewModel @Inject constructor(
             _state.update {
                 it.copy(order = order, loading = false, error = null)
             }
+            // Every poll, not once: the registrar skips what it has already
+            // sent, and re-sends after the phone's token changes.
+            if (order.awaitsRider) pushRegistrar.register(order.orderId)
             loadPhotos(order)
         } catch (e: ApiException) {
             // A poll that failed must not blank an order already on screen —

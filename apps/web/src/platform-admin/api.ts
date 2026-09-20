@@ -233,6 +233,10 @@ export interface Settings {
   contactPhone: string | null
   delivery: DeliverySettings
   notifications: NotificationSettings
+  /** What a new merchant's subscription is recorded at. Only the amount is editable. */
+  plan: { id: string; amountCents: number }
+  /** BILLING_ENFORCE on the server. Read-only: a config flag, not a setting. */
+  billingEnforced: boolean
   updatedAt: string | null
 }
 
@@ -247,6 +251,11 @@ export interface SellerRow {
   organizationSlug: string
   organizationName: string
   suspended: boolean
+  /**
+   * What the till and storefront will actually do — the server's own verdict,
+   * computed from `suspended` and the subscription by the same method they call.
+   */
+  tenantAccess: 'allowed' | 'suspended' | 'unpaid'
   store: { name: string; businessMode: string; businessTypeLabel?: string; storeCode: string } | null
   subscription: {
     status: string
@@ -255,8 +264,33 @@ export interface SellerRow {
     gcashReference: string
     submittedAt: string | null
     verifiedAt: string | null
+    /** Early access, as a date. Null for a row the backfill has not reached. */
+    trialEndsAt: string | null
+    currentPeriodEndsAt: string | null
   } | null
   admins: SellerAdmin[]
+}
+
+/**
+ * One transfer a merchant says they made — `SubscriptionPayment` on the server.
+ *
+ * `periodStart` / `periodEnd` are ours, not theirs: the merchant reports a
+ * transfer, and an operator decides what it buys. Accepting is what calls
+ * `SubscriptionBilling::recordPayment()` with a date.
+ */
+export interface SubscriptionPaymentRow {
+  id: string
+  organizationSlug: string | null
+  organizationName: string | null
+  status: 'submitted' | 'accepted' | 'rejected'
+  reference: string
+  amountCents: number
+  note: string | null
+  submittedBy: string | null
+  submittedAt: string | null
+  periodStart: string | null
+  periodEnd: string | null
+  rejectionReason: string | null
 }
 
 export interface CustomerRow {
@@ -322,4 +356,16 @@ export const api = {
 
   sellerAction: (action: string, payload: Record<string, unknown> = {}) =>
     request<Record<string, unknown>>('', { method: 'POST', body: { action, ...payload } }),
+
+  /**
+   * The manual transfers merchants say they have made, pending first.
+   *
+   * This is the whole of billing: there is no gateway, so accepting one of
+   * these is the only thing that ever sets a subscription's billing period.
+   */
+  subscriptionPayments: (organizationSlug?: string) =>
+    request<{ payments: SubscriptionPaymentRow[] }>('', {
+      method: 'POST',
+      body: { action: 'listPayments', ...(organizationSlug ? { organizationSlug } : {}) },
+    }),
 }

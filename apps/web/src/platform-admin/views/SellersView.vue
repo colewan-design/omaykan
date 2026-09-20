@@ -4,6 +4,7 @@ import { Check, Copy, Search } from '@lucide/vue'
 import { api, type SellerRow } from '../api'
 import { count, pesos, shortDate } from '../format'
 import PageHero from '../PageHero.vue'
+import SubscriptionPaymentsQueue from '../SubscriptionPaymentsQueue.vue'
 
 // The shops on the marketplace, and the four things an operator does to one:
 // verify the subscription payment, reject it, suspend the shop, or delete it.
@@ -157,6 +158,11 @@ async function confirmDelete() {
   <PageHero title="Sellers" subtitle="The shops trading on the marketplace, and the state of each one's subscription." />
 
   <div class="page">
+    <!-- Above the seller list on purpose: this is a queue somebody works
+         through, and it is the only place a subscription's paid-to date is
+         ever set. -->
+    <SubscriptionPaymentsQueue />
+
     <div class="adm-card sell__panel">
       <nav class="adm-tabs" aria-label="Filter sellers">
         <button
@@ -215,6 +221,9 @@ async function confirmDelete() {
                 <template v-if="row.subscription">
                   {{ pesos(row.subscription.amountCents) }}
                   <small class="sell__sub">{{ row.subscription.plan }} · {{ shortDate(row.subscription.submittedAt) }}</small>
+                  <small v-if="row.subscription.trialEndsAt" class="sell__sub">
+                    Free until {{ shortDate(row.subscription.trialEndsAt) }}
+                  </small>
                 </template>
                 <template v-else>—</template>
               </td>
@@ -223,6 +232,10 @@ async function confirmDelete() {
                   <span class="adm-pill__dot" aria-hidden="true"></span>
                   {{ state(row)[0].toUpperCase() + state(row).slice(1) }}
                 </span>
+                <!-- The server's own verdict, when it is stricter than the
+                     pill: only possible with billing enforced, and it is the
+                     one fact here the shop is actually living with. -->
+                <small v-if="row.tenantAccess === 'unpaid'" class="sell__flag">selling blocked — unpaid</small>
               </td>
               <td class="adm-right">
                 <div class="sell__actions">

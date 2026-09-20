@@ -138,6 +138,9 @@ data class SellerOrder(
     val paid: Boolean,
     val paymentMethod: String?,
     val subtotalCents: Long,
+    /** Off the subtotal, before tax — a promo code, online. */
+    val discountCents: Long = 0,
+    val discountLabel: String? = null,
     val deliveryFeeCents: Long,
     val totalCents: Long,
     /** ISO-8601, as the server sent it. Parsed only for the day boundary. */

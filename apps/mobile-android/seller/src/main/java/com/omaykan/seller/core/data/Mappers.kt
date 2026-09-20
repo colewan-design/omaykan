@@ -69,6 +69,8 @@ internal fun SellerOrderDto.toModel(): SellerOrder {
         paid = paymentStatus == "paid",
         paymentMethod = paymentMethod?.takeIf { it.isNotBlank() },
         subtotalCents = subtotalCents,
+        discountCents = discountCents,
+        discountLabel = discountLabel?.takeIf { it.isNotBlank() },
         deliveryFeeCents = deliveryFeeCents,
         totalCents = totalCents,
         placedAt = createdAt,

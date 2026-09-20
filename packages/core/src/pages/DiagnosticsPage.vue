@@ -36,10 +36,6 @@ const latestEvent = computed(() => store.appEvents[0] ?? null)
         <strong>{{ store.settings.telemetryEnabled ? 'Enabled' : 'Disabled' }}</strong>
       </article>
       <article class="diag-stat">
-        <p class="diag-stat__label">Sync mode</p>
-        <strong>{{ store.settings.syncMode === 'local-only' ? 'Local-only' : 'Online sync' }}</strong>
-      </article>
-      <article class="diag-stat">
         <p class="diag-stat__label">Latest event</p>
         <strong>{{ latestEvent ? formatCompactDate(latestEvent.createdAt) : 'None yet' }}</strong>
       </article>

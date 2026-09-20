@@ -5,10 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Concerns\ActsForAStore;
 use App\Http\Controllers\Controller;
 use App\Models\Store;
+use App\Services\ImageRejected;
+use App\Services\ImageStore;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
@@ -31,18 +32,12 @@ class StoreImageController extends Controller
 {
     use ActsForAStore;
 
+    public function __construct(private readonly ImageStore $images)
+    {
+    }
+
     /** Alongside `rider-documents/` on the same private disk. */
     private const DIRECTORY = 'store-images';
-
-    /** 3MB decoded. A phone photo fits; a payload meant to hurt does not. */
-    private const MAX_BYTES = 3145728;
-
-    /** Declared type => the extension it is stored under. */
-    private const ALLOWED = [
-        'image/jpeg' => 'jpg',
-        'image/png' => 'png',
-        'image/webp' => 'webp',
-    ];
 
     /**
      * Set or clear the calling till's store photo.
@@ -69,10 +64,11 @@ class StoreImageController extends Controller
             return response()->json(['imageUrl' => null]);
         }
 
-        [$mime, $bytes] = $this->decode($image);
-
-        $path = self::DIRECTORY.'/'.Str::uuid().'.'.self::ALLOWED[$mime];
-        Storage::disk('local')->put($path, $bytes);
+        try {
+            $path = $this->images->store($image, self::DIRECTORY);
+        } catch (ImageRejected $e) {
+            abort(422, $e->getMessage());
+        }
 
         $previous = $store->image_path;
         $store->forceFill(['image_path' => $path])->save();
@@ -80,7 +76,7 @@ class StoreImageController extends Controller
         // Only after the new one is safely written and recorded — the reverse
         // order leaves a store pointing at a file that has been deleted.
         if ($previous !== null && $previous !== $path) {
-            Storage::disk('local')->delete($previous);
+            $this->images->forget($previous);
         }
 
         return response()->json(['imageUrl' => self::urlFor($store)]);
@@ -133,38 +129,7 @@ class StoreImageController extends Controller
         }
 
         $store->forceFill(['image_path' => null])->save();
-        Storage::disk('local')->delete($previous);
-    }
-
-    /**
-     * Turn a data URL into bytes we are willing to keep.
-     *
-     * The mime in the URL is the sender's word for what it sent, which is
-     * worth nothing on its own — a PHP file relabelled `data:image/png` would
-     * pass that check alone. getimagesizefromstring() is the file's own
-     * account of itself, and the two have to agree.
-     *
-     * @return array{0: string, 1: string} the mime type and the raw bytes
-     */
-    private function decode(string $dataUrl): array
-    {
-        if (preg_match('#^data:(image/[a-z0-9.+-]+);base64,(.+)$#is', trim($dataUrl), $matches) !== 1) {
-            abort(422, 'That image could not be read.');
-        }
-
-        $mime = strtolower($matches[1]);
-        abort_unless(isset(self::ALLOWED[$mime]), 422, 'Use a JPEG, PNG, or WebP image.');
-
-        // Strict: base64_decode() otherwise silently skips anything that is
-        // not base64 and returns a shorter string rather than failing.
-        $bytes = base64_decode($matches[2], true);
-        abort_if($bytes === false || $bytes === '', 422, 'That image could not be read.');
-        abort_if(strlen($bytes) > self::MAX_BYTES, 422, 'That image is too large — keep it under 3MB.');
-
-        $info = @getimagesizefromstring($bytes);
-        abort_if($info === false || ($info['mime'] ?? null) !== $mime, 422, 'That file is not an image.');
-
-        return [$mime, $bytes];
+        $this->images->forget($previous);
     }
 
     /**
@@ -176,7 +141,7 @@ class StoreImageController extends Controller
      */
     private function storeFromRequest(Request $request): Store
     {
-        $context = $this->storeContext($request);
+        $context = $this->writableStoreContext($request);
 
         abort_unless($context->isManager(), 403, 'Only an admin or manager can change the shop photo.');
 

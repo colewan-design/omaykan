@@ -39,7 +39,8 @@ import com.omaykan.storefront.core.designsystem.OmaykanTheme
 import com.omaykan.storefront.core.model.FulfillmentMethod
 import com.omaykan.storefront.core.model.Money
 import com.omaykan.storefront.core.model.PaymentPreference
-import com.omaykan.storefront.feature.cart.CartTopBar
+import com.omaykan.storefront.core.designsystem.CtaButton
+import com.omaykan.storefront.core.designsystem.ForestTopBar
 
 @Composable
 fun CheckoutScreen(
@@ -72,18 +73,14 @@ fun CheckoutScreen(
         )
     }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
-    ) {
-        CartTopBar(title = "Checkout", subtitle = "", onBack = onBack)
+    Column(Modifier.fillMaxSize()) {
+        ForestTopBar(title = "Checkout", onBack = onBack)
 
         Column(
             Modifier
                 .weight(1f)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp),
+                .padding(horizontal = 20.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             Section("How would you like it?") {
@@ -234,20 +231,14 @@ fun CheckoutScreen(
                 color = OmaykanTheme.colors.textTertiary,
                 modifier = Modifier.padding(top = 2.dp),
             )
-            Button(
+            CtaButton(
+                text = "Review Order",
                 onClick = viewModel::place,
                 enabled = state.canSubmit,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 12.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = OmaykanTheme.colors.ink,
-                    contentColor = OmaykanTheme.colors.onInk,
-                ),
-            ) {
-                Text("Review order", modifier = Modifier.padding(vertical = 4.dp))
-            }
+            )
         }
     }
 }
@@ -275,10 +266,10 @@ private fun ChoiceChip(
     Box(
         modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(if (selected) OmaykanTheme.colors.ink else MaterialTheme.colorScheme.background)
+            .background(if (selected) OmaykanTheme.colors.forest else MaterialTheme.colorScheme.surface)
             .border(
                 1.dp,
-                if (selected) OmaykanTheme.colors.ink else OmaykanTheme.colors.separator,
+                if (selected) OmaykanTheme.colors.forest else OmaykanTheme.colors.separator,
                 RoundedCornerShape(12.dp),
             )
             .clickable(onClick = onClick)
@@ -288,7 +279,7 @@ private fun ChoiceChip(
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
-            color = if (selected) OmaykanTheme.colors.onInk else MaterialTheme.colorScheme.onBackground,
+            color = if (selected) OmaykanTheme.colors.onForest else MaterialTheme.colorScheme.onBackground,
         )
     }
 }

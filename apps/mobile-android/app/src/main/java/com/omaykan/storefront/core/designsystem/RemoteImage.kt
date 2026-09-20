@@ -11,7 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
-import coil3.compose.SubcomposeAsyncImage
+import coil3.compose.AsyncImage
 
 /**
  * Product and shop photography.
@@ -21,6 +21,13 @@ import coil3.compose.SubcomposeAsyncImage
  * or failed image leaves a quiet mark rather than a broken-image glyph, and it
  * occupies exactly the space the photo would, so a grid does not reflow as
  * images land.
+ *
+ * The mark is drawn underneath and the photo over it, rather than swapped on
+ * Coil's load state: stock that was never photographed, a photo the server
+ * 404s and a phone with no signal all come to rest in the same place, with no
+ * state to get wrong. It also keeps this off SubcomposeAsyncImage, whose
+ * subcomposition runs during layout and cannot be skipped — a cost on every
+ * frame for every card on screen, and a three-up grid holds nine or more.
  *
  * No ground of its own. A photo shot on white sat in a grey square that read as
  * a border the card did not have; anywhere a tile is genuinely wanted, the
@@ -34,16 +41,13 @@ fun RemoteImage(
     contentScale: ContentScale = ContentScale.Crop,
 ) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        if (url.isNullOrBlank()) {
-            Placeholder()
-        } else {
-            SubcomposeAsyncImage(
+        Placeholder()
+        if (!url.isNullOrBlank()) {
+            AsyncImage(
                 model = url,
                 contentDescription = contentDescription,
                 contentScale = contentScale,
                 modifier = Modifier.fillMaxSize(),
-                loading = { Placeholder() },
-                error = { Placeholder() },
             )
         }
     }

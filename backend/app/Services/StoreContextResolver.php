@@ -6,6 +6,8 @@ use App\Models\OrganizationMembership;
 use App\Models\Store;
 use App\Models\StoreMembership;
 use App\Models\User;
+use App\Services\Billing\TenantAccess;
+use App\Services\Billing\TenantAccessDenied;
 use Illuminate\Http\Request;
 
 /**
@@ -49,7 +51,35 @@ class StoreContextResolver
         $role = $this->roleFor($user, $store);
         abort_unless($role !== null, 403, 'This account does not have access to that store.');
 
-        return new StoreContext($user, $store, $role);
+        // After the membership check, not before: someone with no claim on this
+        // shop should not learn that it has been suspended.
+        $access = $this->accessFor($store);
+
+        return new StoreContext($user, $store, $role, $access);
+    }
+
+    /**
+     * Whether this store's organization may be acted for at all.
+     *
+     * Asked here, on every request, for the reason the membership is: tokens
+     * do not expire, so a suspension enforced only at sign-in would leave every
+     * till already signed in working until someone happened to sign out.
+     *
+     * Suspended stops here. Unpaid is let through with the verdict attached —
+     * its staff can still read their own records — and each action that writes
+     * refuses it through StoreContext::abortUnlessWritable.
+     *
+     * @throws TenantAccessDenied
+     */
+    private function accessFor(Store $store): TenantAccess
+    {
+        $access = $store->organization?->accessVerdict() ?? TenantAccess::Suspended;
+
+        if (! $access->allowsStaffAccess()) {
+            throw TenantAccessDenied::for($access);
+        }
+
+        return $access;
     }
 
     /**
@@ -76,7 +106,10 @@ class StoreContextResolver
 
         abort_if($storeId === null, 403, 'Choose a store for this session first.');
 
-        $store = Store::query()->find($storeId);
+        // The organization and its subscription come along because accessFor
+        // reads both on every request; loading them here makes that one query
+        // rather than three.
+        $store = Store::query()->with('organization.subscription')->find($storeId);
 
         abort_if($store === null || $store->status !== 'active', 403, 'That store is no longer available.');
 

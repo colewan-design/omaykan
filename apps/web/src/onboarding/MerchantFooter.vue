@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import BrandLogo from '@pos/core/components/BrandLogo.vue'
-import { SUPPORT_EMAIL, supportMailto } from '@pos/shared/index'
+import { supportMailto } from '@pos/shared/index'
 
 // Deliberately smaller than the storefront's FdFooter: this page has one job,
 // and a full sitemap under the registration form competes with it. Everything
@@ -12,18 +12,19 @@ import { SUPPORT_EMAIL, supportMailto } from '@pos/shared/index'
     <div class="mf__inner">
       <div class="mf__brand">
         <BrandLogo variant="light" :size="19" />
-        <p class="mf__line">Local vendors, local riders, no commissions.</p>
+        <p class="mf__line">For storefronts. For communities.</p>
       </div>
 
       <nav class="mf__links" aria-label="Footer">
-        <a href="/">Back to shopping</a>
-        <a href="/about">Our story</a>
-        <a href="/app/auth">Sign in</a>
-        <a :href="supportMailto('Omaykan signup')">{{ SUPPORT_EMAIL }}</a>
+        <a href="/about">About</a>
+        <a href="/about">Help</a>
+        <a :href="supportMailto('Omaykan signup')">Contact</a>
+        <a href="/about">Privacy</a>
+        <a href="/about">Terms</a>
       </nav>
     </div>
 
-    <p class="mf__legal">© 2026 Omaykan</p>
+    <div class="mf__legal"><span>© 2026 Omaykan. All rights reserved.</span><span>Made for Filipino businesses 🇵🇭</span></div>
   </footer>
 </template>
 
@@ -40,7 +41,7 @@ import { SUPPORT_EMAIL, supportMailto } from '@pos/shared/index'
   justify-content: space-between;
   gap: 28px;
   flex-wrap: wrap;
-  max-width: 1280px;
+  max-width: 1180px;
   margin: 0 auto;
 }
 
@@ -70,6 +71,9 @@ import { SUPPORT_EMAIL, supportMailto } from '@pos/shared/index'
 .mf__links a:hover { color: #1a1a1a; }
 
 .mf__legal {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
   max-width: 1280px;
   margin: 28px auto 0;
   padding-top: 20px;

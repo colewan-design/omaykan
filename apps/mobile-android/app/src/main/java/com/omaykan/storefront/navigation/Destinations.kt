@@ -18,6 +18,16 @@ import kotlinx.serialization.Serializable
 object HomeRoute
 
 /**
+ * The order list, pushed from the account page or the menu.
+ *
+ * It was a tab until the tab bar became Home, Shop, Stories, Favorites and
+ * Account. [filter] is an OrderFilter name — the account page's stage tiles
+ * open it already narrowed to the stage that was tapped.
+ */
+@Serializable
+data class OrdersRoute(val filter: String? = null)
+
+/**
  * One shop's shelf. With [categoryId] set it opens as that aisle, which is what
  * a category chip on the front page navigates to — the web page does the same
  * thing in place with ?category=, but Back is a better answer on a phone than a

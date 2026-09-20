@@ -2,20 +2,18 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Events\OrderPlaced;
-use App\Events\OrderStatusChanged;
 use App\Http\Controllers\Concerns\ActsForAStore;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
-use App\Models\InventoryAdjustment;
 use App\Models\InventoryLevel;
-use App\Models\Order;
-use App\Models\OrderItem;
-use App\Models\Payment;
+use App\Models\PosCustomer;
 use App\Models\Product;
 use App\Models\ProductStoreOverride;
 use App\Models\SyncCursor;
 use App\Models\SyncEvent;
+use App\Services\ImageRejected;
+use App\Services\ImageStore;
+use App\Services\RegisterSales;
 use App\Services\StoreContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -24,6 +22,9 @@ use Illuminate\Support\Facades\DB;
 class SyncController extends Controller
 {
     use ActsForAStore;
+
+    /** A product description is a paragraph or two, not a spec sheet. */
+    private const DESCRIPTION_MAX = 2000;
 
     public function bootstrap(Request $request)
     {
@@ -52,6 +53,12 @@ class SyncController extends Controller
             ->where('organization_id', $context->organizationId())
             ->where('store_id', $context->storeId())
             ->whereNull('deleted_at')
+            ->get();
+
+        // Named counter customers, shared by every till in the organization.
+        $customers = PosCustomer::query()
+            ->where('organization_id', $context->organizationId())
+            ->orderBy('name')
             ->get();
 
         $cursor = now()->toIso8601String();
@@ -88,6 +95,7 @@ class SyncController extends Controller
                 'products' => $products,
                 'overrides' => $overrides,
                 'inventoryLevels' => $inventoryLevels,
+                'customers' => $customers->map(fn (PosCustomer $customer) => $this->presentCustomer($customer))->values(),
             ],
             'cursor' => $cursor,
         ]);
@@ -95,7 +103,7 @@ class SyncController extends Controller
 
     public function push(Request $request)
     {
-        $context = $this->storeContext($request);
+        $context = $this->writableStoreContext($request);
 
         $sessionKey = $this->sessionKey($request);
 
@@ -135,7 +143,11 @@ class SyncController extends Controller
                     'entity_type' => $eventData['entityType'],
                     'entity_id' => $eventData['entityId'],
                     'operation' => $eventData['operation'],
-                    'payload' => $eventData['payload'],
+                    // The audit copy, with any inline photo left out: a till
+                    // syncs a picked photo as base64, and the file it becomes
+                    // is the record of it. Re-applying reads the request, never
+                    // this column, so nothing depends on the bytes being here.
+                    'payload' => $this->withoutInlineImages($eventData['payload']),
                     'idempotency_key' => $idempotencyKey,
                     'received_at' => now(),
                 ],
@@ -149,13 +161,43 @@ class SyncController extends Controller
                 continue;
             }
 
+            // Checked per event, never per batch: one push carries a sale, its
+            // stock movement and perhaps a price change together, and refusing
+            // the whole thing over the price change would lose the sale.
+            //
+            // `rejected` rather than `failed`. A failed event stays in the
+            // till's outbox and is sent again on every flush, which is right
+            // for a database hiccup and an infinite loop for a permission. A
+            // rejected one is dropped by the client, and the catalog pull that
+            // follows puts the server's version back on the device.
+            $refusal = $this->refusalFor($context, $eventData['entityType'], $eventData['payload']);
+
+            if ($refusal !== null) {
+                $syncEvent->forceFill([
+                    'failed_at' => now(),
+                    'error_message' => $refusal,
+                ])->save();
+
+                $results[] = [
+                    'eventId' => $eventData['id'],
+                    'status' => 'rejected',
+                    'message' => $refusal,
+                ];
+                continue;
+            }
+
             try {
                 DB::transaction(function () use ($context, $eventData): void {
                     match ($eventData['entityType']) {
-                        'order' => $this->applyOrderEvent($context, $eventData['payload']),
+                        // Sales are no longer synced: the till records each one
+                        // through /api/register/orders before completing it.
+                        // Failed, not rejected, so a sale an old till still has
+                        // queued stays on it rather than being thrown away.
+                        'order' => throw new \InvalidArgumentException('Sales are recorded through /api/register/orders. Update this till.'),
                         'category' => $this->applyCategoryEvent($context, $eventData['entityId'], $eventData['payload']),
                         'product' => $this->applyProductEvent($context, $eventData['entityId'], $eventData['payload']),
                         'inventory_adjustment' => $this->applyInventoryAdjustmentEvent($context, $eventData['entityId'], $eventData['payload']),
+                        'customer' => $this->applyCustomerEvent($context, $eventData['entityId'], $eventData['payload']),
                         'app_event' => null,
                         default => throw new \InvalidArgumentException("Unsupported entity type [{$eventData['entityType']}]."),
                     };
@@ -218,6 +260,12 @@ class SyncController extends Controller
             ->where('updated_at', '>', $cursor)
             ->get();
 
+        // Deleted ones too, so another till can drop them.
+        $customers = PosCustomer::withTrashed()
+            ->where('organization_id', $context->organizationId())
+            ->where('updated_at', '>', $cursor)
+            ->get();
+
         SyncCursor::query()->updateOrCreate(
             [
                 'store_id' => $context->storeId(),
@@ -238,109 +286,99 @@ class SyncController extends Controller
                 'products' => $products,
                 'overrides' => $overrides,
                 'inventoryLevels' => $inventoryLevels,
+                'customers' => $customers->map(fn (PosCustomer $customer) => $this->presentCustomer($customer))->values(),
             ],
         ]);
     }
 
-    private function applyOrderEvent(StoreContext $context, array $payload): void
+    /**
+     * A named counter customer, made or changed at a till.
+     *
+     * The id is the till's own, so a customer made offline keeps it. One that
+     * belongs to another organization is refused outright — a till cannot
+     * rename somebody else's customer by guessing an id. Consent to points is
+     * recorded only when the key is sent, so an older till's edit does not
+     * withdraw it.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function applyCustomerEvent(StoreContext $context, string $entityId, array $payload): void
     {
-        $orderData = $payload['order'] ?? null;
-        $items = $payload['items'] ?? [];
-        $payments = $payload['payments'] ?? [];
+        $existing = PosCustomer::withTrashed()->whereKey($entityId)->first();
 
-        if (! is_array($orderData) || ! isset($orderData['id'], $orderData['ticketNumber'])) {
-            throw new \InvalidArgumentException('Order payload is missing required fields.');
+        if ($existing !== null && $existing->organization_id !== $context->organizationId()) {
+            throw new \InvalidArgumentException('That customer belongs to another shop.');
         }
 
-        $existing = Order::query()->whereKey($orderData['id'])->first();
-        $previousStatus = $existing?->order_status;
+        $customer = $existing ?? new PosCustomer(['id' => $entityId, 'organization_id' => $context->organizationId()]);
 
-        $order = Order::query()->updateOrCreate(
-            ['id' => $orderData['id']],
-            [
-                'organization_id' => $context->organizationId(),
-                'store_id' => $context->storeId(),
-                'user_id' => $context->user->id,
-                'user_id' => $orderData['userId'] ?? null,
-                'ticket_number' => $orderData['ticketNumber'],
-                'order_status' => $orderData['orderStatus'] ?? 'completed',
-                'order_type' => $orderData['orderType'] ?? 'takeaway',
-                'payment_status' => $orderData['paymentStatus'] ?? 'paid',
-                'subtotal_cents' => $orderData['subtotalCents'] ?? 0,
-                'tax_cents' => $orderData['taxCents'] ?? 0,
-                'total_cents' => $orderData['totalCents'] ?? 0,
-                'business_date' => $orderData['businessDate'] ?? now()->toDateString(),
-                'completed_at' => $orderData['completedAt'] ?? now(),
-            ],
-        );
+        $text = fn (string $key, int $max) => array_key_exists($key, $payload)
+            ? (is_string($payload[$key]) && trim($payload[$key]) !== '' ? mb_substr(trim($payload[$key]), 0, $max) : null)
+            : $customer->{$key};
 
-        $order->items()->delete();
-        InventoryAdjustment::query()
-            ->where('organization_id', $context->organizationId())
-            ->where('store_id', $context->storeId())
-            ->where('order_id', $order->id)
-            ->delete();
+        $customer->fill([
+            'name' => $text('name', 255) ?? $customer->name ?? 'Customer',
+            'phone' => $text('phone', 40),
+            'email' => $text('email', 190),
+            'notes' => $text('notes', 2000),
+        ]);
 
-        foreach ($items as $item) {
-            $orderItem = OrderItem::query()->create([
-                'id' => $item['id'] ?? (string) str()->uuid(),
-                'organization_id' => $context->organizationId(),
-                'store_id' => $context->storeId(),
-                'order_id' => $order->id,
-                'product_id' => $item['productId'] ?? null,
-                'product_name' => $item['productName'] ?? $item['name'] ?? 'Unknown product',
-                'quantity' => $item['quantity'] ?? 1,
-                'unit_price_cents' => $item['unitPriceCents'] ?? 0,
-                'line_total_cents' => $item['lineTotalCents'] ?? 0,
-            ]);
-
-            $product = ! empty($item['productId'])
-                ? Product::query()->find($item['productId'])
-                : null;
-
-            if ($product?->track_inventory) {
-                $quantity = -1 * (float) ($item['quantity'] ?? 1);
-                $this->recordInventoryAdjustment(
-                    $context,
-                    $item['inventoryAdjustmentId'] ?? (string) str()->uuid(),
-                    $item['productId'],
-                    $quantity,
-                    'sale',
-                    "order:{$order->ticket_number}",
-                    $order->id,
-                    $orderItem->created_at ?? now(),
-                );
-            }
+        if (array_key_exists('loyaltyConsentAt', $payload)) {
+            $customer->loyalty_consent_at = $payload['loyaltyConsentAt'] ? Carbon::parse($payload['loyaltyConsentAt']) : null;
         }
 
-        $order->payments()->delete();
-        foreach ($payments as $payment) {
-            Payment::query()->create([
-                'id' => $payment['id'] ?? (string) str()->uuid(),
-                'organization_id' => $context->organizationId(),
-                'store_id' => $context->storeId(),
-                'order_id' => $order->id,
-                'payment_method' => $payment['paymentMethod'] ?? 'cash',
-                'amount_cents' => $payment['amountCents'] ?? ($orderData['totalCents'] ?? 0),
-                'tendered_cents' => $payment['tenderedCents'] ?? null,
-                'change_cents' => $payment['changeCents'] ?? null,
-            ]);
+        $customer->deleted_at = ! empty($payload['deletedAt']) ? Carbon::parse($payload['deletedAt']) : null;
+        $customer->save();
+    }
+
+    /** @return array<string, mixed> */
+    private function presentCustomer(PosCustomer $customer): array
+    {
+        return [
+            'id' => $customer->id,
+            'name' => $customer->name,
+            'phone' => $customer->phone,
+            'email' => $customer->email,
+            'notes' => $customer->notes,
+            'loyaltyConsentAt' => $customer->loyalty_consent_at?->toIso8601String(),
+            'createdAt' => $customer->created_at?->toIso8601String(),
+            'updatedAt' => $customer->updated_at?->toIso8601String(),
+            'deletedAt' => $customer->deleted_at?->toIso8601String(),
+        ];
+    }
+
+    /**
+     * Why this person may not make this change, or null when they may.
+     *
+     * The till hides the Products and Inventory pages from roles without them,
+     * and the seller app hides the product form's Save from cashiers. Both are
+     * courtesies; this is the control. A cashier's token used to be able to
+     * reprice the whole catalog.
+     *
+     * A stock movement that belongs to an order is not a catalog change. The
+     * register records a sale's stock as a `sale` adjustment, and a void puts
+     * it back as a `manual_correction` carrying the voided order's id — both
+     * part of ringing up, which every role at the register does. What needs
+     * the Inventory page is a movement with no order behind it: a restock, a
+     * count, a correction.
+     */
+    private function refusalFor(StoreContext $context, string $entityType, array $payload): ?string
+    {
+        $belongsToAnOrder = ($payload['adjustmentType'] ?? null) === 'sale' || ! empty($payload['orderId']);
+
+        $page = match ($entityType) {
+            'product', 'category' => 'products',
+            'inventory_adjustment' => $belongsToAnOrder ? null : 'inventory',
+            default => null,
+        };
+
+        if ($page === null || $context->can($page)) {
+            return null;
         }
 
-        // Broadcast after the write, but only once the surrounding transaction
-        // commits — otherwise a listener can race ahead and query a row that is
-        // not visible yet, or hear about an order the rollback removed.
-        DB::afterCommit(function () use ($order, $existing, $previousStatus): void {
-            if ($existing === null) {
-                OrderPlaced::dispatch($order);
-
-                return;
-            }
-
-            if ($previousStatus !== $order->order_status) {
-                OrderStatusChanged::dispatch($order, $previousStatus);
-            }
-        });
+        return $page === 'products'
+            ? 'Your role cannot change products. Ask a manager to make this change.'
+            : 'Your role cannot adjust stock. Ask a manager to make this change.';
     }
 
     private function applyCategoryEvent(StoreContext $context, string $entityId, array $payload): void
@@ -366,6 +404,7 @@ class SyncController extends Controller
         // packaging in it at all, and their next price change should not strip
         // the photographs off a product someone else set up.
         $existing = Product::query()->whereKey($entityId)->first();
+        $payload = $this->withStoredImages($payload);
 
         $product = Product::query()->updateOrCreate(
             ['id' => $entityId],
@@ -377,7 +416,11 @@ class SyncController extends Controller
                 'barcode' => $payload['barcode'] ?? null,
                 'name' => $payload['name'] ?? 'Unnamed product',
                 'product_type' => $payload['productType'] ?? 'standard',
-                'tax_rate' => $payload['taxRate'] ?? 12,
+                // Stored as a percentage; the till sends a fraction. See
+                // percentTaxRate. Absent on a new product is the standard 12%.
+                'tax_rate' => array_key_exists('taxRate', $payload)
+                    ? RegisterSales::percentTaxRate($payload['taxRate'])
+                    : ($existing?->tax_rate ?? 12),
                 'price_cents' => $payload['priceCents'] ?? 0,
                 'track_inventory' => $payload['trackInventory'] ?? true,
                 'is_active' => $payload['isActive'] ?? true,
@@ -393,6 +436,13 @@ class SyncController extends Controller
                 'brand' => $this->keptField($payload, 'brand', $existing?->brand),
                 'packaging_type' => $this->keptField($payload, 'packagingType', $existing?->packaging_type),
                 'unit_label' => $this->keptField($payload, 'unitLabel', $existing?->unit_label),
+                // What the product is, in the shop's words — shown on the
+                // storefront's product page. Capped rather than refused: a
+                // paste of a supplier's whole spec sheet is not worth losing
+                // the rest of the product over.
+                'description' => ($description = $this->keptField($payload, 'description', $existing?->description)) === null
+                    ? null
+                    : mb_substr($description, 0, self::DESCRIPTION_MAX),
                 'compare_at_price_cents' => array_key_exists('compareAtPriceCents', $payload)
                     ? $payload['compareAtPriceCents']
                     : $existing?->compare_at_price_cents,
@@ -439,6 +489,70 @@ class SyncController extends Controller
      * wins, including an explicit empty string, which is a merchant clearing
      * the field and is stored as null rather than as "".
      */
+    /**
+     * Pull any photo sent inline as a data URL out into a file, and put its
+     * URL in the payload instead.
+     *
+     * The till reads a picked photo with FileReader.readAsDataURL and syncs
+     * exactly that, so until this ran every photographed product carried tens
+     * of kilobytes of base64 in its row and in every catalog response. Doing
+     * it here, on arrival, means an offline till needs no change at all.
+     *
+     * A photo that is not really an image, or is too large, is dropped rather
+     * than failing the product: a price change must not be lost because the
+     * picture beside it was bad. A rejected primary photo leaves the key out,
+     * so keptField keeps whatever the product already had.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function withStoredImages(array $payload): array
+    {
+        $images = app(ImageStore::class);
+
+        $store = function (string $dataUrl) use ($images): ?string {
+            try {
+                return ProductImageController::urlFor($images->store($dataUrl, ProductImageController::DIRECTORY));
+            } catch (ImageRejected) {
+                return null;
+            }
+        };
+
+        if (ImageStore::isDataUrl($payload['imageUrl'] ?? null)) {
+            $url = $store($payload['imageUrl']);
+
+            if ($url === null) {
+                unset($payload['imageUrl']);
+            } else {
+                $payload['imageUrl'] = $url;
+            }
+        }
+
+        if (is_array($payload['photoUrls'] ?? null)) {
+            $payload['photoUrls'] = array_values(array_filter(array_map(
+                fn ($photo) => ImageStore::isDataUrl($photo) ? $store($photo) : $photo,
+                $payload['photoUrls'],
+            ), fn ($photo) => $photo !== null));
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function withoutInlineImages(array $payload): array
+    {
+        array_walk_recursive($payload, function (&$value): void {
+            if (ImageStore::isDataUrl($value)) {
+                $value = '[inline image]';
+            }
+        });
+
+        return $payload;
+    }
+
     private function keptField(array $payload, string $key, ?string $stored): ?string
     {
         if (! array_key_exists($key, $payload)) {
@@ -526,7 +640,14 @@ class SyncController extends Controller
             return;
         }
 
-        $this->recordInventoryAdjustment(
+        // A sale's stock is recorded with the sale itself (RegisterSales). The
+        // till used to send it a second time as its own adjustment, and the
+        // server took it off the shelf twice.
+        if (($payload['adjustmentType'] ?? null) === 'sale' && ! empty($payload['orderId'])) {
+            return;
+        }
+
+        app(RegisterSales::class)->adjustStock(
             $context,
             $entityId,
             $payload['productId'],
@@ -536,52 +657,6 @@ class SyncController extends Controller
             $payload['orderId'] ?? null,
             now(),
         );
-    }
-
-    private function recordInventoryAdjustment(
-        StoreContext $context,
-        string $adjustmentId,
-        string $productId,
-        float $quantityDelta,
-        string $adjustmentType,
-        ?string $reason,
-        ?string $orderId,
-        Carbon|string $createdAt,
-    ): void {
-        InventoryAdjustment::query()->updateOrCreate(
-            ['id' => $adjustmentId],
-            [
-                'organization_id' => $context->organizationId(),
-                'store_id' => $context->storeId(),
-                'product_id' => $productId,
-                'order_id' => $orderId,
-                'adjustment_type' => $adjustmentType,
-                'quantity_delta' => $quantityDelta,
-                'reason' => $reason,
-                'created_at' => $createdAt,
-                'synced_at' => now(),
-                'deleted_at' => null,
-            ],
-        );
-
-        $inventoryLevel = InventoryLevel::query()->firstOrNew([
-            'organization_id' => $context->organizationId(),
-            'store_id' => $context->storeId(),
-            'product_id' => $productId,
-        ]);
-
-        if (! $inventoryLevel->exists) {
-            $inventoryLevel->id = (string) str()->uuid();
-            $inventoryLevel->qty_on_hand = 0;
-        }
-
-        $inventoryLevel->organization_id = $context->organizationId();
-        $inventoryLevel->store_id = $context->storeId();
-        $inventoryLevel->product_id = $productId;
-        $inventoryLevel->qty_on_hand = max(0, (float) $inventoryLevel->qty_on_hand + $quantityDelta);
-        $inventoryLevel->updated_at = now();
-        $inventoryLevel->deleted_at = null;
-        $inventoryLevel->save();
     }
 
     /**

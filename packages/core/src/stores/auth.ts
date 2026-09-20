@@ -370,6 +370,26 @@ export const useAuthStore = defineStore('auth', () => {
     await repository.saveRoles(roles.value)
   }
 
+  /**
+   * How much this role may take off a sale on its own, as a percentage.
+   *
+   * Owner-only, like the staff power above: a discount limit is authority over
+   * the shop's money. Admin is not editable — it is always 100 — and the
+   * server keeps the same number (roles.max_discount_percent) and checks every
+   * synced sale against it.
+   */
+  async function setRoleDiscountLimit(roleId: string, percent: number) {
+    if (!isOwner.value || roleId === 'admin') {
+      return
+    }
+
+    const limit = Math.min(100, Math.max(0, Math.round(Number.isFinite(percent) ? percent : 0)))
+    roles.value = roles.value.map((role) =>
+      role.id === roleId ? { ...role, maxDiscountPercent: limit } : role,
+    )
+    await repository.saveRoles(roles.value)
+  }
+
   async function createRole(name: string) {
     if (!canManageAccess.value) {
       return false
@@ -479,6 +499,7 @@ export const useAuthStore = defineStore('auth', () => {
     renameRole,
     setRolePermission,
     setRoleManageStaff,
+    setRoleDiscountLimit,
     deleteRole,
   }
 })

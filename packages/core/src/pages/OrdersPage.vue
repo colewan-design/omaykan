@@ -143,6 +143,9 @@ async function handleVoidOrder(order: OrderSummary) {
   isVoiding.value = true
   try {
     await store.voidOrder(order.id, { userId: auth.currentUser?.id ?? null, reason: reason || null })
+  } catch (error) {
+    // Refused by the server, or no connection: the sale stands, here too.
+    window.alert(error instanceof Error && error.message ? error.message : 'This sale could not be voided. Try again.')
   } finally {
     isVoiding.value = false
   }
@@ -448,6 +451,13 @@ const rangeCaption = computed(() => {
             <div>
               <span>Subtotal</span>
               <strong>{{ formatCurrency(selectedOrder.subtotalCents) }}</strong>
+            </div>
+            <div v-if="selectedOrder.discountCents">
+              <span>
+                Discount<template v-if="selectedOrder.discount?.percent != null"> ({{ selectedOrder.discount.percent }}%)</template>
+                <template v-if="selectedOrder.discount?.reason"> · {{ selectedOrder.discount.reason }}</template>
+              </span>
+              <strong>−{{ formatCurrency(selectedOrder.discountCents) }}</strong>
             </div>
             <div>
               <span>Tax</span>

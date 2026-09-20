@@ -6,12 +6,13 @@ import {
 } from '@lucide/vue'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import ProductSheet from '@pos/core/components/ProductSheet.vue'
+import PromotionsPanel from '@pos/core/components/PromotionsPanel.vue'
 import { usePosStore } from '@pos/core/stores/pos'
 import { haptic, ImpactStyle } from '@pos/core/utils/haptics'
 import { formatCurrency, type BusinessMode, type Category, type Product } from '@pos/shared/index'
 
 const store = usePosStore()
-const activeTab = ref<'products' | 'categories'>('products')
+const activeTab = ref<'products' | 'categories' | 'promotions'>('products')
 const modeFilter = ref<BusinessMode | 'all'>('all')
 const categoryFilter = ref('all')
 const statusFilter = ref<'all' | 'active' | 'inactive'>('all')
@@ -34,7 +35,7 @@ const storefrontOptions: { value: BusinessMode | 'all'; label: string }[] = [
   { value: 'nail-salon', label: 'Nail salon' },
 ]
 
-function setActiveTab(tab: 'products' | 'categories') {
+function setActiveTab(tab: 'products' | 'categories' | 'promotions') {
   if (activeTab.value === tab) return
   activeTab.value = tab
   haptic(ImpactStyle.Light)
@@ -258,7 +259,7 @@ onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
 
     <section class="product-workspace">
       <div class="p-tabs" role="tablist" aria-label="Product management view">
-        <button v-for="tab in [{ value: 'products', label: 'Products' }, { value: 'categories', label: 'Categories' }]" :key="tab.value" class="p-tab" :class="{ 'p-tab--active': activeTab === tab.value }" type="button" role="tab" :aria-selected="activeTab === tab.value" @click="setActiveTab(tab.value as 'products' | 'categories')">{{ tab.label }}</button>
+        <button v-for="tab in [{ value: 'products', label: 'Products' }, { value: 'categories', label: 'Categories' }, { value: 'promotions', label: 'Promotions' }]" :key="tab.value" class="p-tab" :class="{ 'p-tab--active': activeTab === tab.value }" type="button" role="tab" :aria-selected="activeTab === tab.value" @click="setActiveTab(tab.value as 'products' | 'categories' | 'promotions')">{{ tab.label }}</button>
       </div>
 
       <template v-if="activeTab === 'products'">
@@ -295,6 +296,10 @@ onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
           <footer class="ptable__footer"><span>Showing {{ visibleRangeStart }}–{{ visibleRangeEnd }} of {{ processedProducts.length }} products</span><div class="ptable__pagination"><label>Rows per page <select v-model.number="rowsPerPage"><option v-for="option in rowsPerPageOptions" :key="option" :value="option">{{ option }}</option></select></label><button type="button" :disabled="currentPage === 1" aria-label="Previous page" @click="currentPage--"><ChevronLeft :size="16" /> Previous</button><span>Page {{ currentPage }} of {{ pageCount }}</span><button class="ptable__next" type="button" :disabled="currentPage === pageCount" aria-label="Next page" @click="currentPage++">Next <ChevronRight :size="16" /></button></div></footer>
         </div>
       </template>
+
+      <!-- Promo codes set prices, so they sit with the products and share the
+           Products page's permission. -->
+      <PromotionsPanel v-else-if="activeTab === 'promotions'" />
 
       <template v-else>
         <div class="category-manager">

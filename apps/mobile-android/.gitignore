@@ -8,6 +8,11 @@ keystore.properties
 *.jks
 *.keystore
 
+# Firebase client config. Not a secret in the way a keystore is, but it names
+# the project and carries its API key, and each developer's copy comes from
+# the Firebase console. See app/build.gradle.kts.
+google-services.json
+
 # IDE
 .idea/
 *.iml

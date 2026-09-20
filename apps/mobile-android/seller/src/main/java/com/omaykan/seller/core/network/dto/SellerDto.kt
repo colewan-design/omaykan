@@ -117,6 +117,10 @@ data class SellerOrderDto(
     val paymentStatus: String? = null,
     val paymentMethod: String? = null,
     val subtotalCents: Long = 0,
+    /** What a promo code took off, before tax. */
+    val discountCents: Long = 0,
+    /** "Promo WELCOME10" — null when nothing came off. */
+    val discountLabel: String? = null,
     val totalCents: Long = 0,
     val deliveryFeeCents: Long = 0,
     val createdAt: String? = null,

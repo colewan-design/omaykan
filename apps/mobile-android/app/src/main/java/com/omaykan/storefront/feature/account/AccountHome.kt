@@ -41,7 +41,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -166,11 +165,10 @@ fun AccountHome(
 /**
  * The identity band.
  *
- * Tinted with the brand accent rather than the reference's gold: the shape is
- * borrowed, the palette is this product's own, and a second accent colour
- * appearing on exactly one screen is how a design system starts to come apart.
- * The gradient lands on the page background so the stat cards below can sit
- * across the seam without a visible edge behind them.
+ * On the forest, continuing the Account bar above it, so the name reads as the
+ * top of the page rather than a card on it. The stat cards below are lifted
+ * across its lower edge, white on green, the way the reference sets cards
+ * across a header.
  */
 @Composable
 private fun AccountHeader(account: CustomerAccount, onOpenAddresses: (() -> Unit)?) {
@@ -179,16 +177,8 @@ private fun AccountHeader(account: CustomerAccount, onOpenAddresses: (() -> Unit
     Box(
         Modifier
             .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        accent.copy(alpha = 0.22f),
-                        accent.copy(alpha = 0.08f),
-                        MaterialTheme.colorScheme.background,
-                    ),
-                ),
-            )
-            .padding(start = 20.dp, end = 16.dp, top = 24.dp, bottom = 40.dp),
+            .background(OmaykanTheme.colors.forest)
+            .padding(start = 20.dp, end = 16.dp, top = 6.dp, bottom = 46.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (account.avatarUrl.isNotBlank()) {
@@ -225,14 +215,14 @@ private fun AccountHeader(account: CustomerAccount, onOpenAddresses: (() -> Unit
                     account.name,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = OmaykanTheme.colors.ink,
+                    color = OmaykanTheme.colors.onForest,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     account.email,
                     style = MaterialTheme.typography.bodySmall,
-                    color = OmaykanTheme.colors.textSecondary,
+                    color = OmaykanTheme.colors.onForestMuted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -556,7 +546,7 @@ private fun LiveOrderCard(
             )
             Text(
                 listOf(
-                    order.stage?.label,
+                    order.stageLabel,
                     if (items > 0) "$items item${if (items == 1) "" else "s"}" else null,
                     Money.peso(order.totalCents),
                 ).filterNotNull().joinToString(" · "),

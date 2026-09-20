@@ -18,6 +18,7 @@ class PosRole extends Model
         'role_key',
         'name',
         'permissions',
+        'max_discount_percent',
     ];
 
     protected function casts(): array

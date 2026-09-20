@@ -33,4 +33,25 @@ trait ActsForAStore
 
         return $context;
     }
+
+    /**
+     * The same, for an action that *starts* something — a sale, a shift, a
+     * catalog change, a new member of staff — and so is refused for a tenant
+     * whose subscription has lapsed.
+     *
+     * The rule for an unpaid shop is "finish, don't start". Progressing an
+     * order a customer has already placed stays on `storeContext`, because
+     * refusing it strands somebody's dinner halfway to their door; the
+     * storefront is already closed, so no new ones arrive to be progressed.
+     *
+     * `grep writableStoreContext` is the list of what an unpaid shop cannot do.
+     * A new action that changes the shop's own records belongs on it.
+     */
+    protected function writableStoreContext(Request $request): StoreContext
+    {
+        $context = $this->storeContext($request);
+        $context->abortUnlessWritable();
+
+        return $context;
+    }
 }

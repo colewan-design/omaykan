@@ -56,7 +56,14 @@ class StoreDirectoryController extends Controller
         $lat = isset($validated['lat']) ? (float) $validated['lat'] : null;
         $lng = isset($validated['lng']) ? (float) $validated['lng'] : null;
 
-        $stores = $this->query($term)->get();
+        // Filtered through the verdict as well as the query's `tradable` scope:
+        // the scope covers suspension, this covers a lapsed subscription once
+        // billing is enforced. Same answer the shop's own page gives, so a card
+        // in this list never leads to a closed storefront.
+        $stores = $this->query($term)
+            ->get()
+            ->filter(fn (Store $store) => $store->organization?->accessVerdict()->allowsStorefront() ?? false)
+            ->values();
         $shelves = $this->sellableShelves($stores);
 
         $rows = $stores
@@ -96,6 +103,13 @@ class StoreDirectoryController extends Controller
                     // not be duplicated into every client that draws a badge.
                     'isNew' => $store->created_at !== null
                         && $store->created_at->gt(now()->subDays(self::NEW_SHOP_DAYS)),
+                    // Listed with a badge rather than hidden: a regular who
+                    // cannot find their shop assumes it has gone, and one who
+                    // sees "back at 4:00 PM" comes back at four.
+                    'orderingPaused' => $store->isOrderingPaused(),
+                    'orderingResumesAt' => $store->isOrderingPaused()
+                        ? $store->ordering_resumes_at?->toIso8601String()
+                        : null,
                     'distanceKm' => $this->distanceKm($store, $lat, $lng),
                 ];
             })
@@ -111,15 +125,14 @@ class StoreDirectoryController extends Controller
     private function query(string $term)
     {
         return Store::query()
-            ->with('organization')
+            ->with('organization.subscription')
             ->where('status', 'active')
             // Only modes that can put something in a cart, so a salon does not
             // appear in a list of places to order from.
             ->whereIn('business_mode', Store::ONLINE_MODES)
-            ->whereHas('organization', function ($query) {
-                $query->where('status', 'active')
-                    ->where(fn ($inner) => $inner->where('suspended', false)->orWhereNull('suspended'));
-            })
+            // The SQL half of "may this shop trade". The subscription half is
+            // dates and a config flag, and is applied to the results in index.
+            ->whereHas('organization', fn ($query) => $query->tradable())
             ->when($term !== '', function ($query) use ($term) {
                 // lower() + LIKE rather than ILIKE: the test suite runs on
                 // SQLite as well as PostgreSQL, and ILIKE exists only on one
@@ -270,10 +283,17 @@ class StoreDirectoryController extends Controller
      * @param  Collection<int, array<string, mixed>>  $rows
      * @return array<int, array<string, mixed>>
      */
+    /**
+     * Open shops first, then by distance when there is a location, then by
+     * name. A paused shop stays in the list (see index) but is not what a
+     * hungry person should see first.
+     */
     private function sort(Collection $rows, bool $hasLocation): array
     {
         if (! $hasLocation) {
-            return $rows->values()->all();
+            // Stable: the query already ordered by name, and that order holds
+            // within the open and the paused halves.
+            return $rows->sortBy(fn (array $row): int => $row['orderingPaused'] ? 1 : 0)->values()->all();
         }
 
         return $rows
@@ -281,7 +301,7 @@ class StoreDirectoryController extends Controller
                 $distance = $row['distanceKm'];
                 $measurable = $distance !== null && $distance <= self::MAX_DISTANCE_KM;
 
-                return [$measurable ? 0 : 1, $measurable ? $distance : 0, $row['name']];
+                return [$row['orderingPaused'] ? 1 : 0, $measurable ? 0 : 1, $measurable ? $distance : 0, $row['name']];
             })
             ->values()
             ->all();

@@ -1,10 +1,12 @@
 import { computed, ref, watch, type ComputedRef } from 'vue'
-import { totalsFor, useStorefrontCart, type CartLine } from '@pos/web/commerce/cart'
+import { priceOrder } from '@pos/shared/index'
+import { useStorefrontCart, type CartLine } from '@pos/web/commerce/cart'
 import { useCustomerAccount } from '@pos/web/commerce/customer'
 import { useStorefrontOrderHistory } from '@pos/web/commerce/orderHistory'
 import {
   ApiRequestError,
   createOnlineOrder,
+  quoteOnlineOrder,
   type CreateOnlineOrderResult,
   type CustomerAddress,
 } from '@pos/web/commerce/api'
@@ -172,7 +174,76 @@ export function useCheckout(lines: ComputedRef<CartLine[]>) {
 
   const outOfRange = computed(() => deliveryQuote.value?.serviceable === false)
 
-  const totals = computed(() => totalsFor(lines.value))
+  // ── Promo code ──────────────────────────────────────────────────────
+  //
+  // The server decides whether a code applies and for how much (the quote
+  // endpoint, the same rules checkout itself runs); the page only asks. What
+  // the code takes off is then priced here with priceOrder — the arithmetic
+  // the server charges with — so the VAT shown is the VAT charged.
+  const promoInput = ref('')
+  const appliedPromo = ref<{ code: string; description: string; discountCents: number } | null>(null)
+  const promoMessage = ref('')
+  const promoChecking = ref(false)
+
+  async function checkPromo(code: string): Promise<void> {
+    promoChecking.value = true
+    promoMessage.value = ''
+    try {
+      const quote = await quoteOnlineOrder(
+        lines.value.map((line) => ({ productId: line.product.id, quantity: line.quantity })),
+        { promoCode: code, phone: phone.value.trim() || null },
+      )
+      if (quote.promo?.ok) {
+        appliedPromo.value = { code: quote.promo.code, description: quote.promo.description, discountCents: quote.discountCents }
+      } else {
+        appliedPromo.value = null
+        promoMessage.value = quote.promo && !quote.promo.ok ? quote.promo.message : "That code doesn't apply."
+      }
+    } catch (err) {
+      appliedPromo.value = null
+      promoMessage.value = err instanceof Error && err.message ? err.message : "Couldn't check that code. Try again."
+    } finally {
+      promoChecking.value = false
+    }
+  }
+
+  function applyPromo() {
+    const code = promoInput.value.trim()
+    if (code === '' || promoChecking.value) return
+    void checkPromo(code)
+  }
+
+  function removePromo() {
+    appliedPromo.value = null
+    promoMessage.value = ''
+    promoInput.value = ''
+  }
+
+  // What a percentage takes off depends on the basket; a changed basket asks
+  // again rather than keeping a figure for lines that are no longer there.
+  watch(
+    () => lines.value.map((line) => `${line.product.id}:${line.quantity}`).join(','),
+    () => {
+      if (appliedPromo.value) void checkPromo(appliedPromo.value.code)
+    },
+  )
+
+  const totals = computed(() => {
+    const priced = priceOrder(
+      lines.value.map((line) => ({
+        lineTotalCents: Math.round(line.product.priceCents * line.quantity),
+        taxRate: line.product.taxRate,
+      })),
+      appliedPromo.value ? { kind: 'manual', amountCents: appliedPromo.value.discountCents } : null,
+    )
+    return {
+      itemCount: lines.value.reduce((sum, line) => sum + line.quantity, 0),
+      subtotalCents: priced.subtotalCents,
+      discountCents: priced.discountCents,
+      taxCents: priced.taxCents,
+      totalCents: priced.totalCents,
+    }
+  })
   const grandTotalCents = computed(() => totals.value.totalCents + deliveryFeeCents.value)
 
   function useMyLocation() {
@@ -235,6 +306,7 @@ export function useCheckout(lines: ComputedRef<CartLine[]>) {
           ...(isDelivery.value && hasDropPin.value ? { lat: dropLat.value!, lng: dropLng.value! } : {}),
         },
         paymentMethod.value,
+        appliedPromo.value?.code ?? null,
       )
 
       // Remembered before the lines leave the basket, so a storage failure
@@ -246,6 +318,7 @@ export function useCheckout(lines: ComputedRef<CartLine[]>) {
       })
       // Only what was ordered. Lines left unticked stay for next time.
       cart.removeMany(ordering.map((line) => line.product.id))
+      removePromo()
 
       placed.value = {
         ...result,
@@ -258,6 +331,13 @@ export function useCheckout(lines: ComputedRef<CartLine[]>) {
       if (err instanceof ApiRequestError && err.status === 401) {
         needsSignIn.value = true
         error.value = 'This store takes orders from signed-in shoppers only.'
+      } else if (err instanceof ApiRequestError && err.fields.includes('promoCode')) {
+        // The code stopped applying between the quote and the order — its
+        // last use went to someone else. Say so beside the code, take it off,
+        // and let the shopper decide: the order was not placed at full price.
+        appliedPromo.value = null
+        promoMessage.value = err.message
+        error.value = `${err.message} Your order hasn't been placed — check the new total and try again.`
       } else {
         error.value =
           err instanceof Error && err.message
@@ -297,6 +377,12 @@ export function useCheckout(lines: ComputedRef<CartLine[]>) {
     outOfRange,
     totals,
     grandTotalCents,
+    promoInput,
+    appliedPromo,
+    promoMessage,
+    promoChecking,
+    applyPromo,
+    removePromo,
     useMyLocation,
     canSubmit,
     placeOrder,

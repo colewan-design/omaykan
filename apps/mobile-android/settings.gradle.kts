@@ -129,3 +129,24 @@ rootProject.name = "omaykan-storefront"
 include(":app")
 include(":seller")
 include(":rider")
+
+/*
+ * Not three more apps: three test modules that exist only to be run against
+ * the three above, one each.
+ *
+ * Each drives a release build of its app on a rooted emulator, records which
+ * classes and methods ART actually touched, and writes that list back into the
+ * app as a baseline profile. The APK ships the list; on install, ART compiles
+ * those methods ahead of time instead of interpreting them and JIT-ing on the
+ * way. Compose is the reason this is worth three modules — its startup path is
+ * a great deal of library code that is cold on first run, every run, on every
+ * device that has just installed.
+ *
+ * One each rather than one shared, because a profile is a list of methods in
+ * one APK and cannot be pointed at another. They ship nothing, and
+ * `assembleRelease` does not run them. See baselineprofile/README.md for how
+ * to regenerate a profile and when it is worth doing.
+ */
+include(":baselineprofile")
+include(":baselineprofile-seller")
+include(":baselineprofile-rider")

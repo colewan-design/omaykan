@@ -35,6 +35,9 @@ class Store extends Model
         'lat',
         'lng',
         'image_path',
+        'ordering_paused_at',
+        'ordering_resumes_at',
+        'ordering_paused_by',
     ];
 
     protected function casts(): array
@@ -42,7 +45,47 @@ class Store extends Model
         return [
             'lat' => 'float',
             'lng' => 'float',
+            'ordering_paused_at' => 'datetime',
+            'ordering_resumes_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Whether the shop has paused its own online ordering right now.
+     *
+     * A pause whose resume time has passed is over, whether or not anything has
+     * cleared the columns: nothing needs to run at 4pm for a shop that said
+     * "back at 4pm" to be open at 4pm. The columns are cleared the next time
+     * someone touches the switch.
+     */
+    public function isOrderingPaused(): bool
+    {
+        if ($this->ordering_paused_at === null) {
+            return false;
+        }
+
+        return $this->ordering_resumes_at === null || $this->ordering_resumes_at->isFuture();
+    }
+
+    /**
+     * What to tell a shopper, in the shop's own time zone. Null when open.
+     */
+    public function orderingPausedMessage(): ?string
+    {
+        if (! $this->isOrderingPaused()) {
+            return null;
+        }
+
+        if ($this->ordering_resumes_at === null) {
+            return "This shop isn't taking orders right now.";
+        }
+
+        $resumes = $this->ordering_resumes_at->copy()->setTimezone($this->timezone ?: 'Asia/Manila');
+        $when = $resumes->isSameDay(now($resumes->timezone))
+            ? $resumes->format('g:i A')
+            : $resumes->format('D g:i A');
+
+        return "This shop isn't taking orders right now — back at {$when}.";
     }
 
     /** Both coordinates are needed before a delivery distance can be quoted. */

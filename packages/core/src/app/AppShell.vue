@@ -3,6 +3,7 @@ import { Bell, ChevronDown, Menu, Search, Store, X } from '@lucide/vue'
 import { computed, onMounted, onUnmounted, provide, ref, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppNav from '@pos/core/components/AppNav.vue'
+import TenantAccessNotice from '@pos/core/components/TenantAccessNotice.vue'
 import { useAuthStore } from '@pos/core/stores/auth'
 import { usePosStore } from '@pos/core/stores/pos'
 import { OPEN_APP_NAV } from '@pos/core/app/navDrawer'
@@ -203,6 +204,11 @@ onUnmounted(() => {
         </header>
 
         <main class="workspace-topbar__content" :class="{ 'workspace-topbar__content--register': isRegisterRoute }">
+          <!-- Keyed on the signed-in user so a new session asks the server
+               afresh rather than inheriting the last one's answer. Suspended
+               covers the whole shell from here; unpaid is a banner above the
+               page. -->
+          <TenantAccessNotice :key="auth.session?.userId ?? 'none'" @sign-out="handleLogout" />
           <RouterView />
         </main>
       </div>
@@ -286,6 +292,14 @@ onUnmounted(() => {
 .workspace-topbar__content--register {
   grid-template-rows: minmax(0, 1fr);
   min-height: 0;
+}
+
+/* The unpaid banner takes a row of its own above the till rather than the
+   till's flexible one. Only while it is showing: with no banner the till is
+   the sole child and must keep the whole height. (The suspended screen is
+   position: fixed and never a grid item.) */
+.workspace-topbar__content--register:has(> .tenant-banner) {
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .workspace-topbar {

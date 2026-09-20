@@ -2,6 +2,7 @@ package com.omaykan.seller.core.network
 
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import com.omaykan.seller.BuildConfig
+import com.omaykan.seller.core.realtime.ReverbConfig
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -27,6 +28,17 @@ object NetworkModule {
     @Singleton
     @ApiBaseUrl
     fun provideBaseUrl(): String = BuildConfig.API_BASE_URL.trimEnd('/')
+
+    /** Where Reverb is. An empty key turns the socket off; see OrderRealtime. */
+    @Provides
+    @Singleton
+    fun provideReverbConfig(): ReverbConfig = ReverbConfig(
+        key = BuildConfig.REVERB_APP_KEY,
+        host = BuildConfig.REVERB_HOST,
+        port = BuildConfig.REVERB_PORT,
+        path = BuildConfig.REVERB_PATH,
+        tls = BuildConfig.REVERB_TLS,
+    )
 
     @Provides
     @Singleton

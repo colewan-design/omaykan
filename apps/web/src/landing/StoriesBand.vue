@@ -139,7 +139,7 @@ const PEOPLE_IMAGE = '/storefront/people.webp'
   max-width: 40ch;
   font-size: 14.5px;
   line-height: 1.6;
-  color: rgba(251, 248, 243, 0.9);
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .sfstory__btn {

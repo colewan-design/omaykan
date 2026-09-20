@@ -31,6 +31,7 @@ import { subscribeToStoreOrders } from '@pos/core/realtime/orderChannel'
 import ChartCard from '@pos/core/components/ChartCard.vue'
 import RangeSelector, { type Range } from '@pos/core/components/RangeSelector.vue'
 import SettleOnlinePaymentSheet from '@pos/core/components/SettleOnlinePaymentSheet.vue'
+import OnlineOrderingSwitch from '@pos/core/components/OnlineOrderingSwitch.vue'
 
 const store = usePosStore()
 const auth = useAuthStore()
@@ -302,7 +303,6 @@ interface StatusRow {
 }
 
 const storeStatuses = computed<StatusRow[]>(() => {
-  const synced = store.settings.syncMode === 'online-sync'
   const shift = store.activeShift
   const shiftOpenedAt = shift
     ? new Intl.DateTimeFormat('en-PH', { hour: 'numeric', minute: '2-digit' }).format(new Date(shift.openedAt))
@@ -312,9 +312,9 @@ const storeStatuses = computed<StatusRow[]>(() => {
     {
       key: 'sync',
       label: 'POS Sync',
-      value: synced ? 'Online' : 'Local only',
-      caption: synced ? 'Syncing with your storefront' : 'This device keeps its own copy',
-      tone: synced ? 'good' : 'warn',
+      value: 'Online',
+      caption: 'Syncing with your storefront',
+      tone: 'good',
       icon: Monitor,
     },
     {
@@ -792,6 +792,10 @@ const recentOrders = computed(() =>
             <span>Open register</span>
           </RouterLink>
         </div>
+
+        <!-- The shop's own pause for online orders. Anyone with the Orders
+             page — the person at the counter mid-rush is the one who knows. -->
+        <OnlineOrderingSwitch v-if="auth.canAccess('orders')" />
       </div>
 
       <div class="hero__period">

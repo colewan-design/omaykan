@@ -63,6 +63,8 @@ data class Product(
     val businessModes: List<String>,
     val unitLabel: String?,
     val imageUrl: String?,
+    /** What the product is, in the shop's words. Shown on the storefront. */
+    val description: String? = null,
     /** On hand at this branch. Null when the product is not stock-tracked. */
     val stockQty: Double?,
     /** This branch's reorder level, else the product's own. Null: the till's default. */
@@ -114,6 +116,23 @@ data class ProductDraft(
     val stockQty: Double?,
     val lowStockThreshold: Double?,
     val active: Boolean,
+    /**
+     * How the product looks online. Null leaves all three exactly as the
+     * server has them — the keys are not sent at all — which is what every
+     * caller that never showed the merchant these fields must do.
+     */
+    val storefront: StorefrontFields? = null,
+)
+
+/**
+ * The storefront-facing fields the product form edits. Each is sent as given,
+ * null included: a cleared photo or description is the merchant removing it.
+ */
+data class StorefrontFields(
+    /** A URL — upload a picked photo first, see CatalogRepository.uploadPhoto. */
+    val imageUrl: String?,
+    val unitLabel: String?,
+    val description: String?,
 )
 
 /** 3 → "3", 1.5 → "1.5", 0.25 → "0.25". A grocery sells by the kilo. */

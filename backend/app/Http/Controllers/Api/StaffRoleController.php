@@ -24,6 +24,9 @@ class StaffRoleController extends Controller
                 'id' => $role->role_key,
                 'name' => $role->name,
                 'permissions' => $role->permissions,
+                // Null when the shop has not set one; the till falls back to
+                // the same defaults RolePermissions holds.
+                'maxDiscountPercent' => $role->max_discount_percent,
             ]);
 
         return response()->json([
@@ -33,7 +36,7 @@ class StaffRoleController extends Controller
 
     public function sync(Request $request)
     {
-        $context = $this->storeContext($request);
+        $context = $this->writableStoreContext($request);
 
         // Roles decide what everyone else in the shop may do, so this is not a
         // thing a cashier changes. The device era could not draw this line at
@@ -45,6 +48,7 @@ class StaffRoleController extends Controller
             'roles.*.id' => ['required', 'string', 'max:80'],
             'roles.*.name' => ['required', 'string', 'max:120'],
             'roles.*.permissions' => ['required', 'array'],
+            'roles.*.maxDiscountPercent' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:100'],
         ]);
 
         $incomingRoleKeys = [];
@@ -61,7 +65,12 @@ class StaffRoleController extends Controller
                     'name' => $roleData['name'],
                     'permissions' => $roleData['permissions'],
                     'deleted_at' => null,
-                ],
+                ] + (array_key_exists('maxDiscountPercent', $roleData)
+                    // Only when sent: a till from before discount limits
+                    // saving its roles must not wipe one an owner set. Admin
+                    // is always 100 and never stored; see RolePermissions.
+                    ? ['max_discount_percent' => $roleData['id'] === 'admin' ? null : $roleData['maxDiscountPercent']]
+                    : []),
             );
         }
 

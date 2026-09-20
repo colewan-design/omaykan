@@ -158,7 +158,8 @@ Then, on the server, before swapping:
 - `rsync -a` the live `storage/app/` across. **This is now load-bearing.** The
   private disk holds rider licence and plate photos (`rider-documents/`) and,
   since 2026-08-28, the photo each shop owner uploads for their own shop
-  (`store-images/`, written by `StoreImageController`). Skipping this step
+  (`store-images/`, written by `StoreImageController`), and since 2026-09-19
+  product photos (`product-images/`, see §6b). Skipping this step
   leaves every store record pointing at a file that is no longer there, and the
   shop directory silently falls back to a product photo.
 - create `storage/framework/{cache/data,sessions,views}`, `storage/logs`,
@@ -187,19 +188,140 @@ sudo -u www-data env HOME=/tmp php artisan ...
 
 Directory swaps are reversible.
 
-**Updated 2026-09-16, 15:05 UTC.** Frontend and backend: shop subdomains
-(`ccf0abb`). No migration — production already had all 30. nginx gained the
-`omaykan-shops` site and lost the `baguioonlinemarket.salidumay.com` alias
-earlier the same day (§1, §6a); neither is undone by a directory swap.
+**Updated 2026-09-19, 00:55 UTC.** Frontend only, signup page only again:
+signing in on `/seller/signup` now lands in `/app` signed in. Until now it
+bound the browser to the shop and sent it to `/app` with no session, so the
+register bounced to `/app/auth?redirect=/dashboard` and asked for the same
+password again. That looked like the first sign-in had failed.
 
 | | Roll back to | Holds |
 |---|---|---|
-| Frontend | `web.bak-20260916-230147-shop-subdomains` | the 2026-09-13 21:26 build, no `shop.html` |
-| Backend | `backend.bak-20260916-150348-shop-subdomains` | the 2026-09-13 09:26 release, no slug rules |
-| Database | `/root/db-backups/omaykan-predeploy-20260916-150348-shop-subdomains.sql.gz` | taken before the swap; nothing changed it |
+| Frontend | `web.bak-20260919-005555-signup-sign-in-handoff` | the 00:42 build: redesigned page, sign-in asks twice |
+| Backend | `backend.bak-20260916-150348-shop-subdomains` | unmoved |
 
-(The frontend label uses the deploying laptop's clock, UTC+8; the backend's
-uses the server's, UTC. They are the same deploy.)
+**`/app` was not redeployed, and does not need to be.** The signup page now
+finishes the sign-in itself. It claims the local cache for the shop (the same
+wipe `/app` does at boot, now shared as `claimLocalCacheFor` in
+`tenantBinding.ts`), trades the sign-in token at `/api/staff/session-store`,
+and writes the session where `/app` reads it at boot. The live `/app` bundle
+(`app-DHslhQYz.js`) picks it up unchanged. That was tested end to end against
+production with the two sign-in calls stubbed: `/app/dashboard`, signed in as
+the stubbed user. A refused `session-store` (e.g. a suspended shop) leaves the
+person on the signup page with the server's message.
+
+`/app` could not have been rebuilt cleanly anyway. The live bundle contains
+changes that are in neither `HEAD` nor separable from the unreleased work in
+the tree. Vue's scoped-style ids hash each component's source, so a component
+that differs shows up as a different `data-v-*`, and the dashboard's does.
+
+Same method as 00:42: live tree plus `signup.html` and three new files
+(`signup-*.js/css`, `tenantBinding-*.js`). `signup.html` was pointed back at
+the live `app-7AsGTDy6.css`. The rebuilt one differed only by an unreleased
+`.ps-textarea` rule. The new `tenantBinding` chunk bundles the working tree's
+`packages/data`, but the page runs only the cache wipe, the repository
+constructor and the store open from it. The one extra write, a tenant-access
+status key, is ignored by the live `/app`.
+
+**The 2026-09-19 00:42 UTC release, for reference.** Frontend only, and only one page: the
+seller signup redesign at `/seller/signup` — a new pitch (`MerchantPitch.vue`),
+header and footer, and the form split into two steps (account, then store).
+It posts the same fields to the same `POST /api/signup`. No backend, no
+migration, no nginx change.
+
+| | Roll back to | Holds |
+|---|---|---|
+| Frontend | `web.bak-20260919-004201-seller-signup-redesign` | the 2026-09-18 white-storefront build, old signup page |
+| Backend | `backend.bak-20260916-150348-shop-subdomains` | unmoved |
+
+**This was not a full-tree build, on purpose.** The working tree also held that
+morning's unreleased work — tenant access, the shop ordering pause, plan
+pricing — whose backend (three new migrations) is not deployed. A normal build
+would have shipped all of it. Instead the release is a copy of the live tree
+plus exactly what the signup page needs: the new `signup.html`, the seven
+chunks its import graph reaches that were not already live (`signup-*.js/css`,
+`tenantBinding-*`, and four lucide icon chunks), and
+`hero-merchant-redesign.webp`. `diff -rq` against the live tree showed nothing
+else. The one shared chunk that changed, `tenantBinding`, differs from the live
+one only in which icons it bundles. Every other entry still serves its
+2026-09-18 bytes, so **the next full build will still ship everything else in
+the working tree as new**.
+
+Verified after the swap: `/seller/signup` and `/signup` (301) serve the new
+title and bundle, the catalog call returns 200, and a headless browser at 1440
+and 390px found no console errors, failed requests, broken images or
+horizontal overflow, and walked both form steps (it did not submit).
+
+**The 2026-09-18 13:03 UTC release, for reference.** Frontend only: the storefront's cream
+ground and sand surfaces became white and neutral grey — landing, shop pages,
+account, cart and checkout. Platform admin, rider portal and the POS themes are
+untouched. No backend, no migration, no nginx change.
+
+| | Roll back to | Holds |
+|---|---|---|
+| Frontend | `web.bak-20260918-210330-white-storefront` | the 2026-09-17 15:10 shop desktop layout build, cream ground |
+| Backend | `backend.bak-20260916-150348-shop-subdomains` | unmoved — see below |
+
+Verified after the swap: the catalog call returns 200, `/`, `/cart`, `/account`
+and `nenas-market-stall.omaykan.com` serve their own titles, and the served
+CSS has `body { background: #fff }` with no cream values left in it.
+
+**The 2026-09-17 15:10 release, for reference.** Frontend only: the shop page's desktop
+layout. Until now the page was the same phone-width shell at every size; at
+`min-width: 1000px` it now has a site header with search and nav, a two-column
+body with a sticky right rail (cart, store information, "Why shop here?"), a
+Best Sellers row, an All Products grid with a sort control, and a footer. CSS
+only for the split — the mobile shell is untouched below 1000px. No backend,
+no migration, no nginx change.
+
+| | Roll back to | Holds |
+|---|---|---|
+| Frontend | `web.bak-20260917-151008-shop-desktop-layout` | the 14:37 redesign build, phone-width at every size |
+| Backend | `backend.bak-20260916-150348-shop-subdomains` | the 2026-09-13 09:26 release, no slug rules |
+| Database | `/root/db-backups/omaykan-predeploy-20260916-150348-shop-subdomains.sql.gz` | taken before the 2026-09-16 swap; unaffected since |
+
+**One defect was caught before this shipped, and is worth remembering.**
+`.shop-profile__heading` is lifted onto the cover with `top: -36px`, and the
+desktop cover is only 178px tall, so the `<h1>` landed on top of
+`.shop-hero__sign` — the painted sign that already carries the shop's name.
+Both shops' names printed over each other, 242–335px of overlap on all four
+live shops at every width from 1100px up. The fix hides the sign at desktop
+and lets the real heading carry the name. **Measure it, do not look at it:**
+the page has no console error and no layout overflow in either state, so
+nothing but geometry tells the two apart. Comparing the heading's rectangle
+against the sign's at 1100/1240/1440px is what found it.
+
+Verified after the swap, at 1440px and 420px on all four shops: the sign is
+hidden at desktop and still drawn on mobile, the heading collides with
+nothing, no horizontal overflow, no console errors, every title its shop's
+name, and no broken images (SM's slow-loading `smmarkets.ph` hotlinks are
+third-party and predate this work).
+
+**The 14:37 release, for reference.** Frontend only: the shop page redesign —
+`ShopPage.vue` rebuilt around a single phone-width shell with its own
+`store-menu.css`, a new default cover photo, and no `FdHeader`/`FdFooter`.
+No backend, no migration, no nginx change: the page is served by the
+`omaykan-shops` block that has been in place since 2026-09-16 (§6a), and the
+new cover is an ordinary file under the web root that `location /` already
+serves. The backend rollback point below is therefore unmoved from the
+2026-09-16 deploy, and still matches what is running.
+
+Its rollback point was `web.bak-20260917-143737-shop-page-redesign`, which
+holds the 2026-09-16 shop-subdomains build and the pre-redesign shop page;
+that directory is still on the box.
+
+Verified after the swap: the catalog call returns 200, and
+`nenas-market-stall.omaykan.com` renders in a headless browser with its title
+set to the shop's name, all images loading and no console or page errors.
+
+**The 2026-09-16 release, for reference.** Frontend and backend: shop
+subdomains (`ccf0abb`). No migration — production already had all 30. nginx
+gained the `omaykan-shops` site and lost the
+`baguioonlinemarket.salidumay.com` alias earlier the same day (§1, §6a);
+neither is undone by a directory swap. Its frontend rollback point was
+`web.bak-20260916-230147-shop-subdomains`, which held the 2026-09-13 21:26
+build and no `shop.html`; that directory is still on the box. Its frontend
+label used the deploying laptop's clock, UTC+8, while the backend's used the
+server's, UTC — they were the same deploy.
 
 **The first backend swap served 500s for about a minute.** The live `.env`
 was copied into the release with a plain `cp` as root, which left it
@@ -739,6 +861,62 @@ server {
 **3. Build** with `VITE_SHOP_ROOT_DOMAIN=omaykan.com` in `.env.production`, and
 after any frontend deploy check a shop subdomain's `<title>` names the shop
 once the page has loaded — the static HTML's own title is just "Shop".
+
+---
+
+## 6b. Subscription, suspension and merchant features — first deploy
+
+Built 2026-09-19 ([subscription-and-suspension.md](./subscription-and-suspension.md),
+[merchant-features.md](./merchant-features.md)). A normal deploy runs the
+eight new migrations (`2026_09_19_000100` … `000800`). These are the steps a
+normal deploy does **not** do. Do them once, in this order.
+
+0. **Online-only checkout.** The till is online-only from this
+   release: sales go to `POST /api/register/orders`, and `/api/sync/push`
+   no longer records them. A sale still queued on a till from before is
+   refused as `failed` and stays on that till; afterwards,
+   `select store_id, user_id, count(*) from sync_events where entity_type = 'order'
+   and failed_at is not null group by 1, 2` shows which tills hold one.
+   **Deploy the backend before the web build** — a new till against an old
+   backend fails every sale.
+
+1. **Run the migrations.** `000500` also rewrites `products.tax_rate` values
+   between 0 and 1 (a fraction the till wrote) into percentages. Nothing to
+   choose; the rewrite is logged in the migration.
+2. **Trials.** `php artisan billing:backfill-trials --dry-run`, read the
+   output, then run it without `--dry-run`. Enforcement stays off
+   (`BILLING_ENFORCE` unset) either way.
+3. **Product photos.** `php artisan products:extract-inline-images --dry-run`,
+   then for real. Moves base64 photos out of product rows into
+   `storage/app/private/product-images/`. Include that directory in whatever
+   backs up `storage/`.
+4. **The scheduler — new, and required.** Nothing ran on a schedule before.
+   Artisan runs as `www-data` (§3.2), so the line goes in that user's crontab
+   (`crontab -u www-data -e`):
+
+   ```cron
+   * * * * * cd /var/www/omaykan/backend && php8.3 artisan schedule:run >> /dev/null 2>&1
+   ```
+
+   It runs `products:sweep-images` weekly, and `loyalty:expire` and
+   `billing:advance-subscriptions` daily. `php artisan schedule:list` shows all
+   three. Without it, orphaned photos accumulate, expired points are never
+   written off and no subscription ever lapses — nothing breaks.
+
+   Before letting the billing one run on its own, check it by hand:
+   `php artisan billing:advance-subscriptions --dry-run` should report nothing
+   to do, because step 2 put every organization inside a trial and no row has a
+   billing period yet. Anything else means the backfill did not take.
+   Dunning mail is off separately (`BILLING_DUNNING` unset) — see
+   subscription-and-suspension.md §6.4.
+5. **Seller app build.** Set `OMAYKAN_REVERB_APP_KEY` (the backend's
+   `REVERB_APP_KEY`, public) in the environment of the build that produces the
+   seller APK. Without it the app still works and polls every 15 seconds, as
+   before. Host, port and path default to production's (`omaykan.com`, 443,
+   `/reverb`).
+
+Everything new is reachable on the existing nginx configuration; no new host
+or path is needed.
 
 ---
 

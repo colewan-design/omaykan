@@ -5,6 +5,7 @@ import {
   demoCategories,
   demoProducts,
   guestCustomerName,
+  priceOrder,
   slugTicket,
   type AppEvent,
   type AuthSession,
@@ -200,9 +201,16 @@ export function createDemoPosRepository(): PosRepository {
     },
 
     async saveOrder(input: CreateOrderInput) {
-      const subtotalCents = input.items.reduce((sum, item) => sum + item.lineTotalCents, 0)
-      const taxCents = Math.round(subtotalCents * 0.12)
-      const totalCents = subtotalCents + taxCents
+      // The same pricing the real register records — see priceOrder.
+      const items = input.items.map((item) => ({
+        ...item,
+        taxRate: item.taxRate ?? products.find((product) => product.id === item.productId)?.taxRate ?? 0.12,
+      }))
+      const priced = priceOrder(
+        items.map((item) => ({ lineTotalCents: item.lineTotalCents, taxRate: item.taxRate })),
+        input.discount,
+      )
+      const { subtotalCents, discountCents, taxCents, totalCents } = priced
       const order: OrderSummary = {
         id: crypto.randomUUID(),
         ticketNumber: slugTicket(crypto.randomUUID()),
@@ -214,12 +222,14 @@ export function createDemoPosRepository(): PosRepository {
         status: 'preparing',
         paymentMethod: input.paymentMethod,
         subtotalCents,
+        discountCents,
+        discount: priced.discount,
         taxCents,
         totalCents,
         tenderedCents: input.tenderedCents,
         changeCents: Math.max(input.tenderedCents - totalCents, 0),
         createdAt: new Date().toISOString(),
-        items: input.items,
+        items,
       }
       orders = [order, ...orders]
 
@@ -586,6 +596,10 @@ export function createDemoPosRepository(): PosRepository {
       return null
     },
 
+    async adoptRemoteSignIn() {
+      return null
+    },
+
     async remoteAuthAvailable() {
       return false
     },
@@ -665,6 +679,79 @@ export function createDemoPosRepository(): PosRepository {
     async getSyncStoreId() {
       // The marketing demo has no backend store to subscribe to.
       return null
+    },
+
+    // No server, so nobody to suspend it: the demo always trades.
+    async loadTenantAccess() {
+      return { access: 'allowed' as const, message: null }
+    },
+
+    async refreshTenantAccess() {
+      return { access: 'allowed' as const, message: null }
+    },
+
+    onTenantAccessChange() {
+      return () => {}
+    },
+
+    // No storefront behind the demo, so nothing to pause.
+    async loadOrderingState() {
+      return null
+    },
+
+    // Nothing to bill in a demo, and nobody to bill. Null is what a till with
+    // no server behind it returns, so the Subscription panel renders nothing.
+    async loadSubscription() {
+      return null
+    },
+
+    async submitSubscriptionPayment() {
+      throw new Error('The demo has no subscription to pay for.')
+    },
+
+    async setOrderingPaused() {
+      throw new Error('The demo has no online storefront to pause.')
+    },
+
+    async checkPromoCode() {
+      throw new Error('Promo codes need a real shop — the demo has none.')
+    },
+
+    // No server behind the demo, so no points programme.
+    async loadLoyaltyProgram() {
+      return null
+    },
+
+    async saveLoyaltyProgram() {
+      throw new Error('Points need a real shop — the demo has none.')
+    },
+
+    async loadLoyaltyBalances() {
+      return {}
+    },
+
+    async loadCustomerLoyalty() {
+      return { balance: 0, enrolled: false, entries: [] }
+    },
+
+    async checkLoyaltyRedemption() {
+      throw new Error('Points need a real shop — the demo has none.')
+    },
+
+    async adjustLoyalty() {
+      throw new Error('Points need a real shop — the demo has none.')
+    },
+
+    async loadPromoCodes() {
+      return null
+    },
+
+    async savePromoCode() {
+      throw new Error('Promo codes need a real shop — the demo has none.')
+    },
+
+    async deletePromoCode() {
+      throw new Error('Promo codes need a real shop — the demo has none.')
     },
 
     async loadAppEvents() {

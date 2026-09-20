@@ -5,7 +5,7 @@
  * alongside it.
  *
  * The palette is the highland redesign's: deep forest green for the chrome,
- * a cream ground, sand for quiet surfaces, terracotta for the thing to press,
+ * a white ground, light grey for quiet surfaces, terracotta for the thing to press,
  * and a little gold for the sun in the mark. Headings are set in a serif,
  * body copy stays in the system sans.
  */
@@ -16,9 +16,9 @@ html {
 
 body {
   margin: 0;
-  /* Cream, the redesign's ground. Hard-coded rather than a token because body
+  /* White, the ground. Hard-coded rather than a token because body
      sits outside `.fd`. */
-  background: #f6f1e8;
+  background: #ffffff;
   color: #231d18;
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -47,10 +47,10 @@ a {
   --sf-forest: #1f2e25;
   --sf-forest-deep: #17231c;
   --sf-forest-soft: #2b3f33;
-  --sf-cream: #f6f1e8;
-  --sf-paper: #fbf8f3;
-  --sf-sand: #ede5d8;
-  --sf-sand-deep: #e2d7c5;
+  --sf-cream: #ffffff;
+  --sf-paper: #ffffff;
+  --sf-sand: #eeeeee;
+  --sf-sand-deep: #dedede;
   --sf-clay: #b4532a;
   --sf-clay-deep: #93401d;
   --sf-gold: #d9a35b;
@@ -62,7 +62,7 @@ a {
   --sf-ink: #231d18;
   --sf-muted: #6f665c;
   --sf-faint: #9a9086;
-  --sf-rule: #e4dacb;
+  --sf-rule: #e5e5e5;
 
   --sf-serif: 'Libre Caslon Text', Georgia, 'Times New Roman', serif;
   --sf-script: 'Caveat', 'Segoe Script', cursive;

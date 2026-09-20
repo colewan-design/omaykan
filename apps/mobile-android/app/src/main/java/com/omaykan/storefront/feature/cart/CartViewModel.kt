@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.navigation.toRoute
 import com.omaykan.storefront.core.data.CartRepository
 import com.omaykan.storefront.core.data.CatalogRepository
+import com.omaykan.storefront.core.data.SavedProductsStore
 import com.omaykan.storefront.core.model.Cart
 import com.omaykan.storefront.core.model.StoreRef
 import com.omaykan.storefront.navigation.CartRoute
@@ -20,6 +21,8 @@ import javax.inject.Inject
 data class CartUiState(
     val cart: Cart,
     val shopName: String = "",
+    /** Fully-qualified ids of hearted products - see SavedProductsStore. */
+    val savedIds: Set<String> = emptySet(),
 )
 
 @HiltViewModel
@@ -27,6 +30,7 @@ class CartViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val cartRepository: CartRepository,
     catalogRepository: CatalogRepository,
+    private val savedProductsStore: SavedProductsStore,
 ) : ViewModel() {
 
     private val route = savedStateHandle.toRoute<CartRoute>()
@@ -35,8 +39,9 @@ class CartViewModel @Inject constructor(
     val state: StateFlow<CartUiState> = combine(
         cartRepository.cart(ref),
         catalogRepository.cached(ref),
-    ) { cart, catalog ->
-        CartUiState(cart = cart, shopName = catalog?.shop?.name.orEmpty())
+        savedProductsStore.saved,
+    ) { cart, catalog, saved ->
+        CartUiState(cart = cart, shopName = catalog?.shop?.name.orEmpty(), savedIds = saved)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -54,6 +59,18 @@ class CartViewModel @Inject constructor(
     fun remove(productId: String) {
         viewModelScope.launch { cartRepository.remove(ref, productId) }
     }
+
+    /**
+     * The heart on a cart line — the reference's "keep this for later" beside
+     * the bin. It only saves; it leaves the line in the basket, because moving
+     * something out of an order is the bin's job and the two must not blur.
+     */
+    fun toggleSaved(productId: String) {
+        viewModelScope.launch { savedProductsStore.toggle(savedKey(productId)) }
+    }
+
+    /** A product id is only unique inside its own shop's catalog. */
+    fun savedKey(productId: String): String = ref.key + "/" + productId
 
     /** Clears the lines the shop no longer sells, and only those. */
     fun dropUnavailable() {

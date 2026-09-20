@@ -82,8 +82,18 @@ class OrderTimelineTest {
      * TrackedOrder.stage. Both wire words for it count.
      */
     @Test
-    fun `a rider holding the order lights on the way`() {
-        assertEquals("On the way", current(order(status = "preparing", deliveryStage = "assigned")).label)
+    fun `a rider holding the order lights the rider step`() {
+        val assigned = trackSteps(order(status = "preparing", deliveryStage = "assigned"))
+        val pickedUp = trackSteps(order(status = "ready", deliveryStage = "picked_up"))
+
+        assertEquals(3, assigned.indexOfFirst { it.state == StepState.Current })
+        assertEquals(3, pickedUp.indexOfFirst { it.state == StepState.Current })
+    }
+
+    /** Accepted is not collected, and the headline says which. */
+    @Test
+    fun `an accepted order reads rider assigned until it is picked up`() {
+        assertEquals("Rider assigned", current(order(status = "preparing", deliveryStage = "assigned")).label)
         assertEquals("On the way", current(order(status = "ready", deliveryStage = "picked_up")).label)
     }
 

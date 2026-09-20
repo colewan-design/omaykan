@@ -51,6 +51,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.omaykan.storefront.core.designsystem.CtaButton
+import com.omaykan.storefront.core.designsystem.ForestTopBar
 import com.omaykan.storefront.core.designsystem.Refreshable
 import com.omaykan.storefront.core.designsystem.RefreshableFill
 import com.omaykan.storefront.core.designsystem.LoadingState
@@ -80,6 +82,7 @@ import java.util.Locale
 fun OrdersScreen(
     onOpenOrder: (String) -> Unit,
     modifier: Modifier = Modifier,
+    onBack: (() -> Unit)? = null,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     /**
      * A filter asked for from somewhere else — the account page's stage tiles.
@@ -100,33 +103,19 @@ fun OrdersScreen(
 
     val state by viewModel.state.collectAsStateWithLifecycle()
 
-    Column(
-        modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
-    ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "Orders",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
+    Column(modifier.fillMaxSize()) {
+        ForestTopBar(title = "Your Orders", onBack = onBack)
+
+        // Only worth its space once there is a list to search. One or two
+        // orders are read, not queried.
+        if (state.orders.size > 2) {
+            SearchField(
+                query = state.query,
+                onQuery = viewModel::onQuery,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 4.dp),
             )
-            // Only worth its space once there is a list to search. One or two
-            // orders are read, not queried.
-            if (state.orders.size > 2) {
-                SearchField(
-                    query = state.query,
-                    onQuery = viewModel::onQuery,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(start = 14.dp),
-                )
-            }
         }
 
         if (state.orders.isNotEmpty()) {
@@ -448,26 +437,13 @@ private fun OrderCard(
                 )
             }
 
-            Button(
+            CtaButton(
+                text = if (order.status in OrdersUiState.TERMINAL) "Order Details" else "Track Order",
                 onClick = onClick,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 12.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = OmaykanTheme.colors.ink,
-                    contentColor = OmaykanTheme.colors.onInk,
-                ),
-            ) {
-                Text(
-                    text = if (order.status in OrdersUiState.TERMINAL) {
-                        "Order details"
-                    } else {
-                        "Track order"
-                    },
-                    modifier = Modifier.padding(vertical = 2.dp),
-                )
-            }
+            )
         }
     }
 }

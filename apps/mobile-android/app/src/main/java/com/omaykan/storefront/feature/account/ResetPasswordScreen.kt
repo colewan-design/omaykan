@@ -39,6 +39,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.omaykan.storefront.core.designsystem.CtaButton
+import com.omaykan.storefront.core.designsystem.ForestTopBar
 import com.omaykan.storefront.core.designsystem.OmaykanTheme
 
 /**
@@ -66,11 +68,14 @@ fun ResetPasswordScreen(
         if (state.done != null) onDone()
     }
 
+    Column(modifier.fillMaxSize()) {
+    ForestTopBar(title = "New Password")
+
     Column(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp, vertical = 32.dp),
+            .padding(horizontal = 24.dp, vertical = 28.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
@@ -173,31 +178,17 @@ fun ResetPasswordScreen(
 
         Spacer(Modifier.height(4.dp))
 
-        Button(
+        CtaButton(
+            text = "Save and sign in",
             onClick = {
                 keyboard?.hide()
                 viewModel.submit()
             },
             enabled = state.canSubmit,
+            busy = state.busy,
             shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = OmaykanTheme.colors.ink,
-                contentColor = OmaykanTheme.colors.onInk,
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
-        ) {
-            if (state.busy) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                    color = OmaykanTheme.colors.onInk,
-                )
-            } else {
-                Text("Save and sign in", fontWeight = FontWeight.SemiBold)
-            }
-        }
+            modifier = Modifier.fillMaxWidth(),
+        )
 
         // Said plainly, because it is a consequence people do not expect: the
         // server drops every other token on the account as part of the reset.
@@ -206,5 +197,6 @@ fun ResetPasswordScreen(
             style = MaterialTheme.typography.bodySmall,
             color = OmaykanTheme.colors.textTertiary,
         )
+    }
     }
 }

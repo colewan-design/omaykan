@@ -37,7 +37,12 @@ class SyncApiTest extends TestCase
             ->assertJsonPath('user.roleId', 'admin');
     }
 
-    public function test_authenticated_device_can_bootstrap_and_push_orders(): void
+    /**
+     * Sales are recorded through /api/register/orders now. An order event
+     * still queued on an old till fails — kept on the till — rather than
+     * being recorded without the register's checks.
+     */
+    public function test_authenticated_device_can_bootstrap_and_order_events_are_no_longer_applied(): void
     {
         $this->seed();
 
@@ -110,18 +115,10 @@ class SyncApiTest extends TestCase
         $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/sync/push', $payload)
             ->assertOk()
-            ->assertJsonPath('results.0.status', 'applied');
+            ->assertJsonPath('results.0.status', 'failed');
 
-        $this->assertDatabaseHas('orders', [
+        $this->assertDatabaseMissing('orders', [
             'id' => '22222222-2222-7222-8222-222222222222',
-            'ticket_number' => 'TKT-0001',
-        ]);
-
-        $this->assertDatabaseHas('inventory_adjustments', [
-            'organization_id' => $organization->id,
-            'store_id' => $store->id,
-            'order_id' => '22222222-2222-7222-8222-222222222222',
-            'adjustment_type' => 'sale',
         ]);
     }
 

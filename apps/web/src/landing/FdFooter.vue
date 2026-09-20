@@ -142,7 +142,7 @@ function backToTop() {
   display: block;
   margin: 0 auto 40px;
   padding: 12px 28px;
-  border: 1px solid rgba(246, 241, 232, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 999px;
   background: transparent;
   color: var(--sf-cream);
@@ -175,7 +175,7 @@ function backToTop() {
   max-width: 22ch;
   font-size: 13.5px;
   line-height: 1.5;
-  color: rgba(246, 241, 232, 0.7);
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .fd-footer__title {
@@ -186,10 +186,10 @@ function backToTop() {
   color: var(--sf-paper);
 }
 
-.fd-footer__cols a { font-size: 13.5px; color: rgba(246, 241, 232, 0.75); }
+.fd-footer__cols a { font-size: 13.5px; color: rgba(255, 255, 255, 0.75); }
 .fd-footer__cols a:hover { color: #fff; text-decoration: underline; text-underline-offset: 3px; }
 
-.fd-footer__note { margin: 0; font-size: 13px; line-height: 1.55; color: rgba(246, 241, 232, 0.66); }
+.fd-footer__note { margin: 0; font-size: 13px; line-height: 1.55; color: rgba(255, 255, 255, 0.66); }
 
 /* Sits directly under its "Contact us" link rather than a gap away, so the two
    read as one item in the column. */
@@ -215,9 +215,9 @@ function backToTop() {
   gap: 8px 24px;
   margin: 36px 0 0;
   padding-top: 20px;
-  border-top: 1px solid rgba(246, 241, 232, 0.14);
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
   font-size: 12.5px;
-  color: rgba(246, 241, 232, 0.55);
+  color: rgba(255, 255, 255, 0.55);
 }
 
 .fd-footer__motto { font-family: var(--sf-serif); font-style: italic; }

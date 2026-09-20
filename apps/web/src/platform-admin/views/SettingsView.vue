@@ -8,19 +8,21 @@ import type { Operator } from '../api'
 
 // The marketplace's own record, and the two policies it sets centrally.
 //
-// Three of these tabs save; two do not, and say so. A toggle that cannot
+// Four of these tabs save; two do not, and say so. A toggle that cannot
 // actually change the thing it names is worse than no toggle — see
 // PlatformSettingsController for why payments and operator accounts are not
-// editable from here.
+// editable from here, and config/billing.php for why billing enforcement is
+// not either.
 
 const props = defineProps<{ operator: Operator | null }>()
 
-type Tab = 'store' | 'delivery' | 'notifications' | 'payments' | 'security'
+type Tab = 'store' | 'delivery' | 'subscription' | 'notifications' | 'payments' | 'security'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'store', label: 'Store info' },
   { key: 'payments', label: 'Payments' },
   { key: 'delivery', label: 'Delivery' },
+  { key: 'subscription', label: 'Subscription' },
   { key: 'notifications', label: 'Notifications' },
   { key: 'security', label: 'Security' },
 ]
@@ -81,6 +83,19 @@ function saveDelivery() {
 function saveNotifications() {
   if (!settings.value) return
   save({ notifications: settings.value.notifications })
+}
+
+function savePlan() {
+  if (!settings.value) return
+  save({ plan: { amountCents: settings.value.plan.amountCents } })
+}
+
+/** Same pesos-in, centavos-out rule as the delivery fees. */
+const planPesos = {
+  get: () => (settings.value ? settings.value.plan.amountCents / 100 : 0),
+  set: (value: number) => {
+    if (settings.value) settings.value.plan.amountCents = Math.round(Number(value || 0) * 100)
+  },
 }
 
 /** Pesos in the field, centavos on the wire — the schema stores centavos. */
@@ -217,6 +232,50 @@ const NOTIFICATIONS: { key: keyof Settings['notifications']; label: string; note
               </span>
             </label>
           </div>
+
+          <div class="set__actions">
+            <button type="submit" class="adm-btn" :disabled="saving">{{ saving ? 'Saving…' : 'Save changes' }}</button>
+          </div>
+        </form>
+
+        <!-- ── Subscription ───────────────────────────────────────────── -->
+        <form v-else-if="tab === 'subscription'" class="set__form" @submit.prevent="savePlan">
+          <h2 class="adm-h2">Merchant subscription</h2>
+          <p class="set__hint">
+            What a new shop's subscription is recorded at when it signs up. Changing it re-prices
+            nobody who has already signed up — each shop keeps the amount it joined at. Nothing
+            charges this yet: Omaykan is free during early access.
+          </p>
+
+          <div class="set__grid">
+            <label class="set__label">
+              Monthly price (₱)
+              <span class="adm-field">
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  :value="planPesos.get()"
+                  @input="planPesos.set(Number(($event.target as HTMLInputElement).value))"
+                />
+              </span>
+              <small>Plan: {{ settings.plan.id }}</small>
+            </label>
+          </div>
+
+          <dl class="set__facts">
+            <div>
+              <dt>Enforcement</dt>
+              <dd v-if="settings.billingEnforced">
+                On — a shop with a lapsed subscription can read its records but not sell, and its
+                storefront is closed.
+              </dd>
+              <dd v-else>
+                Off — subscriptions are recorded and never block anyone. Suspension still applies.
+                Set <code>BILLING_ENFORCE</code> on the server to change this.
+              </dd>
+            </div>
+          </dl>
 
           <div class="set__actions">
             <button type="submit" class="adm-btn" :disabled="saving">{{ saving ? 'Saving…' : 'Save changes' }}</button>

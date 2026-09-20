@@ -26,6 +26,7 @@ class PlatformSetting extends Model
         'contact_phone',
         'delivery',
         'notifications',
+        'plan',
     ];
 
     protected function casts(): array
@@ -33,6 +34,7 @@ class PlatformSetting extends Model
         return [
             'delivery' => 'array',
             'notifications' => 'array',
+            'plan' => 'array',
         ];
     }
 
@@ -84,5 +86,24 @@ class PlatformSetting extends Model
     public function notificationSettings(): array
     {
         return array_merge(self::DEFAULT_NOTIFICATIONS, $this->notifications ?? []);
+    }
+
+    /**
+     * What a merchant subscription costs — what `SignupController` used to
+     * hard-code as PLAN_ID and PLAN_AMOUNT_CENTS.
+     *
+     * Still a placeholder: there is no billing cycle and nothing charges it.
+     * It is here so that when there is a real price, setting it is a save on
+     * the operator's settings screen rather than a deploy. See
+     * documentation/subscription-and-suspension.md §6.2.
+     */
+    public const DEFAULT_PLAN = [
+        'id' => 'standard-monthly',
+        'amountCents' => 49900,
+    ];
+
+    public function planSettings(): array
+    {
+        return array_merge(self::DEFAULT_PLAN, $this->plan ?? []);
     }
 }

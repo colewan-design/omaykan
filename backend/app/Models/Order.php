@@ -23,6 +23,8 @@ class Order extends Model
         'order_type',
         'payment_status',
         'subtotal_cents',
+        'discount_cents',
+        'pos_customer_id',
         'tax_cents',
         'total_cents',
         'business_date',
@@ -45,6 +47,8 @@ class Order extends Model
         'payment_confirmed_at',
         'payment_confirmed_by_user_id',
         'guest_contact',
+        'voided_by_user_id',
+        'void_reason',
     ];
 
     protected function casts(): array
@@ -70,6 +74,45 @@ class Order extends Model
     public function scopeOnline($query)
     {
         return $query->where('channel', 'online');
+    }
+
+    /**
+     * The discount in a line a receipt can print: "Promo WELCOME10", "Discount
+     * (10%) · Regular". Null when nothing came off.
+     */
+    public function discountLabel(): ?string
+    {
+        if ((int) $this->discount_cents <= 0) {
+            return null;
+        }
+
+        $discount = $this->relationLoaded('discounts') ? $this->discounts->first() : $this->discounts()->first();
+
+        if ($discount === null) {
+            return 'Discount';
+        }
+
+        if ($discount->kind === OrderDiscount::KIND_PROMO) {
+            return 'Promo '.$discount->reason;
+        }
+
+        $label = $discount->percent !== null
+            ? 'Discount ('.rtrim(rtrim(number_format($discount->percent, 2), '0'), '.').'%)'
+            : 'Discount';
+
+        return $discount->reason ? $label.' · '.$discount->reason : $label;
+    }
+
+    /** The named counter customer, when the cashier chose one. */
+    public function posCustomer()
+    {
+        return $this->belongsTo(PosCustomer::class);
+    }
+
+    /** Who took what off this order, and why. See order_discounts. */
+    public function discounts()
+    {
+        return $this->hasMany(OrderDiscount::class);
     }
 
     public function items()
@@ -246,7 +289,7 @@ class Order extends Model
         // The rider is loaded for the position, the store for the pickup pin.
         // Both are needed by the map on the tracking page and neither is worth
         // a second round trip to fetch.
-        $this->loadMissing('items', 'rider', 'store');
+        $this->loadMissing('items', 'rider', 'store', 'discounts');
 
         return [
             'orderId' => $this->id,
@@ -258,6 +301,8 @@ class Order extends Model
             'paymentStatus' => $this->payment_status,
             'paymentMethod' => $this->payment_method,
             'subtotalCents' => $this->subtotal_cents,
+            'discountCents' => (int) $this->discount_cents,
+            'discountLabel' => $this->discountLabel(),
             'taxCents' => $this->tax_cents,
             'deliveryFeeCents' => $this->delivery_fee_cents,
             'totalCents' => $this->total_cents,

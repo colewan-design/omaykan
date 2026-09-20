@@ -6,8 +6,9 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.app.Notification
 import android.media.AudioAttributes
-import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -17,6 +18,9 @@ import com.omaykan.seller.R
 import com.omaykan.seller.core.model.Money
 import com.omaykan.seller.core.model.SellerOrder
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -40,7 +44,18 @@ class NewOrderNotifier @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
     private companion object {
-        const val CHANNEL_ID = "new_orders"
+        /**
+         * `_v2` because Android fixes a channel's sound when the channel is
+         * created: calling setSound on an existing channel does nothing. A new
+         * sound therefore means a new channel, and the old one is deleted in
+         * init so the merchant's settings screen does not list two. Any volume
+         * or Do Not Disturb setting made on the old channel does not carry over.
+         */
+        const val CHANNEL_ID = "new_orders_v2"
+        const val LEGACY_CHANNEL_ID = "new_orders"
+
+        const val PREFS = "order_alerts"
+        const val KEY_INSISTENT = "insistent"
 
         /**
          * One notification per order, keyed on its id.
@@ -75,8 +90,12 @@ class NewOrderNotifier @Inject constructor(
         ).apply {
             description = context.getString(R.string.channel_new_orders_description)
             enableVibration(true)
+            // Omaykan's own chime (res/raw/order_alert.wav), not the phone's
+            // default. A kitchen hears a dozen default tones an hour; this one
+            // has to mean "an order" and nothing else. Synthesised for this
+            // app, so there is no licence attached to it.
             setSound(
-                RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
+                Uri.parse("android.resource://${context.packageName}/${R.raw.order_alert}"),
                 AudioAttributes.Builder()
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .setUsage(AudioAttributes.USAGE_NOTIFICATION)
@@ -84,7 +103,26 @@ class NewOrderNotifier @Inject constructor(
             )
         }
 
+        manager.deleteNotificationChannel(LEGACY_CHANNEL_ID)
         manager.createNotificationChannel(channel)
+    }
+
+    private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    private val _insistent = MutableStateFlow(prefs.getBoolean(KEY_INSISTENT, false))
+
+    /**
+     * Keep sounding until someone opens the notification.
+     *
+     * Off by default: most counters have someone standing at them. On, it is
+     * for the kitchen with its back to the phone — which is who asked for a
+     * sound of its own in the first place.
+     */
+    val insistent: StateFlow<Boolean> = _insistent.asStateFlow()
+
+    fun setInsistent(on: Boolean) {
+        prefs.edit().putBoolean(KEY_INSISTENT, on).apply()
+        _insistent.value = on
     }
 
     /**
@@ -131,6 +169,7 @@ class NewOrderNotifier @Inject constructor(
             .setAutoCancel(true)
             .setContentIntent(MainActivity.pendingIntent(context))
             .build()
+            .apply { if (_insistent.value) flags = flags or Notification.FLAG_INSISTENT }
 
         // Permission can be revoked between the check above and this call, and
         // NotificationManagerCompat throws rather than returning false when it

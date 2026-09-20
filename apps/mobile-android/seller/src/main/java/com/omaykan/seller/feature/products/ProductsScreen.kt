@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AcUnit
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.BakeryDining
 import androidx.compose.material.icons.filled.Cake
 import androidx.compose.material.icons.filled.CardGiftcard
@@ -108,6 +109,7 @@ private const val COLLAPSED_CATEGORIES = 7
 @Composable
 fun ProductsScreen(
     onEdit: (productId: String?) -> Unit,
+    onOpenPromotions: () -> Unit,
     filterRequest: ProductFilter?,
     onFilterRequestHandled: () -> Unit,
     viewModel: ProductsViewModel = hiltViewModel(),
@@ -134,6 +136,11 @@ fun ProductsScreen(
                     Icon(Icons.Filled.Refresh, "Refresh products", tint = SellerTheme.colors.onCanopy)
                 }
                 if (state.canEdit) {
+                    // Promo codes set prices, so they sit with products and
+                    // go to the same roles.
+                    IconButton(onClick = onOpenPromotions) {
+                        Icon(Icons.Filled.LocalOffer, "Promo codes", tint = SellerTheme.colors.onCanopy)
+                    }
                     IconButton(onClick = { onEdit(null) }) {
                         Icon(Icons.Filled.Add, "Add product", tint = SellerTheme.colors.onCanopy)
                     }

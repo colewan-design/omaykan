@@ -116,6 +116,8 @@ export interface Product {
   /** "Can", "Sachet", "Bottle" — free text, as the merchant filed it. */
   packagingType?: string
   unitLabel?: string
+  /** What it is, in the shop's own words. Shown on the storefront's product page. */
+  description?: string
   outOfStock?: boolean
   stockQty?: number
   lowStockThreshold?: number
@@ -128,6 +130,12 @@ export interface Customer {
   phone?: string
   email?: string
   notes?: string
+  /**
+   * When they agreed to be enrolled in points. Null or absent: they earn
+   * nothing. Keeping a named person's number for a points scheme is personal
+   * data under the Data Privacy Act, so the till asks first.
+   */
+  loyaltyConsentAt?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -184,6 +192,60 @@ export interface OrderItemSummary {
   quantity: number
   unitPriceCents: number
   lineTotalCents: number
+  /**
+   * The product's VAT rate at the moment of sale, as a fraction (0.12). Kept
+   * on the line because the order's tax was computed from it, and a later
+   * change to the product must not change what this receipt says. Absent on
+   * orders recorded before it was kept.
+   */
+  taxRate?: number
+}
+
+/**
+ * A discount the cashier gives, before it is priced. Exactly one of
+ * `percent` and `amountCents`.
+ *
+ * `manual` is the only kind the till offers today. The table it lands in
+ * (`order_discounts`) already has room for `promo` and `loyalty`, and for the
+ * statutory senior-citizen and PWD discounts once their VAT treatment is
+ * confirmed — see documentation/merchant-features.md §7.
+ */
+export interface OrderDiscountInput {
+  /**
+   * `manual` is the cashier's own discretion, and counts against their role's
+   * limit. `promo` is a code the server checked (PromoCodeController::check):
+   * its amount is the server's, and it is not the cashier's discretion.
+   */
+  kind: 'manual' | 'promo' | 'loyalty'
+  /** 0–100. */
+  percent?: number
+  amountCents?: number
+  /** Points spent, for `loyalty`. Their worth is the server's (LoyaltyController::check). */
+  points?: number
+  /** Why, in the cashier's words — "regular", "damaged box". The code itself, for a promo. */
+  reason?: string | null
+  /** Which code, for `promo`. */
+  promoCodeId?: string | null
+}
+
+/** A discount as it was actually applied: always in centavos. */
+export interface AppliedDiscount {
+  kind: 'manual' | 'promo' | 'loyalty'
+  amountCents: number
+  points?: number
+  /** Set when the cashier asked for a percentage; null for a flat amount. */
+  percent: number | null
+  reason: string | null
+  appliedByUserId?: string | null
+  promoCodeId?: string | null
+}
+
+export interface PricedOrder {
+  subtotalCents: number
+  discountCents: number
+  taxCents: number
+  totalCents: number
+  discount: AppliedDiscount | null
 }
 
 /**
@@ -326,6 +388,9 @@ export interface OrderSummary {
   status: OrderStatus
   paymentMethod: PaymentMethod
   subtotalCents: number
+  /** Off the subtotal, before tax. Absent (0) on orders from before discounts. */
+  discountCents?: number
+  discount?: AppliedDiscount | null
   taxCents: number
   totalCents: number
   tenderedCents: number
@@ -416,7 +481,6 @@ export interface AppSettings {
   // — which was also the secret a till paired with, and is gone with pairing.
   // Blank on single-tenant deployments that never went through signup.
   storefrontSlug: string
-  syncMode: 'local-only' | 'online-sync'
   appearance: Appearance
   theme: Theme
   accentTotalAnimation: boolean
@@ -432,6 +496,27 @@ export interface RoleDefinition {
   // saved roles means false. Granting the 'admin' role, or granting this
   // flag itself, stays owner-only regardless of who holds it.
   canManageStaff?: boolean
+  /**
+   * The largest discount this role may give on its own, as a percentage of the
+   * order's subtotal. Absent falls back to DEFAULT_DISCOUNT_LIMITS. Admin is
+   * always 100. See RolePermissions::maxDiscountPercent on the server, which
+   * holds the same defaults.
+   */
+  maxDiscountPercent?: number
+}
+
+/** What each built-in role may discount when the shop has not said. Mirrors the backend. */
+export const DEFAULT_DISCOUNT_LIMITS: Record<string, number> = {
+  admin: 100,
+  manager: 100,
+  cashier: 0,
+  guest: 0,
+}
+
+export function maxDiscountPercentFor(role: RoleDefinition | null | undefined): number {
+  if (!role) return 0
+  if (role.id === 'admin') return 100
+  return role.maxDiscountPercent ?? DEFAULT_DISCOUNT_LIMITS[role.id] ?? 0
 }
 
 /**
@@ -483,10 +568,12 @@ export interface CatalogSnapshot {
 
 export type CreateProductInput = Omit<Product, 'id'>
 export type CreateCategoryInput = { name: string }
-export type CreateCustomerInput = Pick<Customer, 'name' | 'phone' | 'email' | 'notes'>
+export type CreateCustomerInput = Pick<Customer, 'name' | 'phone' | 'email' | 'notes' | 'loyaltyConsentAt'>
 export type CreateSupplierInput = Pick<Supplier, 'name' | 'contact' | 'categoryIds' | 'leadTimeDays' | 'orderWindow'>
 
 export interface CreateOrderInput {
+  /** Set when retrying a sale the server may already have recorded. */
+  id?: string
   businessMode: BusinessMode
   customerId?: string | null
   customerName?: string | null
@@ -495,6 +582,8 @@ export interface CreateOrderInput {
   paymentMethod: PaymentMethod
   tenderedCents: number
   items: OrderItemSummary[]
+  /** Priced by priceOrder, exactly as the cart showed it. */
+  discount?: OrderDiscountInput | null
 }
 
 export const guestCustomerName = 'Guest'
@@ -510,7 +599,6 @@ export const defaultSettings: AppSettings = {
   businessName: '',
   businessImageUrl: '',
   storefrontSlug: '',
-  syncMode: 'local-only',
   appearance: 'system',
   theme: 'default',
   accentTotalAnimation: true,
@@ -1189,6 +1277,73 @@ export function formatCompactDate(value: string): string {
     hour: 'numeric',
     minute: '2-digit',
   }).format(new Date(value))
+}
+
+/**
+ * Price an order: the one calculation the cart shows, the till records and the
+ * receipt prints, so the three can never disagree.
+ *
+ * VAT is charged per line at that line's own rate (a zero-rated vegetable next
+ * to a 12% soft drink). An order-level discount comes off before tax, so VAT
+ * is on what the customer actually pays for: it is shared across the lines in
+ * proportion to their value — whole centavos, floored, the remainder on the
+ * largest line — and each line is taxed on what is left of it.
+ *
+ * The backend applies the same split when it checks a synced order
+ * (SyncController); change one and change both.
+ */
+export function priceOrder(
+  lines: Array<{ lineTotalCents: number; taxRate: number }>,
+  discount?: OrderDiscountInput | null,
+): PricedOrder {
+  const subtotalCents = lines.reduce((sum, line) => sum + line.lineTotalCents, 0)
+
+  let discountCents = 0
+  if (discount && subtotalCents > 0) {
+    const requested = discount.percent != null
+      ? Math.round((subtotalCents * Math.min(100, Math.max(0, discount.percent))) / 100)
+      : Math.round(discount.amountCents ?? 0)
+    discountCents = Math.min(subtotalCents, Math.max(0, requested))
+  }
+
+  const shares = lines.map((line) =>
+    subtotalCents > 0 ? Math.floor((discountCents * line.lineTotalCents) / subtotalCents) : 0,
+  )
+  const remainder = discountCents - shares.reduce((sum, share) => sum + share, 0)
+  if (remainder > 0 && lines.length > 0) {
+    let largest = 0
+    lines.forEach((line, index) => {
+      if (line.lineTotalCents > lines[largest].lineTotalCents) largest = index
+    })
+    shares[largest] += remainder
+  }
+
+  const taxCents = lines.reduce(
+    (sum, line, index) => sum + calculateTax(line.lineTotalCents - shares[index], line.taxRate),
+    0,
+  )
+
+  return {
+    subtotalCents,
+    discountCents,
+    taxCents,
+    totalCents: subtotalCents - discountCents + taxCents,
+    discount: discount && discountCents > 0
+      ? {
+          kind: discount.kind,
+          amountCents: discountCents,
+          percent: discount.percent ?? null,
+          reason: discount.reason?.trim() || null,
+          ...(discount.promoCodeId ? { promoCodeId: discount.promoCodeId } : {}),
+          ...(discount.points ? { points: discount.points } : {}),
+        }
+      : null,
+  }
+}
+
+/** A discount as a percentage of the subtotal it came off — what role limits are checked against. */
+export function discountPercentOf(discountCents: number, subtotalCents: number): number {
+  return subtotalCents > 0 ? (discountCents / subtotalCents) * 100 : 0
 }
 
 export function calculateTax(amountCents: number, rate: number): number {

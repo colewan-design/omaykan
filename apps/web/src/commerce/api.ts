@@ -60,7 +60,16 @@ async function request<TResult>(
   const data = await response.json().catch(() => null)
 
   if (!response.ok) {
-    throw new ApiRequestError(errorMessageFrom(data, fallbackError), response.status)
+    const tenantAccess = data && typeof data === 'object' && typeof (data as { tenantAccess?: unknown }).tenantAccess === 'string'
+      ? (data as { tenantAccess: string }).tenantAccess
+      : null
+
+    const fields = data && typeof data === 'object' && (data as { errors?: unknown }).errors
+      && typeof (data as { errors?: unknown }).errors === 'object'
+      ? Object.keys((data as { errors: Record<string, unknown> }).errors)
+      : []
+
+    throw new ApiRequestError(errorMessageFrom(data, fallbackError), response.status, tenantAccess, fields)
   }
 
   return data as TResult
@@ -71,11 +80,26 @@ export class ApiRequestError extends Error {
   // Declared rather than a constructor parameter property: the build runs
   // TypeScript with erasableSyntaxOnly, which rejects that shorthand.
   readonly status: number
+  /**
+   * `closed` when the shop exists but may not trade — suspended, or its
+   * subscription lapsed. The server does not say which: to a shopper the shop
+   * is simply closed, and why is between the merchant and Omaykan.
+   */
+  readonly tenantAccess: string | null
+  /** The fields a 422 named — `promoCode`, `fulfillment.address` — so a caller can say it beside the right one. */
+  readonly fields: string[]
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, tenantAccess: string | null = null, fields: string[] = []) {
     super(message)
     this.name = 'ApiRequestError'
     this.status = status
+    this.tenantAccess = tenantAccess
+    this.fields = fields
+  }
+
+  /** The shop is there and not taking orders — as against not found, or broken. */
+  get shopClosed(): boolean {
+    return this.tenantAccess === 'closed'
   }
 }
 
@@ -100,6 +124,7 @@ interface ApiProduct {
   brand: string | null
   packagingType: string | null
   unitLabel: string | null
+  description?: string | null
   businessModes: string[]
   outOfStock: boolean
   stockQty: number | null
@@ -112,6 +137,7 @@ interface ApiShop {
   ownerName: string | null
   address: string | null
   imageUrl: string | null
+  ordering?: { paused: boolean; resumesAt: string | null; message: string | null }
 }
 
 /**
@@ -132,6 +158,12 @@ export interface StorefrontShop {
    * the mark on a product that has no photo of its own.
    */
   imageUrl?: string
+  /**
+   * Set while the shop has paused its own online ordering — "This shop isn't
+   * taking orders right now — back at 4:00 PM." The menu still shows; checkout
+   * says this instead of taking an order the server will refuse.
+   */
+  orderingPausedMessage?: string
 }
 
 export interface StorefrontCatalog {
@@ -165,6 +197,7 @@ function toProduct(product: ApiProduct): Product {
     brand: product.brand?.trim() || undefined,
     packagingType: product.packagingType?.trim() || undefined,
     unitLabel: product.unitLabel ?? undefined,
+    description: product.description?.trim() || undefined,
     businessModes: (product.businessModes ?? []) as Product['businessModes'],
     outOfStock: product.outOfStock,
     stockQty: product.stockQty ?? undefined,
@@ -195,6 +228,10 @@ export interface StoreSummary {
   isNew: boolean
   /** Null when either side has no pin, so "no distance" is not "0 km away". */
   distanceKm: number | null
+  /** The shop has paused its own online ordering. Listed, badged, sorted last. */
+  orderingPaused: boolean
+  /** When the pause ends by itself; null while open, or paused until reopened. */
+  orderingResumesAt: string | null
 }
 
 /**
@@ -226,6 +263,8 @@ export async function fetchStores(
     ...store,
     categories: store.categories ?? [],
     isNew: store.isNew ?? false,
+    orderingPaused: store.orderingPaused ?? false,
+    orderingResumesAt: store.orderingResumesAt ?? null,
     imageUrl: resolveImageUrl(store.imageUrl),
   }))
 }
@@ -253,6 +292,7 @@ function toShop(shop: ApiShop | null | undefined): StorefrontShop | null {
     // The API serves this one itself, so it needs the base put back in front
     // of it on the deployment where the page and the API are not same-origin.
     imageUrl: resolveImageUrl(shop.imageUrl ?? null) ?? undefined,
+    orderingPausedMessage: shop.ordering?.paused ? (shop.ordering.message ?? undefined) : undefined,
   }
 }
 
@@ -309,6 +349,7 @@ export function createOnlineOrder(
   guest: CreateOnlineOrderGuest,
   fulfillment: CreateOnlineOrderFulfillment,
   paymentMethod?: 'cash' | 'ewallet',
+  promoCode?: string | null,
 ): Promise<CreateOnlineOrderResult> {
   return postJson<CreateOnlineOrderResult>(
     '/api/online-orders',
@@ -320,8 +361,46 @@ export function createOnlineOrder(
       guest,
       fulfillment,
       paymentMethod,
+      promoCode: promoCode || undefined,
     },
     'Could not place your order.',
+  )
+}
+
+/** `promo` is null when no code was sent. */
+export interface OnlineOrderQuote {
+  subtotalCents: number
+  discountCents: number
+  taxCents: number
+  deliveryFeeCents: number
+  totalCents: number
+  promo:
+    | { ok: true; code: string; description: string }
+    | { ok: false; code: string; message: string }
+    | null
+}
+
+/**
+ * What this basket would cost, before ordering — the server's own arithmetic,
+ * promo code included. A code that does not apply comes back as
+ * `promo.ok === false` with the reason, not as an error.
+ */
+export function quoteOnlineOrder(
+  items: CreateOnlineOrderItem[],
+  options: { promoCode?: string | null; phone?: string | null; fulfillment?: CreateOnlineOrderFulfillment } = {},
+): Promise<OnlineOrderQuote> {
+  return postJson<OnlineOrderQuote>(
+    '/api/online-orders/quote',
+    {
+      orgSlug: ORG_SLUG,
+      storeCode: STORE_CODE,
+      businessMode: BUSINESS_MODE,
+      items,
+      promoCode: options.promoCode || undefined,
+      guest: options.phone ? { phone: options.phone } : undefined,
+      fulfillment: options.fulfillment,
+    },
+    'Could not check that code.',
   )
 }
 
@@ -411,6 +490,10 @@ export interface TrackedOrder {
   paymentStatus: string
   paymentMethod: string | null
   subtotalCents: number
+  /** What a promo code took off. Absent from servers older than discounts. */
+  discountCents?: number
+  /** "Promo WELCOME10" — the line a receipt prints. Null when nothing came off. */
+  discountLabel?: string | null
   taxCents: number
   deliveryFeeCents: number
   totalCents: number

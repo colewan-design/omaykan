@@ -82,6 +82,15 @@ return [
     ],
 
     /*
+     * Firebase Cloud Messaging, for the storefront app's order notifications:
+     * the path to a service-account key file (Firebase console → Project
+     * settings → Service accounts). Kept out of the repo. Blank sends no push.
+     */
+    'firebase' => [
+        'credentials' => env('FIREBASE_CREDENTIALS'),
+    ],
+
+    /*
      * Operator dashboard mailbox access. This is the inbox behind
      * support@omaykan.com, read over IMAP so the portal can show incoming
      * messages and reply to them.

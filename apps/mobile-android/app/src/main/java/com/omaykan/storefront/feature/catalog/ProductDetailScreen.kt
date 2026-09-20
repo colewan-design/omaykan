@@ -1,13 +1,11 @@
 package com.omaykan.storefront.feature.catalog
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,22 +13,21 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material.icons.outlined.DeliveryDining
 import androidx.compose.material.icons.outlined.LocationOn
+import androidx.compose.material.icons.outlined.Sell
+import androidx.compose.material.icons.outlined.ShoppingCart
 import androidx.compose.material.icons.outlined.Storefront
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -39,39 +36,45 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.omaykan.storefront.core.designsystem.AccordionRow
 import com.omaykan.storefront.core.designsystem.CompactSnackbarHost
+import com.omaykan.storefront.core.designsystem.CtaButton
+import com.omaykan.storefront.core.designsystem.ForestTopBar
+import com.omaykan.storefront.core.designsystem.HeartToggle
 import com.omaykan.storefront.core.designsystem.LoadingState
 import com.omaykan.storefront.core.designsystem.MessageState
 import com.omaykan.storefront.core.designsystem.OmaykanTheme
+import com.omaykan.storefront.core.designsystem.QuantityBox
 import com.omaykan.storefront.core.designsystem.RemoteImage
 import com.omaykan.storefront.core.designsystem.SnackbarMessageEffect
 import com.omaykan.storefront.core.model.Money
+import com.omaykan.storefront.core.model.Product
 import com.omaykan.storefront.core.model.ProductKind
 import com.omaykan.storefront.core.model.Shop
-import com.omaykan.storefront.feature.cart.Stepper
 import com.omaykan.storefront.feature.home.DiscountPill
 
 /**
- * One product, laid out to the reference: the picture in its own tile, the
- * markdown flag and price under it, the name, then the facts.
+ * One product, laid out to the reference: the photograph edge to edge, the
+ * name and price, a line where the reference puts its rating, a short
+ * description, three promises, the quantity and Add to Cart, then three folds.
  *
- * Two things the reference carries that are not here, and their absence is the
- * point. There is no countdown to the end of the discount — nothing in the API
- * knows when a merchant will change a price, and a ticking clock that is not
- * counting toward anything is a manufactured hurry. And there are no reviews or
- * ratings — no such data exists, and inventing "4.8 · 1,230 reviews" on a page
- * whose whole argument is honest prices would be the one decoration that costs
- * something real.
+ * Every slot carries something true. The rating line says "In-store price",
+ * because there are no reviews behind this app and inventing "4.8 · 32
+ * reviews" on a page about honest prices would be the one decoration that
+ * costs something. The three promises are the platform's, which hold for every
+ * product on it — not "handmade", which would be false of a tin of coffee. And
+ * the folds hold the facts the API has: the unit and codes, how delivery
+ * works, and who is selling.
  */
 @Composable
 fun ProductDetailScreen(
@@ -86,82 +89,58 @@ fun ProductDetailScreen(
     // "View cart" is the only action any message here offers.
     SnackbarMessageEffect(viewModel.snackbar, snackbarHostState, onAction = onOpenCart)
 
-    Box(Modifier.fillMaxSize()) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .statusBarsPadding(),
-        ) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(OmaykanTheme.colors.fill)
-                        .clickable(onClick = onBack),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-                Text(
-                    text = "Product Detail",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(end = 40.dp),
-                    textAlign = TextAlign.Center,
-                )
-            }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
+        when {
+            state.loading -> LoadingState()
 
-            when {
-                state.loading -> LoadingState()
-
-                product == null -> MessageState(
+            product == null -> Column(Modifier.fillMaxSize()) {
+                ForestTopBar(title = "Product", onBack = onBack)
+                MessageState(
                     title = "This item is gone",
                     detail = "It sold out or the shop took it down. Go back for what is still " +
                         "on the shelf.",
                     actionLabel = "Back to the shelf",
                     onAction = onBack,
                 )
+            }
 
-                else -> Column(
+            else -> Column(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                ProductHero(
+                    product = product,
+                    saved = state.saved,
+                    onBack = onBack,
+                    onToggleSaved = viewModel::toggleSaved,
+                )
+
+                Column(
                     Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 20.dp),
+                        .padding(horizontal = 20.dp)
+                        .padding(top = 18.dp, bottom = 24.dp)
+                        .navigationBarsPadding(),
                 ) {
-                    RemoteImage(
-                        url = product.imageUrl,
-                        contentDescription = product.name,
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(1.1f)
-                            .clip(RoundedCornerShape(20.dp)),
+                    Text(
+                        text = product.name,
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = OmaykanTheme.colors.ink,
                     )
 
-                    product.discountPercent?.let { percent ->
-                        DiscountPill(percent, Modifier.padding(top = 16.dp))
-                    }
-
                     Row(
-                        verticalAlignment = Alignment.Bottom,
-                        modifier = Modifier.padding(top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 4.dp),
                     ) {
                         Text(
                             text = Money.peso(product.priceCents),
-                            style = MaterialTheme.typography.headlineLarge,
+                            style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
+                            color = OmaykanTheme.colors.ink,
                         )
                         if (product.onSale) {
                             Text(
@@ -169,116 +148,64 @@ fun ProductDetailScreen(
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = OmaykanTheme.colors.textTertiary,
                                 textDecoration = TextDecoration.LineThrough,
-                                modifier = Modifier.padding(start = 10.dp, bottom = 4.dp),
+                                modifier = Modifier.padding(start = 10.dp),
                             )
+                        }
+                        product.discountPercent?.let { percent ->
+                            DiscountPill(percent, Modifier.padding(start = 10.dp))
                         }
                     }
 
+                    // The rating line's slot, holding the covenant instead:
+                    // this is the price at the counter, not a marked-up menu.
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 10.dp),
+                        modifier = Modifier.padding(top = 8.dp),
                     ) {
-                        Text(
-                            text = product.name,
-                            style = MaterialTheme.typography.titleLarge,
-                            modifier = Modifier.weight(1f),
-                        )
                         Icon(
-                            imageVector = if (state.saved) {
-                                Icons.Filled.Favorite
-                            } else {
-                                Icons.Outlined.FavoriteBorder
-                            },
-                            contentDescription = if (state.saved) {
-                                "Remove from saved"
-                            } else {
-                                "Save for later"
-                            },
-                            tint = if (state.saved) {
-                                MaterialTheme.colorScheme.error
-                            } else {
-                                OmaykanTheme.colors.textTertiary
-                            },
-                            modifier = Modifier
-                                .padding(start = 12.dp)
-                                .size(26.dp)
-                                .clickable(onClick = viewModel::toggleSaved),
+                            Icons.Filled.Verified,
+                            contentDescription = null,
+                            tint = OmaykanTheme.colors.success,
+                            modifier = Modifier.size(16.dp),
                         )
-                    }
-
-                    // The covenant, said on the item itself: this is the price at
-                    // the counter, not a marked-up online menu.
-                    Text(
-                        text = "In-store price",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = OmaykanTheme.colors.success,
-                        modifier = Modifier.padding(top = 6.dp),
-                    )
-
-                    // The facts, laid out the way the reference lays out a
-                    // specifications strip: cells side by side, each a quiet
-                    // label over the value it names, divided rather than
-                    // stacked. Label/value rows read as a form; a shopper
-                    // checking whether this is the 500 g tin wants to sweep the
-                    // facts, not read down them. "Item code" rather than "SKU"
-                    // is the word the web product page already uses.
-                    SpecStrip(
-                        title = "Details",
-                        specs = buildList {
-                            add(
-                                "Unit" to when {
-                                    product.kind == ProductKind.Weighted ->
-                                        product.unitLabel?.let { "Per $it" } ?: "By weight"
-                                    product.unitLabel != null -> "Per ${product.unitLabel}"
-                                    else -> "Per piece"
-                                },
-                            )
-                            // A count only where the shop keeps one. An
-                            // untracked shelf has no number to give, and a
-                            // cell reading "0" would be a lie about a product
-                            // the server only sends because it is buyable.
-                            product.stockQty?.let { qty ->
-                                add("In stock" to formatQuantity(qty))
-                            }
-                            if (product.sku.isNotBlank()) add("Item code" to product.sku)
-                            if (product.barcode.isNotBlank()) add("Barcode" to product.barcode)
-                        },
-                        modifier = Modifier.padding(top = 20.dp),
-                    )
-
-                    // Outside the strip on purpose: the cells are facts about
-                    // the item, and this is a caution about the shelf.
-                    if (product.runningLow) {
                         Text(
-                            text = "Only a few left at this shop",
+                            text = "In-store price",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = OmaykanTheme.colors.warning,
-                            modifier = Modifier.padding(top = 10.dp),
+                            fontWeight = FontWeight.SemiBold,
+                            color = OmaykanTheme.colors.success,
+                            modifier = Modifier.padding(start = 6.dp),
                         )
-                    }
-
-                    // Who the shopper is buying from, and where that counter
-                    // actually is. The web product page has said this since it
-                    // launched, and the reason holds harder on a phone: the
-                    // rider collects cash on this shop's behalf, and "the shop
-                    // on the previous screen" is not something a shopper should
-                    // have to remember by the time they tap Buy Now.
-                    state.shop?.let { shop -> SoldBySection(shop) }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 20.dp),
-                    ) {
                         Text(
-                            text = "Quantity",
+                            text = " · ${unitOf(product)}",
                             style = MaterialTheme.typography.bodyMedium,
                             color = OmaykanTheme.colors.textSecondary,
-                            modifier = Modifier.weight(1f),
                         )
-                        Stepper(
+                    }
+
+                    Text(
+                        text = describe(product, state.shop),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = OmaykanTheme.colors.textSecondary,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+
+                    Promises(Modifier.padding(top = 18.dp))
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.padding(top = 20.dp),
+                    ) {
+                        QuantityBox(
                             quantity = state.quantity,
                             onIncrement = { viewModel.setQuantity(state.quantity + 1) },
                             onDecrement = { viewModel.setQuantity(state.quantity - 1) },
+                        )
+                        CtaButton(
+                            text = "Add to Cart",
+                            onClick = viewModel::addToCart,
+                            icon = Icons.Outlined.ShoppingCart,
+                            modifier = Modifier.weight(1f),
                         )
                     }
 
@@ -287,219 +214,241 @@ fun ProductDetailScreen(
                             text = "Already in your cart: ${formatQuantity(state.inCart)}",
                             style = MaterialTheme.typography.bodySmall,
                             color = OmaykanTheme.colors.textTertiary,
-                            modifier = Modifier.padding(top = 6.dp),
+                            modifier = Modifier.padding(top = 8.dp),
                         )
                     }
 
-                    Box(Modifier.padding(bottom = 16.dp))
-                }
-            }
+                    Spacer(Modifier.height(22.dp))
 
-            if (product != null) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 12.dp)
-                        .navigationBarsPadding(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    OutlinedButton(
-                        onClick = { viewModel.addToCart() },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                    ) {
-                        Text("Add to Cart", modifier = Modifier.padding(vertical = 4.dp))
+                    AccordionRow(title = "Product Details") {
+                        FactRow("Unit", unitOf(product))
+                        // A count only where the shop keeps one. An untracked
+                        // shelf has no number to give, and "0" would be a lie
+                        // about a product the server only sends because it is
+                        // buyable.
+                        product.stockQty?.let { qty -> FactRow("In stock", formatQuantity(qty)) }
+                        if (product.sku.isNotBlank()) FactRow("Item code", product.sku)
+                        if (product.barcode.isNotBlank()) FactRow("Barcode", product.barcode)
+                        if (product.runningLow) {
+                            Text(
+                                text = "Only a few left at this shop",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = OmaykanTheme.colors.warning,
+                            )
+                        }
                     }
-                    // "Buy Now" in the reference means "straight to checkout". It
-                    // still goes through the cart rather than around it: one order
-                    // is one basket at one counter, and a second path into checkout
-                    // would be a second place for that to go wrong.
-                    Button(
-                        onClick = { viewModel.buyNow(onAdded = onOpenCart) },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = OmaykanTheme.colors.ink,
-                            contentColor = OmaykanTheme.colors.onInk,
-                        ),
-                    ) {
-                        Text("Buy Now", modifier = Modifier.padding(vertical = 4.dp))
+
+                    AccordionRow(title = "Delivery Information") {
+                        Text(
+                            text = "Pick it up at the counter, or have a local rider bring it to " +
+                                "your door. The delivery fee is quoted at checkout, and the rider " +
+                                "keeps all of it. You pay when you get your order — nothing is " +
+                                "charged in the app.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = OmaykanTheme.colors.textSecondary,
+                        )
                     }
+
+                    // Who the shopper is buying from, and where that counter
+                    // is: the rider collects cash on this shop's behalf, and
+                    // "the shop on the previous screen" is not something a
+                    // shopper should have to remember.
+                    state.shop?.let { shop ->
+                        AccordionRow(title = "Sold By") { SoldBy(shop) }
+                    }
+
+                    HorizontalDivider(color = OmaykanTheme.colors.separator)
                 }
             }
         }
 
-        // Placed by the host itself, in the middle of the screen: nothing
-        // here decides where it lands, and nothing here can push the action
-        // row the shopper's thumb is still resting on.
+        // Placed by the host itself, in the middle of the screen: nothing here
+        // decides where it lands, and nothing here can cover the button the
+        // shopper's thumb is still resting on.
         CompactSnackbarHost(snackbarHostState)
     }
+}
+
+/**
+ * The photograph, edge to edge and square, with the way back and the heart
+ * laid over its top corners. A dark wash behind the status bar keeps both —
+ * and the clock — legible on a packshot shot on white.
+ */
+@Composable
+private fun ProductHero(
+    product: Product,
+    saved: Boolean,
+    onBack: () -> Unit,
+    onToggleSaved: () -> Unit,
+) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .background(MaterialTheme.colorScheme.surface),
+    ) {
+        RemoteImage(
+            url = product.imageUrl,
+            contentDescription = product.name,
+            modifier = Modifier.fillMaxSize(),
+        )
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(130.dp)
+                .background(
+                    Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.5f), Color.Transparent)),
+                ),
+        )
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 6.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+            }
+            Spacer(Modifier.weight(1f))
+            HeartToggle(
+                saved = saved,
+                onToggle = onToggleSaved,
+                size = 26.dp,
+                idleTint = Color.White,
+                modifier = Modifier.padding(end = 4.dp),
+            )
+        }
+    }
+}
+
+/**
+ * The reference's three badges, carrying the three promises the platform makes
+ * about every order — so they are true of whatever product they sit under.
+ */
+@Composable
+private fun Promises(modifier: Modifier = Modifier) {
+    Column(modifier) {
+        HorizontalDivider(color = OmaykanTheme.colors.separator)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Promise(Icons.Outlined.Sell, "Same Price\nas In-Store", Modifier.weight(1f))
+            PromiseRule()
+            Promise(Icons.Outlined.Storefront, "Supports a\nLocal Shop", Modifier.weight(1f))
+            PromiseRule()
+            Promise(Icons.Outlined.DeliveryDining, "Rider Keeps\nthe Whole Fee", Modifier.weight(1f))
+        }
+        HorizontalDivider(color = OmaykanTheme.colors.separator)
+    }
+}
+
+@Composable
+private fun Promise(icon: ImageVector, label: String, modifier: Modifier = Modifier) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = OmaykanTheme.colors.ink,
+            modifier = Modifier.size(30.dp),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            fontSize = 12.sp,
+            color = OmaykanTheme.colors.textSecondary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 6.dp),
+        )
+    }
+}
+
+@Composable
+private fun PromiseRule() {
+    Box(
+        Modifier
+            .width(1.dp)
+            .height(44.dp)
+            .background(OmaykanTheme.colors.separator),
+    )
+}
+
+@Composable
+private fun FactRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth()) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = OmaykanTheme.colors.textSecondary,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = OmaykanTheme.colors.ink,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1.4f),
+        )
+    }
+}
+
+/**
+ * The seller, named the way the web page names them: shop, then the person
+ * behind the counter, then the address.
+ */
+@Composable
+private fun SoldBy(shop: Shop) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = shop.name,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium,
+            color = OmaykanTheme.colors.ink,
+        )
+        shop.businessTypeLabel?.let { label ->
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodySmall,
+                color = OmaykanTheme.colors.textTertiary,
+            )
+        }
+    }
+    shop.ownerName?.let { owner -> FactRow("Store owner", owner) }
+    shop.address?.let { address ->
+        Row {
+            Icon(
+                Icons.Outlined.LocationOn,
+                contentDescription = null,
+                tint = OmaykanTheme.colors.textTertiary,
+                modifier = Modifier
+                    .padding(end = 6.dp, top = 2.dp)
+                    .size(16.dp),
+            )
+            Text(
+                text = address,
+                style = MaterialTheme.typography.bodyMedium,
+                color = OmaykanTheme.colors.textSecondary,
+            )
+        }
+    }
+}
+
+/** The description slot, said from facts: whose shelf, and whose price. */
+private fun describe(product: Product, shop: Shop?): String {
+    val shelf = shop?.name?.let { "$it's shelf" } ?: "the shop's shelf"
+    return "${product.name}, straight from $shelf at the price on its own counter. " +
+        "The shop confirms the total when you check out."
+}
+
+private fun unitOf(product: Product): String = when {
+    product.kind == ProductKind.Weighted -> product.unitLabel?.let { "Per $it" } ?: "By weight"
+    product.unitLabel != null -> "Per ${product.unitLabel}"
+    else -> "Per piece"
 }
 
 /** "2", not "2.0" — whole counts are the overwhelming case, and 2.0 kg is not. */
 private fun formatQuantity(quantity: Double): String =
     if (quantity % 1.0 == 0.0) quantity.toInt().toString() else quantity.toString()
-
-/**
- * The seller, named the same way the web page names them: shop, then the person
- * behind the counter, then the address.
- *
- * Stacked rather than the label/value rows above it — a Philippine street
- * address is long enough that squeezing it into the right-hand column of a
- * DetailRow would leave the label nowhere to go.
- */
-@Composable
-private fun SoldBySection(shop: Shop) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(top = 12.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .border(1.dp, OmaykanTheme.colors.separator, RoundedCornerShape(16.dp))
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Outlined.Storefront,
-                contentDescription = null,
-                tint = OmaykanTheme.colors.textSecondary,
-                modifier = Modifier.size(18.dp),
-            )
-            Text(
-                text = "Sold by",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(start = 8.dp),
-            )
-        }
-
-        Column {
-            Text(text = shop.name, style = MaterialTheme.typography.bodyLarge)
-            shop.businessTypeLabel?.let { label ->
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = OmaykanTheme.colors.textTertiary,
-                )
-            }
-        }
-
-        shop.ownerName?.let { owner -> SoldByFact("Store owner", owner) }
-
-        shop.address?.let { address ->
-            SoldByFact("Store location", address, icon = Icons.Outlined.LocationOn)
-        }
-    }
-}
-
-@Composable
-private fun SoldByFact(label: String, value: String, icon: ImageVector? = null) {
-    Column {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = OmaykanTheme.colors.textSecondary,
-        )
-        Row(Modifier.padding(top = 2.dp)) {
-            icon?.let {
-                Icon(
-                    imageVector = it,
-                    contentDescription = null,
-                    tint = OmaykanTheme.colors.textTertiary,
-                    modifier = Modifier
-                        .padding(end = 6.dp, top = 2.dp)
-                        .size(16.dp),
-                )
-            }
-            Text(text = value, style = MaterialTheme.typography.bodyMedium)
-        }
-    }
-}
-
-/**
- * A titled strip of facts: label above value, one cell per fact, hairlines
- * between them on a single filled ground.
- *
- * Three or fewer share the width evenly, the way the reference's do. Past that
- * an even split squeezes a barcode past reading, so the strip scrolls under the
- * thumb instead, and the cut-off edge of the last cell is what says so.
- */
-@Composable
-private fun SpecStrip(
-    title: String,
-    specs: List<Pair<String, String>>,
-    modifier: Modifier = Modifier,
-) {
-    if (specs.isEmpty()) return
-
-    Column(modifier) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-        )
-
-        val ground = Modifier
-            .fillMaxWidth()
-            .padding(top = 10.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(OmaykanTheme.colors.fill)
-        val scrolls = specs.size > 3
-
-        Row(
-            modifier = if (scrolls) ground.horizontalScroll(rememberScrollState()) else ground,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            specs.forEachIndexed { index, (label, value) ->
-                if (index > 0) {
-                    Box(
-                        Modifier
-                            .width(1.dp)
-                            .height(30.dp)
-                            .background(OmaykanTheme.colors.separator),
-                    )
-                }
-                SpecCell(
-                    label = label,
-                    value = value,
-                    modifier = if (scrolls) Modifier.width(118.dp) else Modifier.weight(1f),
-                )
-            }
-        }
-    }
-}
-
-/**
- * One fact: the label muted above, the value carrying the weight below.
- *
- * Both lines are held to one line and clipped. Cells of different heights stop
- * reading as one row of facts, and these values — a unit, a count, a code — are
- * short by nature; the one that is not, a long barcode, is still recognisable
- * from its opening digits.
- */
-@Composable
-private fun SpecCell(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier.padding(horizontal = 10.dp, vertical = 14.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = OmaykanTheme.colors.textTertiary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 3.dp),
-        )
-    }
-}

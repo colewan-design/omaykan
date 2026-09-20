@@ -6,6 +6,7 @@ import com.omaykan.seller.core.network.ApiBaseUrl
 import com.omaykan.seller.core.network.ApiCaller
 import com.omaykan.seller.core.network.ApiException
 import com.omaykan.seller.core.network.SellerApi
+import com.omaykan.seller.core.network.dto.ProductImageRequestDto
 import com.omaykan.seller.core.network.dto.SyncPushRequestDto
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -87,6 +88,15 @@ class CatalogRepository @Inject constructor(
             api.push(SyncPushRequestDto(catalog.organizationId, catalog.storeId, events))
         }
 
+        // Refused outright: this person's role may not change the catalog. The
+        // Save button is hidden from cashiers, but a role can change while the
+        // app is open, and the server is where the rule actually lives.
+        reply.results.firstOrNull { it.status == "rejected" }?.let { rejected ->
+            throw ApiException.Forbidden(
+                rejected.message?.takeIf { it.isNotBlank() } ?: "Your role cannot change products.",
+            )
+        }
+
         reply.results.firstOrNull { it.status == "failed" }?.let { failed ->
             throw ApiException.Validation(
                 failed.message?.takeIf { it.isNotBlank() } ?: "The server did not save that product.",
@@ -96,6 +106,15 @@ class CatalogRepository @Inject constructor(
 
         refresh()
     }
+
+    /**
+     * Upload a picked product photo, as a data URL, and return the URL the
+     * product should point at. Uploaded before the save so the product event
+     * carries a URL rather than kilobytes of base64. A photo uploaded for a
+     * product that is then never saved is swept by the server within a week.
+     */
+    suspend fun uploadPhoto(dataUrl: String): String =
+        caller.call { api.uploadProductImage(ProductImageRequestDto(dataUrl)) }.url
 
     /** The shop changed under the app. Nothing of the last one may show. */
     fun clear() {

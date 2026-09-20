@@ -60,7 +60,9 @@ import com.omaykan.storefront.core.designsystem.OmaykanTheme
 import com.omaykan.storefront.core.model.CustomerAccount
 import com.omaykan.storefront.core.model.OrderStage
 import com.omaykan.storefront.core.model.SessionState
-import com.omaykan.storefront.feature.cart.CartTopBar
+import com.omaykan.storefront.core.designsystem.ForestTopBar
+import com.omaykan.storefront.navigation.ABOUT_URL
+import com.omaykan.storefront.navigation.openInBrowser
 
 /**
  * The account tab.
@@ -134,13 +136,11 @@ fun AccountScreen(
     }
 
     Column(modifier.fillMaxSize()) {
-        if (onBack != null) {
-            CartTopBar(
-                title = "Your account",
-                subtitle = "Sign in to keep your orders together",
-                onBack = onBack,
-            )
-        }
+        ForestTopBar(
+            title = if (onBack != null) "Your Account" else "Account",
+            subtitle = if (onBack != null) "Sign in to keep your orders together" else null,
+            onBack = onBack,
+        )
 
         when (val session = state.session) {
             is SessionState.Restoring -> LoadingState()
@@ -555,18 +555,3 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     else -> null
 }
 
-/**
- * The public page the web serves at /about.
- *
- * A constant rather than BuildConfig.API_BASE_URL: a debug build pointed at a
- * laptop has no marketing site on it, and opening a dead link is a worse answer
- * than opening the real one.
- */
-private const val ABOUT_URL = "https://omaykan.com/about"
-
-/** Hands a URL to whatever the phone opens links with, or does nothing. */
-private fun Context.openInBrowser(url: String) {
-    runCatching {
-        startActivity(Intent(Intent.ACTION_VIEW, url.toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-    }
-}

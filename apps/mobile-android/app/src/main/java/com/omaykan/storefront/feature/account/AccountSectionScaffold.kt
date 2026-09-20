@@ -1,28 +1,15 @@
 package com.omaykan.storefront.feature.account
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -30,11 +17,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.omaykan.storefront.core.designsystem.CompactSnackbarHost
+import com.omaykan.storefront.core.designsystem.CtaButton
+import com.omaykan.storefront.core.designsystem.ForestTopBar
 import com.omaykan.storefront.core.designsystem.OmaykanTheme
 
 /**
- * The frame every account section shares: a title, a way back, and one place
- * for the sentence that says a save went through.
+ * The frame every account section shares: the forest bar with a title and a
+ * way back, and one place for the sentence that says a save went through.
  *
  * A snackbar rather than a banner for the confirmation, because these screens
  * are forms: a banner appearing above a field pushes the field the shopper is
@@ -45,7 +34,6 @@ import com.omaykan.storefront.core.designsystem.OmaykanTheme
  *
  * @param notice shown once and then cleared through [onNoticeShown].
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountSectionScaffold(
     title: String,
@@ -68,30 +56,7 @@ fun AccountSectionScaffold(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { CompactSnackbarHost(snackbars) },
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = OmaykanTheme.colors.ink,
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = OmaykanTheme.colors.ink,
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                ),
-            )
-        },
+        topBar = { ForestTopBar(title = title, onBack = onBack) },
     ) { padding ->
         val inner = Modifier
             .padding(padding)
@@ -112,31 +77,14 @@ fun SectionPrimaryButton(
     enabled: Boolean = true,
     busy: Boolean = false,
 ) {
-    Button(
+    CtaButton(
+        text = label,
         onClick = onClick,
-        enabled = enabled && !busy,
-        shape = RoundedCornerShape(14.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = OmaykanTheme.colors.ink,
-            contentColor = OmaykanTheme.colors.onInk,
-        ),
+        enabled = enabled,
+        busy = busy,
+        shape = RoundedCornerShape(12.dp),
         modifier = modifier.fillMaxWidth(),
-    ) {
-        Row(
-            horizontalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(vertical = 6.dp),
-        ) {
-            if (busy) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                    color = OmaykanTheme.colors.onInk,
-                )
-            } else {
-                Text(label, fontWeight = FontWeight.SemiBold)
-            }
-        }
-    }
+    )
 }
 
 /** A heading inside a form, above the fields it groups. */

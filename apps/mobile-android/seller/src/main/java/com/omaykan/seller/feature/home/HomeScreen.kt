@@ -31,6 +31,8 @@ import androidx.compose.material.icons.automirrored.filled.TrendingDown
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.PauseCircle
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
@@ -41,6 +43,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.omaykan.seller.core.model.OrderingState
+import com.omaykan.seller.core.model.PauseLength
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -150,7 +160,22 @@ fun HomeScreen(
                 )
             }
 
-            AlertsCard(watching = state.watching, onToggle = toggleAlerts)
+            AlertsCard(
+                watching = state.watching,
+                onToggle = toggleAlerts,
+                insistent = state.insistent,
+                onInsistent = viewModel::setInsistent,
+            )
+
+            state.ordering?.let { ordering ->
+                OrderingCard(
+                    ordering = ordering,
+                    busy = state.orderingBusy,
+                    error = state.orderingError,
+                    onPause = viewModel::pauseOrdering,
+                    onReopen = viewModel::reopenOrdering,
+                )
+            }
 
             state.feedError?.let {
                 Text(
@@ -458,48 +483,172 @@ private fun Figure(
  * so that is what the card holds. The label says the state, not the action:
  * somebody glancing at it wants to know whether they will hear the next order.
  */
+/**
+ * The shop's own "not taking online orders right now".
+ *
+ * Switching it off asks for how long, because "closed until tomorrow morning"
+ * should be one tap and a shop that forgets to reopen should not stay closed
+ * for a week. See documentation/merchant-features.md §3.
+ */
 @Composable
-private fun AlertsCard(watching: Boolean, onToggle: (Boolean) -> Unit) {
+private fun OrderingCard(
+    ordering: OrderingState,
+    busy: Boolean,
+    error: String?,
+    onPause: (PauseLength) -> Unit,
+    onReopen: () -> Unit,
+) {
+    var choosing by remember { mutableStateOf(false) }
+
     SoftCard(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(SellerTheme.colors.canopy),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    if (watching) Icons.Filled.NotificationsActive else Icons.Filled.NotificationsOff,
-                    contentDescription = null,
-                    tint = SellerTheme.colors.onCanopy,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-            Column(
-                Modifier
-                    .weight(1f)
-                    .padding(horizontal = 12.dp),
-            ) {
-                Text(
-                    text = if (watching) "Order alerts are on" else "Order alerts are off",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = if (watching) {
-                        "This phone sounds when an order arrives, even in the background."
-                    } else {
-                        "Orders still arrive. The phone just won't sound for them."
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(if (ordering.paused) SellerTheme.colors.warning else SellerTheme.colors.canopy),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        if (ordering.paused) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
+                        contentDescription = null,
+                        tint = SellerTheme.colors.onCanopy,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .padding(horizontal = 12.dp),
+                ) {
+                    Text(
+                        text = if (ordering.paused) "Online orders paused" else "Taking online orders",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = if (ordering.paused) {
+                            ordering.resumesAt?.let { "Reopens by itself ${resumeLabel(it)}." }
+                                ?: "Closed until you reopen."
+                        } else {
+                            "Pause when the kitchen is full or stock has run out."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SellerTheme.colors.textTertiary,
+                    )
+                }
+                SellerSwitch(
+                    checked = !ordering.paused,
+                    onCheckedChange = { open ->
+                        if (busy) return@SellerSwitch
+                        if (open) onReopen() else choosing = true
                     },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = SellerTheme.colors.textTertiary,
                 )
             }
-            SellerSwitch(checked = watching, onCheckedChange = onToggle)
+
+            if (choosing && !ordering.paused) {
+                Text(
+                    text = "Pause for how long?",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+                PauseLength.entries.forEach { length ->
+                    TextButton(
+                        onClick = {
+                            choosing = false
+                            onPause(length)
+                        },
+                        enabled = !busy,
+                    ) { Text(length.label) }
+                }
+                TextButton(onClick = { choosing = false }) { Text("Cancel") }
+            }
+
+            error?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SellerTheme.colors.warning,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+        }
+    }
+}
+
+private fun resumeLabel(at: java.time.OffsetDateTime): String {
+    val local = at.atZoneSameInstant(java.time.ZoneId.systemDefault())
+    val time = local.format(DateTimeFormatter.ofPattern("h:mm a"))
+    return if (local.toLocalDate() == LocalDate.now()) "at $time" else "${local.format(DateTimeFormatter.ofPattern("EEE"))} at $time"
+}
+
+@Composable
+private fun AlertsCard(
+    watching: Boolean,
+    onToggle: (Boolean) -> Unit,
+    insistent: Boolean,
+    onInsistent: (Boolean) -> Unit,
+) {
+    SoftCard(Modifier.fillMaxWidth()) {
+        Column {
+            Row(
+                Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(SellerTheme.colors.canopy),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        if (watching) Icons.Filled.NotificationsActive else Icons.Filled.NotificationsOff,
+                        contentDescription = null,
+                        tint = SellerTheme.colors.onCanopy,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .padding(horizontal = 12.dp),
+                ) {
+                    Text(
+                        text = if (watching) "Order alerts are on" else "Order alerts are off",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = if (watching) {
+                            "This phone sounds when an order arrives, even in the background."
+                        } else {
+                            "Orders still arrive. The phone just won't sound for them."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SellerTheme.colors.textTertiary,
+                    )
+                }
+                SellerSwitch(checked = watching, onCheckedChange = onToggle)
+            }
+
+            // For the kitchen with its back to the phone.
+            if (watching) {
+                Row(
+                    Modifier.padding(start = 66.dp, end = 14.dp, bottom = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Keep ringing until I open it",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f),
+                    )
+                    SellerSwitch(checked = insistent, onCheckedChange = onInsistent)
+                }
+            }
         }
     }
 }

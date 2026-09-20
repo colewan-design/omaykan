@@ -8,6 +8,7 @@ import coil3.disk.DiskCache
 import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
+import com.omaykan.storefront.core.push.OrderNotifications
 import dagger.hilt.android.HiltAndroidApp
 import okhttp3.OkHttpClient
 import okio.Path.Companion.toOkioPath
@@ -15,6 +16,13 @@ import javax.inject.Inject
 
 @HiltAndroidApp
 class OmaykanApp : Application(), SingletonImageLoader.Factory {
+
+    override fun onCreate() {
+        super.onCreate()
+        // Before any push can arrive: Android files a notification for a
+        // channel that does not exist yet under a generic one.
+        OrderNotifications.createChannel(this)
+    }
 
     /**
      * The same OkHttp the API uses, so images share its connection pool and its

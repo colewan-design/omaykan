@@ -129,7 +129,7 @@ function addToCart(item: SavedProduct) {
   place-items: center;
   aspect-ratio: 1 / 1;
   overflow: hidden;
-  background: var(--sf-sand, #ede5d8);
+  background: var(--sf-sand, #eeeeee);
   color: var(--acct-faint);
 }
 .wish-card__art img { width: 100%; height: 100%; object-fit: cover; }

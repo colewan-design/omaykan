@@ -139,7 +139,7 @@ const itemsLabel = (count: number) => `${count} item${count === 1 ? '' : 's'}`
   box-shadow: 0 8px 18px rgba(23, 35, 28, 0.24);
 }
 .aisle--on .aisle__icon { color: var(--sf-paper); }
-.aisle--on .aisle__n { color: rgba(251, 248, 243, 0.75); }
+.aisle--on .aisle__n { color: rgba(255, 255, 255, 0.75); }
 
 .aisle--in { border-color: var(--sf-forest); background: var(--sf-sand); }
 

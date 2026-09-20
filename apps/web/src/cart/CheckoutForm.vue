@@ -169,7 +169,7 @@ const pickupAddress = computed(() => catalog.shop?.address || STORE_ADDRESS)
   padding: 22px 24px;
   border: 1px solid var(--sf-rule);
   border-radius: 10px;
-  background: #fffdf9;
+  background: #ffffff;
 }
 
 .ckf-card__title {

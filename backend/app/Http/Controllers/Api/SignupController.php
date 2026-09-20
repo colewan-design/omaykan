@@ -7,6 +7,7 @@ use App\Mail\SellerSignupAlertMail;
 use App\Mail\SellerWelcomeMail;
 use App\Models\Organization;
 use App\Models\OrganizationMembership;
+use App\Models\PlatformSetting;
 use App\Models\Store;
 use App\Models\StoreMembership;
 use App\Models\Subscription;
@@ -38,12 +39,6 @@ use Illuminate\Validation\ValidationException;
  */
 class SignupController extends Controller
 {
-    /** Placeholder until a real price exists. Not shown anywhere yet: the
-     *  signup form collects no payment while Omaykan is in early access. */
-    private const PLAN_ID = 'standard-monthly';
-
-    private const PLAN_AMOUNT_CENTS = 49900;
-
     private const BUSINESS_MODES = ['coffee-shop', 'grocery', 'restaurant', 'nail-salon'];
 
     /**
@@ -188,17 +183,28 @@ class SignupController extends Controller
                 'membership_role' => 'admin',
             ]);
 
+            // The price lives on the marketplace's settings now, not in this
+            // file. Still a placeholder — nothing charges it while early access
+            // is free — but a real price is a save on the operator's settings
+            // screen rather than a deploy. The amount is copied onto the row so
+            // a later price change never re-prices this organization.
+            $plan = PlatformSetting::current()->planSettings();
+
             Subscription::query()->create([
                 'id' => (string) str()->uuid(),
                 'organization_id' => $organization->id,
                 'status' => Subscription::STATUS_PENDING,
-                'plan' => self::PLAN_ID,
-                'amount_cents' => self::PLAN_AMOUNT_CENTS,
+                'plan' => $plan['id'],
+                'amount_cents' => (int) $plan['amountCents'],
                 // Empty string, not null: the column is NOT NULL, and a
                 // subscription with no reference is exactly what an early-access
                 // signup is — pending, with nothing yet to verify.
                 'gcash_reference' => trim($validated['gcashReference'] ?? ''),
                 'submitted_at' => now(),
+                // The signup form says early access is free and that we will
+                // say before that changes. This is that promise as a date the
+                // server can read. See config/billing.php.
+                'trial_ends_at' => now()->addDays((int) config('billing.trial_days')),
             ]);
 
             // Told about only once the transaction commits, or the mail can

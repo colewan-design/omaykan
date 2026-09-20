@@ -9,7 +9,6 @@ import com.omaykan.storefront.core.data.SavedProductsStore
 import com.omaykan.storefront.core.designsystem.SnackbarMessages
 import com.omaykan.storefront.core.data.ShopDirectoryRepository
 import com.omaykan.storefront.core.model.Catalog
-import com.omaykan.storefront.core.model.Category
 import com.omaykan.storefront.core.model.Product
 import com.omaykan.storefront.core.model.ShopSummary
 import com.omaykan.storefront.core.model.StoreRef
@@ -34,10 +33,26 @@ import javax.inject.Inject
  * for the person buying, and a "list your shop" call to action in a shopping
  * app is a door into a room they did not come here for.
  */
+/**
+ * One aisle as the front page and the Shop tab draw it.
+ *
+ * The picture is a real one off the aisle's own shelf — the first product in
+ * it that has a photo — rather than stock art of what such an aisle might
+ * hold, so the circle for "Coffee" shows this shop's coffee.
+ */
+data class Aisle(
+    val id: String,
+    val name: String,
+    /** Null when nothing in the aisle has been photographed. */
+    val imageUrl: String?,
+    val itemCount: Int,
+    val fromCents: Long,
+)
+
 data class HomeUiState(
     val shopName: String = "",
     val query: String = "",
-    val categories: List<Category> = emptyList(),
+    val aisles: List<Aisle> = emptyList(),
     /** Everything on the shelf, for the Saved tab to resolve hearts against. */
     val allProducts: List<Product> = emptyList(),
     val popular: List<Product> = emptyList(),
@@ -138,7 +153,20 @@ class HomeViewModel @Inject constructor(
 
         return base.copy(
             shopName = catalog.shop.name,
-            categories = catalog.categories,
+            // An aisle with nothing in it is left out rather than drawn: a
+            // circle that opens onto "nothing matches" is a door to an empty
+            // room, and the count on the Shop tab would have to say zero.
+            aisles = catalog.categories.mapNotNull { category ->
+                val shelf = catalog.products.filter { it.categoryId == category.id }
+                if (shelf.isEmpty()) return@mapNotNull null
+                Aisle(
+                    id = category.id,
+                    name = category.name,
+                    imageUrl = shelf.firstOrNull { !it.imageUrl.isNullOrBlank() }?.imageUrl,
+                    itemCount = shelf.size,
+                    fromCents = shelf.minOf { it.priceCents },
+                )
+            },
             allProducts = catalog.products,
             popular = visible.take(SHELF_SIZE),
             deals = visible.filter { it.discountPercent != null },

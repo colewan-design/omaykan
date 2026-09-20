@@ -1,6 +1,6 @@
 import { computed, reactive, type ComputedRef } from 'vue'
 import { demoCategories, demoProducts, type Category } from '@pos/shared/index'
-import { fetchCatalog, type StorefrontCatalog, type StorefrontShop } from '@pos/web/commerce/api'
+import { ApiRequestError, fetchCatalog, type StorefrontCatalog, type StorefrontShop } from '@pos/web/commerce/api'
 import { BUSINESS_MODE, DEMO_ORG_SLUG, ORG_SLUG } from '@pos/web/commerce/context'
 
 export type { StorefrontCatalog, StorefrontShop }
@@ -38,6 +38,11 @@ const CATALOG_TIMEOUT_MS = 15000
 export interface LoadedCatalog extends StorefrontCatalog {
   /** True when the real catalog could not be read, whatever is being shown. */
   failed: boolean
+  /**
+   * The shop exists and is not trading — suspended, or unpaid. Not a failure:
+   * retrying will not help, and the page says "closed" rather than "try again".
+   */
+  closed: boolean
 }
 
 export async function loadStorefrontCatalog(): Promise<LoadedCatalog> {
@@ -55,19 +60,34 @@ export async function loadStorefrontCatalog(): Promise<LoadedCatalog> {
     // An empty answer is a real answer — a shop that has stocked nothing yet
     // is not a failure, and must not be papered over with someone else's
     // products. Only the demo tenant gets those, and only to fill this gap.
-    if (catalog.products.length > 0) return { ...catalog, failed: false }
-    return { ...demoStorefrontCatalog(), failed: false }
-  } catch {
-    return { ...demoStorefrontCatalog(), failed: true }
+    if (catalog.products.length > 0) return { ...catalog, failed: false, closed: false }
+    return { ...demoStorefrontCatalog(), failed: false, closed: false }
+  } catch (error) {
+    // A closed shop gets an empty shelf and never the demo one, even on the
+    // demo tenant: a sample shelf on a shop that is not trading would be an
+    // invitation to fill a cart nobody can check out.
+    if (error instanceof ApiRequestError && error.shopClosed) {
+      return { ...EMPTY, failed: false, closed: true }
+    }
+
+    return { ...demoStorefrontCatalog(), failed: true, closed: false }
   }
 }
 
 interface StorefrontCatalogState extends StorefrontCatalog {
   loading: boolean
   error: string
+  closed: boolean
 }
 
-const state = reactive<StorefrontCatalogState>({ shop: null, categories: [], products: [], loading: true, error: '' })
+const state = reactive<StorefrontCatalogState>({
+  shop: null,
+  categories: [],
+  products: [],
+  loading: true,
+  error: '',
+  closed: false,
+})
 let loadStarted = false
 
 function runCatalogLoad(): void {
@@ -78,6 +98,7 @@ function runCatalogLoad(): void {
       state.shop = catalog.shop
       state.categories = catalog.categories
       state.products = catalog.products
+      state.closed = catalog.closed
       // Only worth saying when there is nothing to show for it: the demo
       // tenant still has its shelf, and an empty shop is its own message.
       state.error = catalog.failed && catalog.products.length === 0

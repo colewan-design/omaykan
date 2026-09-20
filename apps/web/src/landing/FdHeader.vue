@@ -471,7 +471,7 @@ defineExpose({ clear: () => (searchTerm.value = '') })
   padding: 4px 10px 4px 18px;
   margin-left: -6px;
   border: none;
-  border-left: 1px solid rgba(246, 241, 232, 0.2);
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 0 8px 8px 0;
   background: none;
   color: inherit;
@@ -480,7 +480,7 @@ defineExpose({ clear: () => (searchTerm.value = '') })
   white-space: nowrap;
   cursor: pointer;
 }
-.fd-bar__delivery:hover { background: rgba(246, 241, 232, 0.08); }
+.fd-bar__delivery:hover { background: rgba(255, 255, 255, 0.08); }
 .fd-bar__delivery:focus-visible { outline: 2px solid var(--sf-gold); outline-offset: 2px; }
 
 .fd-bar__delivery-label {
@@ -488,7 +488,7 @@ defineExpose({ clear: () => (searchTerm.value = '') })
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(246, 241, 232, 0.6);
+  color: rgba(255, 255, 255, 0.6);
 }
 .fd-bar__addr {
   display: flex;
@@ -500,7 +500,7 @@ defineExpose({ clear: () => (searchTerm.value = '') })
 }
 .fd-bar__pin { flex-shrink: 0; color: var(--sf-gold); }
 .fd-bar__addr-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fd-bar__caret { flex-shrink: 0; color: rgba(246, 241, 232, 0.7); }
+.fd-bar__caret { flex-shrink: 0; color: rgba(255, 255, 255, 0.7); }
 
 /* ── Links and the categories menu ───────────────────────────────────── */
 
@@ -519,7 +519,7 @@ defineExpose({ clear: () => (searchTerm.value = '') })
   border: none;
   border-radius: 8px;
   background: none;
-  color: rgba(246, 241, 232, 0.92);
+  color: rgba(255, 255, 255, 0.92);
   font-family: inherit;
   font-size: 14.5px;
   font-weight: 600;
@@ -528,7 +528,7 @@ defineExpose({ clear: () => (searchTerm.value = '') })
   cursor: pointer;
 }
 .fd-link:hover,
-.fd-link[aria-expanded='true'] { background: rgba(246, 241, 232, 0.09); color: #fff; }
+.fd-link[aria-expanded='true'] { background: rgba(255, 255, 255, 0.09); color: #fff; }
 .fd-link:focus-visible { outline: 2px solid var(--sf-gold); outline-offset: 2px; }
 
 .fd-link__caret { transition: transform 150ms ease; }
@@ -708,7 +708,7 @@ defineExpose({ clear: () => (searchTerm.value = '') })
   text-decoration: none;
   cursor: pointer;
 }
-.fd-iconlink:hover { background: rgba(246, 241, 232, 0.09); }
+.fd-iconlink:hover { background: rgba(255, 255, 255, 0.09); }
 .fd-iconlink:focus-visible { outline: 2px solid var(--sf-gold); outline-offset: 2px; }
 
 .fd-iconlink__icon { position: relative; display: grid; place-items: center; }

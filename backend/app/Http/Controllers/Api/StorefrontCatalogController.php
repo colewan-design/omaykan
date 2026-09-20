@@ -9,6 +9,7 @@ use App\Models\OrganizationMembership;
 use App\Models\Product;
 use App\Models\ProductStoreOverride;
 use App\Models\Store;
+use App\Services\Billing\TenantAccessDenied;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -36,12 +37,20 @@ class StorefrontCatalogController extends Controller
         ]);
 
         $store = Store::query()
-            ->with('organization')
+            ->with('organization.subscription')
             ->where('code', $validated['storeCode'])
             ->whereHas('organization', fn ($query) => $query->where('slug', $validated['orgSlug']))
             ->first();
 
         abort_if($store === null || $store->status !== 'active', 404, 'Store not found.');
+
+        // The directory has always hidden a suspended shop. Since every shop
+        // got its own `<slug>.omaykan.com`, hiding it from the list is not the
+        // same as closing it — the address still works, and this is what it
+        // loads. A shop that may not trade serves its closed state instead.
+        if (! $store->organization->accessVerdict()->allowsStorefront()) {
+            throw TenantAccessDenied::forStorefront();
+        }
 
         $businessMode = $store->business_mode;
         $shop = $this->shopOf($store);
@@ -99,7 +108,10 @@ class StorefrontCatalogController extends Controller
                 'name' => $product->name,
                 'priceCents' => $override?->price_cents ?? $product->price_cents,
                 'compareAtPriceCents' => $product->compare_at_price_cents,
-                'taxRate' => (float) $product->tax_rate,
+                // A fraction (0.12), which is what the storefront's cart and
+                // product page compute with. The column is a percentage (12.00);
+                // served as-is, a seeded product showed 1,200% VAT.
+                'taxRate' => round(((float) $product->tax_rate) / 100, 4),
                 'kind' => $product->product_type === 'weighted' ? 'weighted' : 'standard',
                 'imageUrl' => $product->image_url,
                 // The extra shots, after the primary one. The detail page
@@ -111,6 +123,7 @@ class StorefrontCatalogController extends Controller
                 'brand' => $product->brand,
                 'packagingType' => $product->packaging_type,
                 'unitLabel' => $product->unit_label,
+                'description' => $product->description,
                 'businessModes' => $product->business_modes ?? [],
                 'outOfStock' => false,
                 'stockQty' => $stockQty,
@@ -189,6 +202,10 @@ class StorefrontCatalogController extends Controller
             // still looks like this shop's shelf. Null is the ordinary case
             // and the caller falls back to the plain branded panel.
             'imageUrl' => StoreImageController::urlFor($store),
+            // The shop's own pause. The menu is still served — a shopper can
+            // browse and plan — and checkout reads this to say "back at 4:00
+            // PM" instead of letting them fill a cart it will refuse.
+            'ordering' => StoreOrderingController::stateOf($store),
         ];
     }
 }

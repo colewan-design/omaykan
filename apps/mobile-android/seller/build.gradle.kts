@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    alias(libs.plugins.androidx.baselineprofile)
 }
 
 /*
@@ -83,6 +84,22 @@ android {
             "GOOGLE_OAUTH_CLIENT_ID",
             "\"${providers.environmentVariable("OMAYKAN_SELLER_GOOGLE_ANDROID_CLIENT_ID").getOrElse("")}\"",
         )
+
+        /*
+         * Live order events over Reverb. The key is the backend's
+         * REVERB_APP_KEY — public (the web till ships it in its bundle), but
+         * not committed, so it comes from the environment like the others.
+         *
+         * Empty is a supported state: no socket is opened and the order feed
+         * polls every fifteen seconds exactly as it always has. The defaults
+         * are production's: omaykan.com, 443, TLS, behind nginx at /reverb.
+         * See documentation/merchant-features.md §6.
+         */
+        buildConfigField("String", "REVERB_APP_KEY", "\"${buildSecret("OMAYKAN_REVERB_APP_KEY")}\"")
+        buildConfigField("String", "REVERB_HOST", "\"${buildSecret("OMAYKAN_REVERB_HOST", default = "omaykan.com")}\"")
+        buildConfigField("int", "REVERB_PORT", buildSecret("OMAYKAN_REVERB_PORT", default = "443"))
+        buildConfigField("String", "REVERB_PATH", "\"${buildSecret("OMAYKAN_REVERB_PATH", default = "/reverb")}\"")
+        buildConfigField("boolean", "REVERB_TLS", buildSecret("OMAYKAN_REVERB_TLS", default = "true"))
     }
 
     signingConfigs {
@@ -162,6 +179,25 @@ kotlin {
  * already knows what they sell, and the screen's job is names, counts and
  * money.
  */
+/*
+ * Where the recorded profile lands, and why it is committed.
+ *
+ * `saveInSrc` writes it into src/main/generated/baselineProfiles/ as tracked
+ * source rather than leaving it in build/. That is the point: a release built
+ * on a machine with no emulator — CI, or a laptop — still ships the profile,
+ * because the profile is a file in the repository and not something the
+ * release build goes and earns. `automaticGenerationDuringBuild` stays off for
+ * the same reason; booting an emulator inside `assembleRelease` would turn a
+ * two-minute build into a twenty-minute one.
+ *
+ * Regenerating it is therefore a deliberate act. See baselineprofile/README.md.
+ */
+baselineProfile {
+    mergeIntoMain = true
+    saveInSrc = true
+    automaticGenerationDuringBuild = false
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -194,6 +230,14 @@ dependencies {
     // Coil, for exactly one image: the static delivery map in the rider sheet.
     // No other screen in this app shows a picture — see core/map/StaticMap.kt
     // for why that map is a fetched PNG rather than an embedded map SDK.
+    /*
+     * The runtime half of the baseline profile: the code that hands it to ART
+     * on first run, on installs that did not come from Play. Without it the
+     * profile sits in the APK unread.
+     */
+    implementation(libs.androidx.profileinstaller)
+    baselineProfile(project(":baselineprofile-seller"))
+
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
 

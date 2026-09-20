@@ -21,6 +21,7 @@ Delivery aggregators take 20–30% from the merchant, squeeze the rider's per-dr
 | [rider/README.md](apps/mobile-android/rider/README.md) | The native Android **rider** app — why it signs in a person rather than a device, why the approval gate is three screens, and why there is no location in it yet |
 | [live-delivery-tracking.md](documentation/live-delivery-tracking.md) | The live rider map and the shop's own riders — the privacy model, the Mapbox setup, and why a shop is never forced onto the open board |
 | [google-sign-in.md](documentation/google-sign-in.md) | Sign in with Google — the Google Cloud console setup, the three OAuth clients, account linking, and the Android PKCE flow |
+| [todo-checklist.md](documentation/todo-checklist.md) | Checklist of every feature and fix still not done, re-checked against the code 2026-09-18 |
 | [feature-audit.md](documentation/feature-audit.md) | What is missing, unfinished, or inert. Audited against the code and the live database |
 | [e2e-findings.md](documentation/e2e-findings.md) | A ten-run pass of seller → customer → rider → completion, what failed, and what to improve |
 | [deployment.md](documentation/deployment.md) | The VPS, the deploy procedure, rollback, and why production's schema differs from `main` |

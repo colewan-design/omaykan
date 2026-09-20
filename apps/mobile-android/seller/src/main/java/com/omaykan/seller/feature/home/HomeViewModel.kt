@@ -5,7 +5,10 @@ import androidx.lifecycle.viewModelScope
 import com.omaykan.seller.core.data.CatalogRepository
 import com.omaykan.seller.core.data.ConversationRepository
 import com.omaykan.seller.core.data.OrderFeed
+import com.omaykan.seller.core.data.OrderingRepository
 import com.omaykan.seller.core.data.StoreProfileRepository
+import com.omaykan.seller.core.model.OrderingState
+import com.omaykan.seller.core.model.PauseLength
 import com.omaykan.seller.core.model.Product
 import com.omaykan.seller.core.model.Takings
 import com.omaykan.seller.core.model.TopProduct
@@ -13,9 +16,11 @@ import com.omaykan.seller.core.model.salesChangeVsYesterday
 import com.omaykan.seller.core.model.takingsFor
 import com.omaykan.seller.core.model.topProducts
 import com.omaykan.seller.core.network.ApiException
+import com.omaykan.seller.core.notify.NewOrderNotifier
 import com.omaykan.seller.core.notify.OrderWatchController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -46,7 +51,14 @@ data class HomeUiState(
     /** The shop's photo as last uploaded or read — versioned, so a new one shows at once. */
     val storePhotoUrl: String? = null,
     val watching: Boolean = false,
+    /** Keep sounding until the notification is opened. */
+    val insistent: Boolean = false,
     val feedError: String? = null,
+    /** Whether the shop is taking online orders. Null until read, or when it cannot be. */
+    val ordering: OrderingState? = null,
+    val orderingBusy: Boolean = false,
+    /** Why the last pause or reopen did not go through — a 403 for a role without Orders. */
+    val orderingError: String? = null,
 )
 
 /**
@@ -64,7 +76,12 @@ class HomeViewModel @Inject constructor(
     private val conversations: ConversationRepository,
     private val watcher: OrderWatchController,
     profiles: StoreProfileRepository,
+    private val ordering: OrderingRepository,
+    private val notifier: NewOrderNotifier,
 ) : ViewModel() {
+
+    private val orderingBusy = MutableStateFlow(false)
+    private val orderingError = MutableStateFlow<String?>(null)
 
     /**
      * The inbox count, every thirty seconds while the screen is up. A failure
@@ -104,11 +121,41 @@ class HomeViewModel @Inject constructor(
                 watching = watching,
                 feedError = orders.error,
             )
+        }.let { base ->
+            // A second combine: the typed overload stops at five flows.
+            combine(base, ordering.state, orderingBusy, orderingError, notifier.insistent) { home, open, busy, error, insistent ->
+                home.copy(ordering = open, orderingBusy = busy, orderingError = error, insistent = insistent)
+            }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 
     init {
         viewModelScope.launch { catalog.ensureLoaded() }
+        viewModelScope.launch {
+            // Not fatal: the card simply does not show if this cannot be read.
+            try { ordering.refresh() } catch (_: ApiException) {}
+        }
     }
+
+    fun pauseOrdering(length: PauseLength) = changeOrdering { ordering.pause(length) }
+
+    fun reopenOrdering() = changeOrdering { ordering.reopen() }
+
+    private fun changeOrdering(change: suspend () -> Unit) {
+        if (orderingBusy.value) return
+        viewModelScope.launch {
+            orderingBusy.value = true
+            orderingError.value = null
+            try {
+                change()
+            } catch (e: ApiException) {
+                orderingError.value = e.message
+            } finally {
+                orderingBusy.value = false
+            }
+        }
+    }
+
+    fun setInsistent(on: Boolean) = notifier.setInsistent(on)
 
     fun setWatching(on: Boolean) {
         if (on) watcher.start() else watcher.stop()

@@ -120,6 +120,17 @@ function outOfRange(store: StoreSummary): boolean {
   return store.distanceKm !== null && store.distanceKm > DELIVERY_MAX_KM
 }
 
+/** "Closed now", or "Back at 4:00 PM" when the shop said when. */
+function pausedLabel(store: StoreSummary): string {
+  if (!store.orderingResumesAt) return 'Closed now'
+  const at = new Date(store.orderingResumesAt)
+  const time = at.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Manila' })
+  const sameDay = at.toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' })
+    === new Date().toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' })
+  const day = sameDay ? '' : `${at.toLocaleDateString('en-PH', { weekday: 'short', timeZone: 'Asia/Manila' })} `
+  return `Back ${day}at ${time}`
+}
+
 /** Stands in for a shop that has no photo — its own initials, not a grey box. */
 function initials(name: string): string {
   return name
@@ -212,7 +223,12 @@ const brokenImages = reactive(new Set<string>())
 
             <span class="shopcard__type">{{ store.businessTypeLabel || store.businessMode }}</span>
 
-            <span v-if="store.isNew || outOfRange(store)" class="shopcard__tags">
+            <span v-if="store.isNew || outOfRange(store) || store.orderingPaused" class="shopcard__tags">
+              <!-- The shop's own pause. Listed rather than hidden, so a regular
+                   sees "back at 4:00 PM" instead of assuming it has gone. -->
+              <span v-if="store.orderingPaused" class="shopcard__tag shopcard__tag--paused">
+                {{ pausedLabel(store) }}
+              </span>
               <span v-if="store.isNew" class="shopcard__tag shopcard__tag--new">New on Omaykan</span>
               <span v-if="outOfRange(store)" class="shopcard__tag shopcard__tag--far">
                 Outside delivery range
@@ -389,6 +405,8 @@ const brokenImages = reactive(new Set<string>())
 .shopcard__tag--new { background: #efe3cf; color: var(--sf-forest); }
 /* Amber, not red: the shop is fine, it is just too far to bring to this door. */
 .shopcard__tag--far { background: #fdf1dc; color: #92500e; }
+/* Grey: nothing is wrong with the shop; it is just not cooking right now. */
+.shopcard__tag--paused { background: #ecebe8; color: #4a4843; }
 
 .shopcard__cats {
   font-size: 12.5px;

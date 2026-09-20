@@ -116,7 +116,7 @@ const promises = [
   padding: clamp(40px, 5vw, 64px) var(--fd-gutter) clamp(36px, 4vw, 52px);
 }
 
-.sfhero__eyebrow { color: rgba(251, 248, 243, 0.85); }
+.sfhero__eyebrow { color: rgba(255, 255, 255, 0.85); }
 
 .sfhero__title {
   margin: 0;
@@ -132,7 +132,7 @@ const promises = [
   max-width: 34em;
   font-size: clamp(1rem, 1.3vw, 1.15rem);
   line-height: 1.55;
-  color: rgba(251, 248, 243, 0.9);
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .sfhero__cta {

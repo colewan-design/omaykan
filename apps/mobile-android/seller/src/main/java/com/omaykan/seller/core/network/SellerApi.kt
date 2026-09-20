@@ -4,7 +4,15 @@ import com.omaykan.seller.core.network.dto.AssignRiderRequestDto
 import com.omaykan.seller.core.network.dto.BootstrapDto
 import com.omaykan.seller.core.network.dto.ConversationThreadDto
 import com.omaykan.seller.core.network.dto.ConversationsDto
+import com.omaykan.seller.core.network.dto.CreatePromoCodeRequestDto
 import com.omaykan.seller.core.network.dto.DeletedDto
+import com.omaykan.seller.core.network.dto.PromoCodeEnvelopeDto
+import com.omaykan.seller.core.network.dto.PromoCodesDto
+import com.omaykan.seller.core.network.dto.UpdatePromoCodeRequestDto
+import com.omaykan.seller.core.network.dto.OrderingRequestDto
+import com.omaykan.seller.core.network.dto.ProductImageDto
+import com.omaykan.seller.core.network.dto.ProductImageRequestDto
+import com.omaykan.seller.core.network.dto.OrderingStateDto
 import com.omaykan.seller.core.network.dto.ReplyRequestDto
 import com.omaykan.seller.core.network.dto.SyncPushRequestDto
 import com.omaykan.seller.core.network.dto.SyncPushResponseDto
@@ -28,6 +36,7 @@ import com.omaykan.seller.core.network.dto.UpdateStatusRequestDto
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.PATCH
 import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.PUT
@@ -227,4 +236,40 @@ interface SellerApi {
      */
     @PUT("api/seller/store-image")
     suspend fun updateStoreImage(@Body request: StoreImageRequestDto): StoreImageDto
+
+    /**
+     * Keep one product photo and get its URL back, to put in the product event.
+     * Whoever may change products; JPEG, PNG or WebP under 3MB decoded.
+     */
+    @POST("api/seller/product-images")
+    suspend fun uploadProductImage(@Body request: ProductImageRequestDto): ProductImageDto
+
+    /** The shop's promo codes, newest first. Roles with the Products page; 403 otherwise. */
+    @GET("api/seller/promo-codes")
+    suspend fun promoCodes(): PromoCodesDto
+
+    /** 422 for a code name already used, retired ones included. */
+    @POST("api/seller/promo-codes")
+    suspend fun createPromoCode(@Body request: CreatePromoCodeRequestDto): PromoCodeEnvelopeDto
+
+    @PATCH("api/seller/promo-codes/{id}")
+    suspend fun updatePromoCode(
+        @Path("id") id: String,
+        @Body request: UpdatePromoCodeRequestDto,
+    ): PromoCodeEnvelopeDto
+
+    /** Retired, not erased: past orders keep naming the code they used. */
+    @DELETE("api/seller/promo-codes/{id}")
+    suspend fun deletePromoCode(@Path("id") id: String): DeletedDto
+
+    /** Whether the shop is taking online orders right now. */
+    @GET("api/seller/ordering")
+    suspend fun ordering(): OrderingStateDto
+
+    /**
+     * Pause (optionally until a time) or reopen. Any role with the Orders
+     * page; 403 otherwise. A pause ends by itself at its resume time.
+     */
+    @PUT("api/seller/ordering")
+    suspend fun setOrdering(@Body request: OrderingRequestDto): OrderingStateDto
 }

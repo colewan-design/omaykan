@@ -179,21 +179,20 @@ business-mode gate, deliberately.
    Needs a device-token registry on the backend, a sender keyed off the existing
    `OrderPlaced` event, and a Google project. It replaces the watcher service;
    it does not sit beside it.
-2. **Or, cheaper: let this app hold the websocket.** This got much easier when
-   pairing went: `store.{storeId}` in `routes/channels.php` authorizes on a
-   `StoreMembership`, and this app now holds a token for a user who has one. It
-   should be close to a no-op, and it removes the polling entirely — the endpoint
-   it needs, `POST /api/broadcasting/auth`, already exists.
+2. ~~**Let this app hold the websocket.**~~ Done 2026-09-19: `OrderRealtime`
+   keeps `private-store.{id}` open while the feed is watched, speaking the Pusher
+   protocol over OkHttp so it can reach production Reverb at `/reverb/`. Polling
+   stays underneath, every minute while connected. Needs `OMAYKAN_REVERB_APP_KEY`
+   at build time; without it the app polls as before. It shortens the wait; it
+   is not push — a closed app still hears nothing, which is what FCM is for.
 3. ~~**Per-staff attribution.**~~ Done: signing in as a person is what this
    section used to be waiting for.
-4. **A sound of its own.** The default notification tone is right for a first
-   version and wrong for a busy kitchen.
-5. **Guard catalog writes on the server.** `POST /api/sync/push` applies
-   product and stock events for any signed-in staff member — it has no
-   `isManager()` check, where the store-photo and staff endpoints do. This app
-   hides the product form's save from cashiers, which is a courtesy, not a
-   control: a cashier's token can still write the catalog.
-5. **Factor out the map, the theme, `ApiCaller` and the Google flow.**
+4. ~~**A sound of its own.**~~ Done 2026-09-19: `res/raw/order_alert.wav` on
+   channel `new_orders_v2`, and a "keep ringing until I open it" switch on Home.
+5. ~~**Guard catalog writes on the server.**~~ Done 2026-09-19: `/sync/push`
+   checks each catalog and stock event against the role's page permissions and
+   answers `rejected`, which this app shows as the server's sentence.
+6. **Factor out the map, the theme, `ApiCaller` and the Google flow.**
    `StaticMap` is the third near-copy across these three apps and the OAuth flow
    is now the second. Three copies is the point at which a shared module stops
    being a guess, and one of these has reached it.

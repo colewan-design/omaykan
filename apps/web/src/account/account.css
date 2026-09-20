@@ -20,9 +20,9 @@
   --acct-ink: #231d18;
   --acct-muted: #6f665c;
   --acct-faint: #9a9086;
-  --acct-rule: #e4dacb;
-  --acct-ground: #f6f1e8;
-  --acct-surface: #fffdf9;
+  --acct-rule: #e5e5e5;
+  --acct-ground: #ffffff;
+  --acct-surface: #ffffff;
   --acct-accent: #b4532a;
   --acct-accent-deep: #93401d;
   --acct-green: #2f6b45;
@@ -235,7 +235,7 @@
 }
 
 .acct-btn:disabled {
-  background: #e2d7c5;
+  background: #dedede;
   color: #9a9086;
   cursor: not-allowed;
 }

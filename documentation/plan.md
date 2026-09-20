@@ -11,7 +11,7 @@
 - **The storefront is the product; the POS is the moat.** A storefront alone is replaceable by Facebook Shops or a Google Form. One catalog, one inventory count, walk-in and online orders in one queue, one end-of-day number — that is what a merchant cannot walk away from. We sell the storefront and retain with the POS.
 - **One product record, one price.** Storefront price and register price are the same field. Price parity is enforced by the data model, not by policy. This is the covenant in [positioning.md §4](./positioning.md).
 - **No install between a customer and an order.** The customer's entry point is a URL, never an app download and never a typed code.
-- **Offline-first for the merchant.** The register is the source of truth for its own transactions and never blocks on the network. A dropped connection must never lose a sale — a till that stops when the internet does is worthless in a PH sari-sari store.
+- **Online-only for the merchant** (changed 2026-09-19; was offline-first). The server is the source of truth for every sale: the till sends a sale to the server before completing it, and a sale the server refuses (totals that don't add up, a discount beyond the cashier's role, a used-up promo code, points the customer doesn't have) or can't be reached for is not completed. With no connection the register cannot charge. See `RegisterOrderController` and `RegisterSales`.
 - **Online-first for the customer.** The storefront is a web page; it does not need offline support.
 - **One codebase, two targets.** A single Vue 3 application ships as an installable web app (PWA) and an Android app (Capacitor). The PWA is also the big-screen till.
 - **One engine, many businesses.** Business-type config drives the differences (grocery / coffee shop / restaurant / nail salon) rather than forked apps.
@@ -33,7 +33,7 @@ Honest current state, so the phases below start from reality.
 
 - **Signup and subscription record** (`api/signup.ts`) — creates org, store, owner, pairing code, and a subscription at `status: 'pending_verification'` on a `standard-monthly` plan. Price is a **₱499 placeholder** collected by manual GCash transfer to a placeholder number; there is no gateway, no recurring billing, and no enforcement against non-payers.
 
-**Not built:** rider side (entirely), loyalty, discounts, customer list/broadcast, price comparison, savings counter, automated subscription billing. Online payment collection is not built and is **not planned** — see §4a.
+**Not built:** rider side (entirely), loyalty, discounts, customer list/broadcast, price comparison, savings counter, automated subscription billing. Online payment collection is not built and is **not planned** — for customer orders or for the merchant subscription. See §4a.
 
 Full page-by-page status is in [feature-log.md](./feature-log.md).
 
@@ -65,7 +65,7 @@ Two customer storefronts exist and have **drifted apart**: the mobile one suppor
 | Legacy backend | Firebase / Firestore + `api/*.ts` on `server/` | Live today, being retired |
 | On-device DB (merchant) | IndexedDB (mirrored to `localStorage`) today; SQLite is the target | See §4 |
 | Customer payments | **COD only** — settled at handover | No gateway, deliberately. See §4a |
-| Merchant subscription | Manual GCash transfer | Placeholder; needs a real collection method |
+| Merchant subscription | Manual GCash transfer, verified by an operator | No gateway either, deliberately as of 2026-09-20. See §4a |
 
 ---
 
@@ -154,9 +154,11 @@ What COD costs us, and must be designed for in Phase 3:
 - **Change handling.** The rider must know the exact amount due and carry change. Show change-due prominently.
 - **Cash reconciliation across a rider.** Money collected in the field has to land against the shift — the shift and cash-movement model already exists to hang this on.
 
-**Not COD:** the merchant's own subscription payment to us. That is a separate problem and still needs a real collection method (§7).
+**The merchant's own subscription is not COD** — nobody hands us cash at a door — but as of **2026-09-20 it is under the same no-gateway decision**. It stays a manual GCash transfer with an operator verifying the reference by eye. A recurring-billing integration (PayMongo, Xendit) is **not planned**, and the earlier note here that it "still needs a real collection method" no longer describes an open task. See [subscription-and-suspension.md §6.3](./subscription-and-suspension.md).
 
-Revisit COD-only when order volume makes prepayment worth the fees and the compliance work — not before.
+The reasoning is mostly the same as above, minus the customer-facing parts: no processor fees, no compliance surface opened while BIR is unresolved, and nothing to build or keep working. What it costs us is an operator's attention per merchant per month, and no way to dun anybody automatically — acceptable at tens of merchants, not at hundreds.
+
+Revisit both — COD-only and the subscription gateway — when volume makes the fees and the compliance work worth it. Not before.
 
 ---
 

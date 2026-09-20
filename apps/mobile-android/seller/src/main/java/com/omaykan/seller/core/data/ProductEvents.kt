@@ -70,6 +70,15 @@ internal fun productEvents(
         // Present means "set the branch's reorder level", null included — an
         // emptied field is the merchant asking for the till's default back.
         if (tracked) put("lowStockThreshold", draft.lowStockThreshold)
+
+        // Only when the form showed them. Absent keys leave the server's
+        // values alone (SyncController::keptField), which is how an edit that
+        // never saw the photo cannot remove it.
+        draft.storefront?.let { fields ->
+            put("imageUrl", fields.imageUrl)
+            put("unitLabel", fields.unitLabel?.trim()?.takeIf { it.isNotEmpty() })
+            put("description", fields.description?.trim()?.takeIf { it.isNotEmpty() })
+        }
     }
 
     val events = mutableListOf(

@@ -76,6 +76,15 @@ class OrderStageTest {
     }
 
     /** Delivery not yet handed to anyone is still the kitchen's. */
+    /** Counted as on the way, but the row itself says what is actually true. */
+    @Test
+    fun `an accepted order is labelled rider assigned`() {
+        assertEquals("Rider assigned", order(deliveryStage = "assigned").stageLabel)
+        assertEquals("On the way", order(deliveryStage = "picked_up").stageLabel)
+        assertEquals("Ready", order(status = "ready").stageLabel)
+        assertNull(order(status = "cancelled", deliveryStage = "assigned").stageLabel)
+    }
+
     @Test
     fun `a pending delivery stage is not on the way`() {
         assertEquals(OrderStage.Preparing, order(status = "preparing", deliveryStage = "pending").stage)

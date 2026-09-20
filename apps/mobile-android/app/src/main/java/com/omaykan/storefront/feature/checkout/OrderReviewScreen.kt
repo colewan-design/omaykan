@@ -31,7 +31,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.omaykan.storefront.core.designsystem.OmaykanTheme
 import com.omaykan.storefront.core.model.CartLine
 import com.omaykan.storefront.core.model.Money
-import com.omaykan.storefront.feature.cart.CartTopBar
+import com.omaykan.storefront.core.designsystem.CtaButton
+import com.omaykan.storefront.core.designsystem.ForestTopBar
 
 /**
  * The last look before the shop is holding a ticket.
@@ -73,18 +74,14 @@ fun OrderReviewScreen(
         if (state.fieldErrors.isNotEmpty()) onBack()
     }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
-    ) {
-        CartTopBar(title = "Review your order", subtitle = "", onBack = onBack)
+    Column(Modifier.fillMaxSize()) {
+        ForestTopBar(title = "Review Your Order", onBack = onBack)
 
         Column(
             Modifier
                 .weight(1f)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp),
+                .padding(horizontal = 20.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             ItemsCard(state)
@@ -106,26 +103,13 @@ fun OrderReviewScreen(
                 .padding(20.dp)
                 .navigationBarsPadding(),
         ) {
-            Button(
+            CtaButton(
+                text = "Place Order",
                 onClick = viewModel::confirm,
                 enabled = state.canSubmit,
+                busy = state.submitting,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = OmaykanTheme.colors.ink,
-                    contentColor = OmaykanTheme.colors.onInk,
-                ),
-            ) {
-                if (state.submitting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                        color = OmaykanTheme.colors.onInk,
-                    )
-                } else {
-                    Text("Place order", modifier = Modifier.padding(vertical = 4.dp))
-                }
-            }
+            )
             Text(
                 text = "This sends the order to the shop. Nothing is charged now — you pay " +
                     "when you get it.",

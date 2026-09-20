@@ -5,6 +5,7 @@ import com.omaykan.seller.core.model.Category
 import com.omaykan.seller.core.model.Product
 import com.omaykan.seller.core.model.ProductDraft
 import com.omaykan.seller.core.model.StaffRole
+import com.omaykan.seller.core.model.StorefrontFields
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.double
 import kotlinx.serialization.json.jsonArray
@@ -85,6 +86,37 @@ class ProductEventsTest {
         // Ignored by the server for an existing product; not sent, so nobody
         // reads the payload and thinks it moved stock.
         assertFalse("stockQty" in payload)
+    }
+
+    /** An edit that never showed the photo must not be able to remove it. */
+    @Test
+    fun `without storefront fields the photo unit and description keys are not sent`() {
+        val payload = productEvents(catalog, draft(), ids, "now").single().payload
+
+        assertFalse("imageUrl" in payload)
+        assertFalse("unitLabel" in payload)
+        assertFalse("description" in payload)
+    }
+
+    @Test
+    fun `storefront fields are sent as given and a cleared one is sent as null`() {
+        val payload = productEvents(
+            catalog,
+            draft().copy(
+                storefront = StorefrontFields(
+                    imageUrl = "https://api.test/api/product-images/x.jpg",
+                    unitLabel = "  kg ",
+                    description = "   ",
+                ),
+            ),
+            ids,
+            "now",
+        ).single().payload
+
+        assertEquals("https://api.test/api/product-images/x.jpg", payload["imageUrl"]!!.jsonPrimitive.content)
+        assertEquals("kg", payload["unitLabel"]!!.jsonPrimitive.content)
+        // Blank is the merchant clearing it: present, and null.
+        assertEquals(JsonNull, payload["description"])
     }
 
     @Test

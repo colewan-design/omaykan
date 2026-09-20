@@ -50,6 +50,12 @@ data class FulfillmentDto(
     val lng: Double? = null,
 )
 
+/** POST /api/online-orders/{uuid}/push-token. The phone's FCM token. */
+@Serializable
+data class PushTokenRequestDto(
+    val token: String,
+)
+
 /** 201. The only numbers that matter — the server's, not the phone's. */
 @Serializable
 data class PlaceOrderResponseDto(

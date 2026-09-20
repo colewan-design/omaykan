@@ -1,3 +1,4 @@
+import groovy.json.JsonSlurper
 import java.util.Properties
 
 plugins {
@@ -7,6 +8,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    alias(libs.plugins.androidx.baselineprofile)
 }
 
 /*
@@ -190,6 +192,25 @@ android {
 }
 
 /*
+ * Where the recorded profile lands, and why it is committed.
+ *
+ * `saveInSrc` writes it into src/main/generated/baselineProfiles/ as tracked
+ * source rather than leaving it in build/. That is the whole point: a release
+ * built on a machine with no emulator — CI, or a laptop — still ships the
+ * profile, because the profile is a file in the repository and not something
+ * the release build goes and earns. `automaticGenerationDuringBuild` stays off
+ * for the same reason; booting an emulator inside `assembleRelease` would turn
+ * a two-minute build into a twenty-minute one.
+ *
+ * Regenerating it is therefore a deliberate act. See baselineprofile/README.md.
+ */
+baselineProfile {
+    mergeIntoMain = true
+    saveInSrc = true
+    automaticGenerationDuringBuild = false
+}
+
+/*
  * Bytecode level 17, not 21.
  *
  * Not a toolchain: Hilt's generated-source compilation (hiltJavaCompileDebug)
@@ -208,6 +229,43 @@ kotlin {
 // nobody recorded is a migration nobody can test.
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+
+/*
+ * Firebase, for order notifications — only when app/google-services.json is
+ * present. Each developer downloads their own from the Firebase console, and a
+ * checkout without one still builds and runs; it just never registers for
+ * push (see PushRegistrar).
+ *
+ * A variant whose package the file does not list is skipped rather than
+ * failing the build. The debug build installs as `.debug`, which is a separate
+ * app in the Firebase console: until it is added there, debug builds run
+ * without push instead of refusing to build.
+ */
+val googleServicesJson = file("google-services.json")
+if (googleServicesJson.exists()) {
+    apply(plugin = libs.plugins.google.services.get().pluginId)
+
+    @Suppress("UNCHECKED_CAST")
+    val registeredPackages = ((JsonSlurper().parse(googleServicesJson) as Map<String, Any?>)["client"] as List<Map<String, Any?>>)
+        .mapNotNull { client ->
+            ((client["client_info"] as? Map<String, Any?>)
+                ?.get("android_client_info") as? Map<String, Any?>)
+                ?.get("package_name") as? String
+        }
+        .toSet()
+
+    androidComponents.onVariants { variant ->
+        if (variant.applicationId.get() !in registeredPackages) {
+            val task = "process${variant.name.replaceFirstChar { it.uppercase() }}GoogleServices"
+            tasks.matching { it.name == task }.configureEach { enabled = false }
+            logger.warn(
+                "google-services.json has no client for ${variant.applicationId.get()}; " +
+                    "the ${variant.name} build will run without push notifications.",
+            )
+        }
+    }
 }
 
 dependencies {
@@ -246,8 +304,19 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     debugImplementation(libs.okhttp.logging)
 
+    /*
+     * The runtime half of the baseline profile. Without it the profile sits
+     * in the APK unread: this is the code that hands it to ART on first run,
+     * on installs that did not come from Play.
+     */
+    implementation(libs.androidx.profileinstaller)
+    baselineProfile(project(":baselineprofile"))
+
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

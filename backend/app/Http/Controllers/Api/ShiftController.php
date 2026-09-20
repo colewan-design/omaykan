@@ -47,7 +47,7 @@ class ShiftController extends Controller
 
     public function open(Request $request)
     {
-        $context = $this->storeContext($request);
+        $context = $this->writableStoreContext($request);
         $validated = $request->validate([
             'openingCashCents' => ['required', 'integer', 'min:0'],
             'userId' => ['nullable', 'uuid'],

@@ -78,6 +78,7 @@ data class ProductDto(
     @SerialName("business_modes") val businessModes: List<String>? = null,
     @SerialName("image_url") val imageUrl: String? = null,
     @SerialName("unit_label") val unitLabel: String? = null,
+    val description: String? = null,
     @SerialName("low_stock_threshold") val lowStockThreshold: JsonElement? = null,
 )
 

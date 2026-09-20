@@ -8,8 +8,11 @@ use App\Models\Organization;
 use App\Models\OrganizationMembership;
 use App\Models\Store;
 use App\Models\Subscription;
+use App\Models\SubscriptionPayment;
 use App\Models\User;
+use App\Services\Billing\SubscriptionBilling;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -47,6 +50,7 @@ class PlatformAdminController extends Controller
             'action' => ['required', Rule::in([
                 'listOrgs', 'verify', 'reject', 'suspendOrg', 'reactivateOrg',
                 'resetOwnerPassword', 'setOwnerDisabled', 'deleteOrg', 'sendOwnerEmail',
+                'listPayments', 'acceptPayment', 'rejectPayment',
             ])],
         ]);
 
@@ -54,6 +58,9 @@ class PlatformAdminController extends Controller
             'listOrgs' => $this->listOrgs(),
             'verify' => $this->setSubscriptionStatus($request, Subscription::STATUS_ACTIVE),
             'reject' => $this->setSubscriptionStatus($request, Subscription::STATUS_REJECTED),
+            'listPayments' => $this->listPayments($request),
+            'acceptPayment' => $this->acceptPayment($request),
+            'rejectPayment' => $this->rejectPayment($request),
             'suspendOrg' => $this->setSuspended($request, true),
             'reactivateOrg' => $this->setSuspended($request, false),
             'resetOwnerPassword' => $this->resetOwnerPassword($request),
@@ -116,6 +123,11 @@ class PlatformAdminController extends Controller
                 'organizationSlug' => $organization->slug,
                 'organizationName' => $organization->name,
                 'suspended' => (bool) $organization->suspended,
+                // What the till and the storefront will actually do, computed
+                // by the same method they call. `suspended` and the subscription
+                // are the inputs; this is the answer, and showing it beside
+                // them is how an operator sees that the system agrees with them.
+                'tenantAccess' => $organization->accessVerdict()->value,
                 'store' => $store === null ? null : [
                     'name' => $store->name,
                     'businessMode' => $store->business_mode,
@@ -132,6 +144,8 @@ class PlatformAdminController extends Controller
                     'gcashReference' => $subscription->gcash_reference,
                     'submittedAt' => $subscription->submitted_at?->toIso8601String(),
                     'verifiedAt' => $subscription->verified_at?->toIso8601String(),
+                    'trialEndsAt' => $subscription->trial_ends_at?->toIso8601String(),
+                    'currentPeriodEndsAt' => $subscription->current_period_ends_at?->toIso8601String(),
                 ],
                 'admins' => ($admins[$organization->id] ?? collect())
                     ->filter(fn ($membership) => $membership->user !== null)
@@ -162,16 +176,170 @@ class PlatformAdminController extends Controller
 
         abort_if($subscription === null, 404, 'This organization has no subscription on record.');
 
-        $subscription->status = $status;
-        $subscription->verified_at = $status === Subscription::STATUS_ACTIVE ? now() : null;
-        $subscription->rejection_reason = $status === Subscription::STATUS_REJECTED
-            ? $request->string('reason')->trim()->value() ?: null
-            : null;
-        $subscription->save();
+        if ($status === Subscription::STATUS_ACTIVE) {
+            // Verify goes through the billing service rather than writing the
+            // row here, so that "this subscription has been paid for" happens
+            // in exactly one place — including clearing the dunning trail, so
+            // a merchant who renews stops being chased. There is no gateway
+            // and none planned (§6.3); this is the whole of collection.
+            app(SubscriptionBilling::class)->recordPayment($subscription);
+        } else {
+            $subscription->status = $status;
+            $subscription->verified_at = null;
+            $subscription->rejection_reason = $status === Subscription::STATUS_REJECTED
+                ? $request->string('reason')->trim()->value() ?: null
+                : null;
+            $subscription->save();
+        }
 
         $this->audit($status === Subscription::STATUS_ACTIVE ? 'verify' : 'reject', $organization->slug);
 
         return response()->json(['status' => $subscription->status]);
+    }
+
+    /**
+     * The review queue: manual transfers merchants say they have made.
+     *
+     * Pending first and oldest first within that, because this is a queue
+     * somebody works through rather than a report they browse. Recent decided
+     * ones stay visible so an operator can see what they just did — and undo
+     * it by hand if it was wrong, which with manual collection is the only
+     * "undo" there is.
+     */
+    private function listPayments(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'organizationSlug' => ['nullable', 'string'],
+        ]);
+
+        $payments = SubscriptionPayment::query()
+            ->with(['organization', 'submittedBy'])
+            ->when(
+                ! empty($validated['organizationSlug']),
+                fn ($query) => $query->whereHas(
+                    'organization',
+                    fn ($inner) => $inner->where('slug', $validated['organizationSlug'])
+                ),
+            )
+            // `submitted` sorts before `accepted`/`rejected` alphabetically by
+            // luck rather than design, so order on the status explicitly.
+            ->orderByRaw("CASE WHEN status = ? THEN 0 ELSE 1 END", [SubscriptionPayment::STATUS_SUBMITTED])
+            ->orderBy('created_at')
+            ->limit(200)
+            ->get();
+
+        return response()->json([
+            'payments' => $payments->map(fn (SubscriptionPayment $payment) => [
+                'id' => $payment->id,
+                'organizationSlug' => $payment->organization?->slug,
+                'organizationName' => $payment->organization?->name,
+                'status' => $payment->status,
+                'reference' => $payment->reference,
+                'amountCents' => $payment->amount_cents,
+                'note' => $payment->note,
+                'submittedBy' => $payment->submittedBy?->name,
+                'submittedAt' => $payment->created_at?->toIso8601String(),
+                'periodStart' => $payment->period_start?->toIso8601String(),
+                'periodEnd' => $payment->period_end?->toIso8601String(),
+                'rejectionReason' => $payment->rejection_reason,
+            ])->values(),
+        ]);
+    }
+
+    /**
+     * "I found this transfer, and it buys them until X."
+     *
+     * The only caller that passes a date to `recordPayment()`, and therefore
+     * the only thing in the product that ever sets a billing period. Until an
+     * operator does this, `current_period_ends_at` stays null and the
+     * subscription rests on its trial — which is exactly right while the price
+     * is still a placeholder.
+     */
+    private function acceptPayment(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'paymentId' => ['required', 'string'],
+            // The operator decides what the money bought. Not derived from the
+            // amount: a merchant who pays for two months at once, or short,
+            // is a conversation rather than an arithmetic problem.
+            'periodStart' => ['required', 'date'],
+            'periodEnd' => ['required', 'date', 'after:periodStart'],
+        ]);
+
+        $payment = SubscriptionPayment::query()
+            ->with('subscription')
+            ->findOr($validated['paymentId'], fn () => abort(404, 'Payment not found.'));
+
+        abort_unless(
+            $payment->isPending(),
+            409,
+            'That payment has already been reviewed.',
+        );
+
+        $subscription = $payment->subscription;
+
+        abort_if($subscription === null, 404, 'That payment has no subscription.');
+
+        $periodEnd = Carbon::parse($validated['periodEnd']);
+
+        DB::transaction(function () use ($payment, $subscription, $validated, $periodEnd) {
+            $payment->forceFill([
+                'status' => SubscriptionPayment::STATUS_ACCEPTED,
+                'period_start' => Carbon::parse($validated['periodStart']),
+                'period_end' => $periodEnd,
+                'reviewed_by_platform_admin_id' => auth('platform')->id(),
+                'reviewed_at' => now(),
+                'rejection_reason' => null,
+            ])->save();
+
+            // The one seam. Activates the subscription, extends the period,
+            // and clears the dunning trail so the merchant stops being chased.
+            app(SubscriptionBilling::class)->recordPayment($subscription, $periodEnd);
+        });
+
+        $this->audit('acceptPayment', $payment->organization?->slug ?? '—', [
+            'paymentId' => $payment->id,
+            'periodEnd' => $periodEnd->toDateString(),
+        ]);
+
+        return response()->json([
+            'status' => $payment->status,
+            'subscriptionStatus' => $subscription->fresh()->status,
+        ]);
+    }
+
+    /** "I cannot find this transfer" — with a reason the merchant will read. */
+    private function rejectPayment(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'paymentId' => ['required', 'string'],
+            'reason' => ['required', 'string', 'max:500'],
+        ]);
+
+        $payment = SubscriptionPayment::query()
+            ->findOr($validated['paymentId'], fn () => abort(404, 'Payment not found.'));
+
+        abort_unless(
+            $payment->isPending(),
+            409,
+            'That payment has already been reviewed.',
+        );
+
+        // Nothing touches the subscription. A rejected claim leaves the shop
+        // exactly where it was — still owing, still inside whatever grace it
+        // had. Rejecting a payment is not a punishment.
+        $payment->forceFill([
+            'status' => SubscriptionPayment::STATUS_REJECTED,
+            'rejection_reason' => trim($validated['reason']),
+            'reviewed_by_platform_admin_id' => auth('platform')->id(),
+            'reviewed_at' => now(),
+        ])->save();
+
+        $this->audit('rejectPayment', $payment->organization?->slug ?? '—', [
+            'paymentId' => $payment->id,
+        ]);
+
+        return response()->json(['status' => $payment->status]);
     }
 
     private function setSuspended(Request $request, bool $suspended): JsonResponse

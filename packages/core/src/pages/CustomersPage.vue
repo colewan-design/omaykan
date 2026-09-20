@@ -4,16 +4,23 @@ import { ChevronRight, Pencil, Plus, Search, Trash2, Users, X } from '@lucide/vu
 import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import ChartCard from '@pos/core/components/ChartCard.vue'
 import MetricCard from '@pos/core/components/MetricCard.vue'
+import CustomerPointsPanel from '@pos/core/components/CustomerPointsPanel.vue'
+import LoyaltySettingsCard from '@pos/core/components/LoyaltySettingsCard.vue'
+import { getPosRepository } from '@pos/core/services/runtime'
 import RangeSelector, { type Range } from '@pos/core/components/RangeSelector.vue'
 import { usePosStore } from '@pos/core/stores/pos'
 import { formatCompactDate, formatCurrency, guestCustomerName, type Customer, type OrderSummary } from '@pos/shared/index'
 
 const store = usePosStore()
 
-onMounted(() => {
+/** Points by customer id, from the server. Empty when it cannot be reached. */
+const balances = ref<Record<string, number>>({})
+
+onMounted(async () => {
   if (!store.isReady) {
     void store.initialize()
   }
+  balances.value = await getPosRepository().loadLoyaltyBalances()
 })
 
 const tierFilterOptions: { value: 'all' | CustomerTier; label: string }[] = [
@@ -33,6 +40,12 @@ const formName = ref('')
 const formPhone = ref('')
 const formEmail = ref('')
 const formNotes = ref('')
+/**
+ * Enrolled in points. Asked, not assumed: keeping a named person's number for
+ * a points scheme is personal data under the Data Privacy Act, and nobody
+ * earns until they have agreed.
+ */
+const formConsent = ref(false)
 const formError = ref('')
 const savingCustomer = ref(false)
 const now = new Date()
@@ -238,6 +251,7 @@ function resetForm() {
   formPhone.value = ''
   formEmail.value = ''
   formNotes.value = ''
+  formConsent.value = false
   formError.value = ''
 }
 
@@ -267,6 +281,7 @@ function openEditForm(profile: CustomerProfile) {
   formPhone.value = customer.phone ?? ''
   formEmail.value = customer.email ?? ''
   formNotes.value = customer.notes ?? ''
+  formConsent.value = Boolean(customer.loyaltyConsentAt)
   formError.value = ''
 }
 
@@ -281,6 +296,13 @@ async function saveCustomer() {
   formError.value = ''
 
   try {
+    const existing = editingCustomerId.value
+      ? store.customers.find((entry) => entry.id === editingCustomerId.value)
+      : null
+    // Keep the original date of consent while it stands; a fresh one only
+    // when it is newly given.
+    const loyaltyConsentAt = formConsent.value ? existing?.loyaltyConsentAt ?? new Date().toISOString() : null
+
     if (editingCustomerId.value) {
       await store.editCustomer({
         id: editingCustomerId.value,
@@ -288,6 +310,7 @@ async function saveCustomer() {
         phone: formPhone.value,
         email: formEmail.value,
         notes: formNotes.value,
+        loyaltyConsentAt,
         createdAt: store.customers.find((entry) => entry.id === editingCustomerId.value)?.createdAt ?? new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       })
@@ -297,6 +320,7 @@ async function saveCustomer() {
         phone: formPhone.value,
         email: formEmail.value,
         notes: formNotes.value,
+        loyaltyConsentAt,
       })
     }
     closeForm()
@@ -452,6 +476,8 @@ const previousRangeCaption = computed(() => {
       </div>
     </section>
 
+    <LoyaltySettingsCard />
+
     <section v-if="showForm" class="customers-form-card">
       <div class="customers-form-card__head">
         <div>
@@ -468,6 +494,21 @@ const previousRangeCaption = computed(() => {
         <input v-model="formPhone" class="sheet-input" type="tel" placeholder="Phone number (optional)" />
         <input v-model="formEmail" class="sheet-input" type="email" placeholder="Email (optional)" />
         <textarea v-model="formNotes" class="sheet-input customers-notes" rows="3" placeholder="Notes (optional)" />
+        <label class="customers-consent">
+          <input v-model="formConsent" type="checkbox" />
+          <span>
+            <strong>Enrol in points</strong>
+            <small>
+              Only with the customer's agreement: the shop keeps their name and number to track their points.
+            </small>
+          </span>
+        </label>
+        <CustomerPointsPanel
+          v-if="editingCustomerId && formConsent"
+          :key="editingCustomerId"
+          :customer-id="editingCustomerId"
+          class="customers-points"
+        />
       </div>
 
       <p v-if="formError" class="customers-form-error">{{ formError }}</p>
@@ -580,7 +621,12 @@ const previousRangeCaption = computed(() => {
                   <span class="customers-avatar customers-avatar--sm">{{ customer.initials || 'C' }}</span>
                   <div>
                     <strong>{{ customer.name }}</strong>
-                    <p>{{ customer.tier }} / {{ customer.preferredPaymentMethod }}</p>
+                    <p>
+                      {{ customer.tier }} / {{ customer.preferredPaymentMethod }}
+                      <template v-if="customer.customerId && balances[customer.customerId] != null">
+                        / {{ balances[customer.customerId] }} pts
+                      </template>
+                    </p>
                   </div>
                 </div>
               </td>
@@ -965,5 +1011,24 @@ const previousRangeCaption = computed(() => {
     display: block;
     overflow-x: auto;
   }
+}
+/* Enrolment in points: a checkbox with the reason it is asked. */
+.customers-consent {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.customers-consent small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-secondary);
+}
+
+.customers-points {
+  grid-column: 1 / -1;
 }
 </style>

@@ -40,9 +40,10 @@ import CheckoutForm from './CheckoutForm.vue'
 // shopper sent off to sign in comes back to the step they left.
 //
 // Every slot the reference fills with something the API does not have holds
-// something it does: no delivery-date promises (nothing here knows one), no
-// voucher box (there are no vouchers), and the reassurances are the platform's
-// own promises rather than claims about a product.
+// something it does: no delivery-date promises (nothing here knows one), a
+// promo code box that asks the server before it promises anything, and the
+// reassurances are the platform's own promises rather than claims about a
+// product.
 
 const cart = useStorefrontCart()
 const catalog = useStorefrontCatalog()
@@ -153,7 +154,15 @@ watch(
   { immediate: true },
 )
 
+/**
+ * The shop has paused its own online ordering. The server refuses the order
+ * anyway; saying so on the button is the difference between a shopper who
+ * comes back at four and one who fills in an address for nothing.
+ */
+const orderingPaused = computed(() => catalog.shop?.orderingPausedMessage ?? '')
+
 async function placeOrder() {
+  if (orderingPaused.value) return
   if (await checkout.placeOrder()) {
     step.value = 'placed'
     unticked.value = new Set()
@@ -422,6 +431,13 @@ function search(term: string) {
                   <dt>Subtotal ({{ totals.itemCount }} item{{ totals.itemCount === 1 ? '' : 's' }})</dt>
                   <dd>{{ formatCurrency(totals.subtotalCents) }}</dd>
                 </div>
+                <div v-if="checkout.appliedPromo.value" class="cartpg-rows__promo">
+                  <dt>
+                    {{ checkout.appliedPromo.value.code }} · {{ checkout.appliedPromo.value.description }}
+                    <button type="button" class="cartpg-promo__remove" @click="checkout.removePromo()">Remove</button>
+                  </dt>
+                  <dd>−{{ formatCurrency(totals.discountCents) }}</dd>
+                </div>
                 <div v-if="totals.taxCents > 0">
                   <dt>VAT</dt>
                   <dd>{{ formatCurrency(totals.taxCents) }}</dd>
@@ -447,6 +463,31 @@ function search(term: string) {
                   <dd>{{ formatCurrency(step === 'checkout' ? checkout.grandTotalCents.value : totals.totalCents) }}</dd>
                 </div>
               </dl>
+
+              <!-- Asked of the server before anything is promised: the page
+                   never shows a discount the order would not get. -->
+              <div v-if="step === 'checkout' && !checkout.appliedPromo.value" class="cartpg-promo">
+                <form class="cartpg-promo__form" @submit.prevent="checkout.applyPromo()">
+                  <input
+                    v-model="checkout.promoInput.value"
+                    class="cartpg-promo__input"
+                    maxlength="40"
+                    autocapitalize="characters"
+                    placeholder="Promo code"
+                    aria-label="Promo code"
+                  />
+                  <button
+                    type="submit"
+                    class="cartpg-promo__apply"
+                    :disabled="checkout.promoChecking.value || checkout.promoInput.value.trim() === ''"
+                  >
+                    {{ checkout.promoChecking.value ? 'Checking…' : 'Apply' }}
+                  </button>
+                </form>
+                <p v-if="checkout.promoMessage.value" class="cartpg-promo__message" role="alert">
+                  {{ checkout.promoMessage.value }}
+                </p>
+              </div>
 
               <p v-if="!checkout.canOrderOnline.value" class="cartpg-warn">
                 This shop doesn't take online orders yet.
@@ -495,12 +536,13 @@ function search(term: string) {
                   v-else
                   type="button"
                   class="cartpg-cta cartpg-cta--block"
-                  :disabled="!checkout.canSubmit.value || checkout.submitting.value"
+                  :disabled="!checkout.canSubmit.value || checkout.submitting.value || orderingPaused !== ''"
                   @click="placeOrder"
                 >
                   {{ checkout.submitting.value ? 'Placing your order…' : `Place order — ${formatCurrency(checkout.grandTotalCents.value)}` }}
                 </button>
-                <p class="cartpg-fine">The shop confirms prices and the delivery fee when it accepts the order.</p>
+                <p v-if="orderingPaused" class="cartpg-fine" role="status"><strong>{{ orderingPaused }}</strong> Your cart is kept until then.</p>
+                <p v-else class="cartpg-fine">The shop confirms prices and the delivery fee when it accepts the order.</p>
               </template>
 
               <p class="cartpg-secure">
@@ -516,7 +558,7 @@ function search(term: string) {
               <p class="cartpg-promise__title">A purchase today.<br />A stronger tomorrow.</p>
               <svg class="cartpg-promise__peaks" viewBox="0 0 160 70" aria-hidden="true">
                 <path d="M0 70V46l28-18 20 12 34-30 30 26 22-12 26 18v28Z" fill="#d8cdbb" />
-                <path d="m82 10-8 8 6-1 4 4 4-5 4 2Z" fill="#f6f1e8" />
+                <path d="m82 10-8 8 6-1 4 4 4-5 4 2Z" fill="#ffffff" />
                 <path d="M0 70V58l34-14 28 10 34-18 34 16 30-6v24Z" fill="#b9ad99" />
               </svg>
               <ul class="cartpg-promise__list">
@@ -613,7 +655,7 @@ function search(term: string) {
 .cartpg-hero__tag {
   margin: 8px 0 0;
   font-size: 17px;
-  color: rgba(251, 248, 243, 0.9);
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .cartpg-hero__script {
@@ -626,7 +668,7 @@ function search(term: string) {
   font-size: 30px;
   line-height: 1.1;
   text-align: right;
-  color: rgba(251, 248, 243, 0.92);
+  color: rgba(255, 255, 255, 0.92);
   transform: translateY(-50%) rotate(-5deg);
 }
 
@@ -695,7 +737,7 @@ function search(term: string) {
   list-style: none;
   border: 1px solid var(--sf-rule);
   border-radius: 10px;
-  background: #fffdf9;
+  background: #ffffff;
 }
 
 .cartpg-line {
@@ -846,7 +888,7 @@ function search(term: string) {
   padding: 22px 22px 18px;
   border: 1px solid var(--sf-rule);
   border-radius: 10px;
-  background: #fffdf9;
+  background: #ffffff;
 }
 
 .cartpg-summary__title {
@@ -1031,7 +1073,7 @@ function search(term: string) {
   padding: 40px 32px;
   border: 1px solid var(--sf-rule);
   border-radius: 12px;
-  background: #fffdf9;
+  background: #ffffff;
   text-align: center;
 }
 
@@ -1128,4 +1170,13 @@ function search(term: string) {
   .cartpg-empty,
   .cartpg-done { padding: 32px 20px; }
 }
+/* The promo code: a field that asks, and a row that shows what it took off. */
+.cartpg-promo { display: block; padding: 4px 0; }
+.cartpg-promo__form { display: flex; gap: 8px; }
+.cartpg-promo__input { flex: 1; min-width: 0; padding: 9px 12px; border: 1px solid #ddd8ce; border-radius: 10px; font: inherit; text-transform: uppercase; }
+.cartpg-promo__apply { padding: 9px 16px; border: 0; border-radius: 10px; background: #1f3b2d; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.cartpg-promo__apply:disabled { opacity: 0.55; cursor: default; }
+.cartpg-promo__message { margin: 6px 0 0; color: #9a3412; font-size: 13px; }
+.cartpg-rows__promo dt, .cartpg-rows__promo dd { color: #1f6b3c; }
+.cartpg-promo__remove { margin-left: 6px; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; }
 </style>

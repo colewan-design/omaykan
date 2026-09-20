@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    alias(libs.plugins.androidx.baselineprofile)
 }
 
 /*
@@ -165,6 +166,25 @@ kotlin {
  * is for is the screen a rider glances at with the phone on the handlebars —
  * where they are on the road, and which way the next turn is.
  */
+/*
+ * Where the recorded profile lands, and why it is committed.
+ *
+ * `saveInSrc` writes it into src/main/generated/baselineProfiles/ as tracked
+ * source rather than leaving it in build/. That is the point: a release built
+ * on a machine with no emulator — CI, or a laptop — still ships the profile,
+ * because the profile is a file in the repository and not something the
+ * release build goes and earns. `automaticGenerationDuringBuild` stays off for
+ * the same reason; booting an emulator inside `assembleRelease` would turn a
+ * two-minute build into a twenty-minute one.
+ *
+ * Regenerating it is therefore a deliberate act. See baselineprofile/README.md.
+ */
+baselineProfile {
+    mergeIntoMain = true
+    saveInSrc = true
+    automaticGenerationDuringBuild = false
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -189,6 +209,14 @@ dependencies {
     // Coil, for exactly one image: the static route map on a job card. This app
     // shows no other picture — see core/map/StaticMap.kt for why that map is a
     // fetched PNG and not an embedded map SDK.
+    /*
+     * The runtime half of the baseline profile: the code that hands it to ART
+     * on first run, on installs that did not come from Play. Without it the
+     * profile sits in the APK unread.
+     */
+    implementation(libs.androidx.profileinstaller)
+    baselineProfile(project(":baselineprofile-rider"))
+
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
 

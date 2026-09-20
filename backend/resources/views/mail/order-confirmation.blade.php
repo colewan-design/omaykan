@@ -64,6 +64,12 @@
             <td style="{{ $totalLabel }}">Subtotal</td>
             <td style="{{ $totalValue }}">{{ $subtotal }}</td>
         </tr>
+        @if ($discount)
+            <tr>
+                <td style="{{ $totalLabel }}">{{ $discountLabel }}</td>
+                <td style="{{ $totalValue }}">{{ $discount }}</td>
+            </tr>
+        @endif
         @if ($order->tax_cents > 0)
             <tr>
                 <td style="{{ $totalLabel }}">Tax</td>

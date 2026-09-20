@@ -2152,6 +2152,14 @@ button {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--auth-green) 22%, transparent);
 }
 
+/* The product sheet's description box — the sheet's inputs are single-line otherwise. */
+.ps-textarea {
+  min-height: 72px;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.45;
+}
+
 .auth-page .auth-password-toggle {
   width: 50px;
   height: 50px;

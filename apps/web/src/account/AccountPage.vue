@@ -281,7 +281,7 @@ function search(term: string) {
           <div class="acct-side__art" aria-hidden="true">
             <svg viewBox="0 0 240 150" preserveAspectRatio="xMidYMax meet">
               <path d="M0 150V70l34-26 22 16 40-44 36 34 26-16 34 22 48-30v124Z" fill="#ddd4c6" />
-              <path d="m96 16-9 10 6-2 4 5 5-6 4 3Z" fill="#f6f1e8" />
+              <path d="m96 16-9 10 6-2 4 5 5-6 4 3Z" fill="#ffffff" />
               <path d="M0 150V96l42-26 30 18 46-34 40 30 34-14 48 26v54Z" fill="#c7bdad" />
               <path d="M0 150v-30l52-16 38 14 44-20 50 22 56-12v42Z" fill="#aca290" />
               <g fill="#5f6a5b">
@@ -460,7 +460,7 @@ function search(term: string) {
   font-family: var(--sf-serif);
   font-size: 15px;
   line-height: 1.5;
-  color: #fbf8f3;
+  color: #ffffff;
 }
 
 /* ── Content ─────────────────────────────────────────────────────────── */

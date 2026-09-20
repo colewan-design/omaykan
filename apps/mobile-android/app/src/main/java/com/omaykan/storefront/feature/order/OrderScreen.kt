@@ -1,7 +1,12 @@
 package com.omaykan.storefront.feature.order
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -39,7 +44,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +59,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -64,7 +74,8 @@ import com.omaykan.storefront.core.model.Money
 import com.omaykan.storefront.core.map.StaticMap
 import com.omaykan.storefront.core.model.TrackedOrder
 import com.omaykan.storefront.core.model.TrackedOrderItem
-import com.omaykan.storefront.feature.cart.CartTopBar
+import com.omaykan.storefront.core.designsystem.CtaButton
+import com.omaykan.storefront.core.designsystem.ForestTopBar
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -94,20 +105,20 @@ import java.util.Locale
 fun OrderScreen(
     onDone: () -> Unit,
     justPlaced: Boolean = false,
+    /** The arrow in the bar. Defaults to [onDone]; the order list passes a plain Back. */
+    onBack: () -> Unit = onDone,
     viewModel: OrderViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val order = state.order
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
-    ) {
-        CartTopBar(
-            title = "Your order",
-            subtitle = order?.let { placedOn(it.placedAt) }?.let { "Ordered $it" }.orEmpty(),
-            onBack = onDone,
+    AskToNotify(wanted = order?.awaitsRider == true)
+
+    Column(Modifier.fillMaxSize()) {
+        ForestTopBar(
+            title = "Your Order",
+            subtitle = order?.let { placedOn(it.placedAt) }?.let { "Ordered $it" },
+            onBack = onBack,
         )
 
         when {
@@ -255,6 +266,32 @@ private fun TrackCard(order: TrackedOrder) {
         // detail. It also means a slow connection shows the answer before the
         // tiles arrive rather than a grey rectangle where the answer should be.
         if (!order.cancelled) DeliveryMapImage(order)
+    }
+}
+
+/**
+ * Asks for the notification permission on a delivery still waiting for a
+ * rider — the moment the reason is obvious — rather than at first launch,
+ * when a shopper has no idea what the app would tell them.
+ *
+ * Once per screen. Android itself stops showing the dialog after two refusals,
+ * so a shopper who said no is not asked on every order forever.
+ */
+@Composable
+private fun AskToNotify(wanted: Boolean) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    var asked by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(wanted) {
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        if (wanted && !asked && !granted) {
+            asked = true
+            launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 }
 
@@ -711,16 +748,7 @@ private fun BottomBar(order: TrackedOrder, label: String, onDone: () -> Unit) {
                     fontWeight = FontWeight.Bold,
                 )
             }
-            Button(
-                onClick = onDone,
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = OmaykanTheme.colors.ink,
-                    contentColor = OmaykanTheme.colors.onInk,
-                ),
-            ) {
-                Text(text = label, modifier = Modifier.padding(vertical = 4.dp))
-            }
+            CtaButton(text = label, onClick = onDone)
         }
     }
 }

@@ -31,6 +31,7 @@ class Product extends Model
         'brand',
         'packaging_type',
         'unit_label',
+        'description',
         'low_stock_threshold',
     ];
 

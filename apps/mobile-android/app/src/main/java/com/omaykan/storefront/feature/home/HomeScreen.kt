@@ -1,8 +1,6 @@
 package com.omaykan.storefront.feature.home
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,54 +10,49 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Inventory2
-import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.outlined.ShoppingCart
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.omaykan.storefront.R
-import com.omaykan.storefront.core.designsystem.Refreshable
-import com.omaykan.storefront.core.designsystem.RefreshableFill
 import com.omaykan.storefront.core.designsystem.LoadingState
 import com.omaykan.storefront.core.designsystem.MessageState
 import com.omaykan.storefront.core.designsystem.OmaykanTheme
+import com.omaykan.storefront.core.designsystem.Refreshable
+import com.omaykan.storefront.core.designsystem.RefreshableFill
+import com.omaykan.storefront.core.designsystem.SearchPill
+import com.omaykan.storefront.core.designsystem.SectionHeader
 import com.omaykan.storefront.core.designsystem.StaleBanner
+import com.omaykan.storefront.core.designsystem.Wordmark
 import com.omaykan.storefront.core.model.Product
 import com.omaykan.storefront.core.model.StoreRef
 
 /**
  * The market front page.
  *
- * Laid out to the reference: brand line and search at the top, a promo carousel,
- * the aisles as circles, then Featured Products two-up, then the shop directory.
- * The content underneath is the web landing page's — the same shelves, off the
- * same catalog — so the two front doors show the same market.
+ * Laid out to the reference: a forest header with the menu, the name and the
+ * cart over a white search pill; a banner; the aisles as circles; then the
+ * shelves as horizontal rows of cards. The content underneath is the web
+ * landing page's — the same shelves, off the same catalog — with the shop
+ * directory at the foot, so the two front doors show the same market.
  */
 @Composable
 fun HomeScreen(
@@ -67,27 +60,23 @@ fun HomeScreen(
     onOpenShop: (StoreRef) -> Unit,
     onOpenAisle: (StoreRef, String) -> Unit,
     onOpenCart: (StoreRef) -> Unit,
+    onOpenMenu: () -> Unit,
+    onSeeAllShops: () -> Unit,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val cartCount by viewModel.cartCount.collectAsStateWithLifecycle()
     val store = viewModel.store
+    val isSaved: (String) -> Boolean = { viewModel.savedKey(it) in state.savedIds }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
-    ) {
-        BrandBar(
+    Column(Modifier.fillMaxSize()) {
+        HomeHeader(
             cartCount = cartCount,
-            onOpenCart = { onOpenCart(store) },
-        )
-
-        SearchPill(
             query = state.query,
             onQueryChange = viewModel::onQueryChange,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            onOpenMenu = onOpenMenu,
+            onOpenCart = { onOpenCart(store) },
         )
 
         state.staleMessage?.let { StaleBanner(it, onRetry = viewModel::refresh) }
@@ -106,6 +95,31 @@ fun HomeScreen(
                     )
                 }
 
+                // Without this a search would scroll through a banner and a row
+                // of aisles that have nothing to do with what was typed.
+                state.searching -> LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        top = 12.dp,
+                        bottom = contentPadding.calculateBottomPadding() + 24.dp,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    item {
+                        SearchNote(
+                            matches = state.matchCount ?: 0,
+                            term = state.query,
+                            onClear = { viewModel.onQueryChange("") },
+                        )
+                    }
+                    productGrid(
+                        products = state.popular,
+                        isSaved = isSaved,
+                        onToggleSaved = viewModel::onToggleSaved,
+                        onOpenProduct = { onOpenProduct(store, it) },
+                    )
+                }
+
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
@@ -113,33 +127,14 @@ fun HomeScreen(
                     ),
                     verticalArrangement = Arrangement.spacedBy(18.dp),
                 ) {
-                    // Without this a no-match search would simply empty every
-                    // shelf below, leaving a blank page with no explanation.
-                    if (state.searching) {
-                        item {
-                            SearchNote(
-                                matches = state.matchCount ?: 0,
-                                term = state.query,
-                                onClear = { viewModel.onQueryChange("") },
-                            )
-                        }
-                    }
+                    item { HeroBanner(onShopNow = { onOpenShop(store) }) }
 
-                    if (!state.searching) {
+                    if (state.aisles.isNotEmpty()) {
                         item {
-                            PromoCarousel(
-                                deals = state.deals,
-                                onOpenProduct = { onOpenProduct(store, it) },
+                            AisleCircles(
+                                aisles = state.aisles,
+                                onPick = { categoryId -> onOpenAisle(store, categoryId) },
                             )
-                        }
-
-                        if (state.categories.isNotEmpty()) {
-                            item {
-                                CategoryRail(
-                                    categories = state.categories.map { it.id to it.name },
-                                    onPick = { categoryId -> onOpenAisle(store, categoryId) },
-                                )
-                            }
                         }
                     }
 
@@ -153,47 +148,83 @@ fun HomeScreen(
                         }
                     }
 
-                    if (state.popular.isNotEmpty()) {
-                        item { SectionHeading("Featured Products") }
-                        productGrid(
-                            products = state.popular,
-                            savedIds = state.savedIds,
-                            keyOf = viewModel::savedKey,
-                            onToggleSaved = viewModel::onToggleSaved,
-                            onOpenProduct = { onOpenProduct(store, it) },
+                    shelf(
+                        title = "Featured Products",
+                        products = state.popular,
+                        onSeeAll = { onOpenShop(store) },
+                        isSaved = isSaved,
+                        onToggleSaved = viewModel::onToggleSaved,
+                        onOpenProduct = { onOpenProduct(store, it) },
+                    )
+
+                    shelf(
+                        title = "On Sale at the Counter",
+                        products = state.deals,
+                        isSaved = isSaved,
+                        onToggleSaved = viewModel::onToggleSaved,
+                        onOpenProduct = { onOpenProduct(store, it) },
+                    )
+
+                    shelf(
+                        title = "Everyday Essentials Under ₱100",
+                        products = state.cheapest,
+                        isSaved = isSaved,
+                        onToggleSaved = viewModel::onToggleSaved,
+                        onOpenProduct = { onOpenProduct(store, it) },
+                    )
+
+                    item {
+                        SectionHeader(
+                            title = "Shops Near You",
+                            actionLabel = if (state.shops.isNotEmpty()) "See All" else null,
+                            onAction = onSeeAllShops,
                         )
                     }
 
-                    if (state.cheapest.isNotEmpty() && !state.searching) {
-                        item { SectionHeading("Everyday essentials under ₱100") }
-                        productGrid(
-                            products = state.cheapest,
-                            savedIds = state.savedIds,
-                            keyOf = viewModel::savedKey,
-                            onToggleSaved = viewModel::onToggleSaved,
-                            onOpenProduct = { onOpenProduct(store, it) },
-                        )
-                    }
-
-                    if (!state.searching) {
-                        item { SectionHeading("Shops near you") }
-
-                        when {
-                            state.shopsLoading -> item { Note("Loading shops…") }
-                            state.shopsError != null -> item { Note(state.shopsError.orEmpty()) }
-                            state.shops.isEmpty() -> item { Note("No shops are open for orders yet.") }
-                            else -> items(state.shops, key = { it.ref.key }) { shop ->
-                                ShopCard(
-                                    shop = shop,
-                                    browsingNow = shop.ref == store,
-                                    onClick = { onOpenShop(shop.ref) },
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                )
-                            }
+                    when {
+                        state.shopsLoading -> item { Note("Loading shops…") }
+                        state.shopsError != null -> item { Note(state.shopsError.orEmpty()) }
+                        state.shops.isEmpty() -> item { Note("No shops are open for orders yet.") }
+                        else -> items(state.shops, key = { it.ref.key }) { shop ->
+                            ShopCard(
+                                shop = shop,
+                                browsingNow = shop.ref == store,
+                                onClick = { onOpenShop(shop.ref) },
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                            )
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+/** A titled horizontal shelf, or nothing at all when the shelf is empty. */
+private fun LazyListScope.shelf(
+    title: String,
+    products: List<Product>,
+    isSaved: (String) -> Boolean,
+    onToggleSaved: (String) -> Unit,
+    onOpenProduct: (String) -> Unit,
+    onSeeAll: (() -> Unit)? = null,
+) {
+    if (products.isEmpty()) return
+
+    item(key = title) {
+        Column {
+            SectionHeader(
+                title = title,
+                actionLabel = onSeeAll?.let { "See All" },
+                onAction = onSeeAll,
+            )
+            ProductShelf(
+                products = products,
+                isSaved = isSaved,
+                onToggleSaved = onToggleSaved,
+                onOpenProduct = onOpenProduct,
+                modifier = Modifier.padding(top = 6.dp),
+            )
         }
     }
 }
@@ -205,10 +236,9 @@ fun HomeScreen(
  * fighting over the same gesture — so the products are chunked into rows here.
  * The list is short (a shelf, not a catalog), which is what makes that fine.
  */
-private fun androidx.compose.foundation.lazy.LazyListScope.productGrid(
+private fun LazyListScope.productGrid(
     products: List<Product>,
-    savedIds: Set<String>,
-    keyOf: (String) -> String,
+    isSaved: (String) -> Boolean,
     onToggleSaved: (String) -> Unit,
     onOpenProduct: (String) -> Unit,
 ) {
@@ -219,13 +249,13 @@ private fun androidx.compose.foundation.lazy.LazyListScope.productGrid(
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp),
+                .padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             row.forEach { product ->
                 GridProductCard(
                     product = product,
-                    saved = keyOf(product.id) in savedIds,
+                    saved = isSaved(product.id),
                     onToggleSaved = { onToggleSaved(product.id) },
                     onClick = { onOpenProduct(product.id) },
                     modifier = Modifier.weight(1f),
@@ -238,106 +268,64 @@ private fun androidx.compose.foundation.lazy.LazyListScope.productGrid(
     }
 }
 
-/** The brand line. The wordmark is the app's own logo asset, not set type. */
-@Composable
-private fun BrandBar(
-    cartCount: Int,
-    onOpenCart: () -> Unit,
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(start = 20.dp, end = 12.dp, top = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = "Welcome to",
-                style = MaterialTheme.typography.bodyMedium,
-                color = OmaykanTheme.colors.textSecondary,
-            )
-            Image(
-                painter = painterResource(R.drawable.logo_wordmark),
-                contentDescription = "Omaykan",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .height(28.dp)
-                    .padding(top = 2.dp),
-            )
-        }
-        Box(Modifier.padding(start = 8.dp)) {
-            BadgedBox(
-                badge = { if (cartCount > 0) Badge { Text("$cartCount") } },
-            ) {
-                CircleButton(
-                    icon = Icons.Outlined.ShoppingCart,
-                    description = "Cart",
-                    onClick = onOpenCart,
-                )
-            }
-        }
-    }
-}
-
 /**
- * The round, filled icon button the market page uses for its cart and its store
- * code. Shared with the shop shelf so the cart control is the same control in
- * both places rather than two that merely mean the same thing.
+ * The forest header: menu, name, cart, and the search pill under them.
+ *
+ * It paints under the status bar itself, so the green runs to the top edge of
+ * the phone the way the reference's does.
  */
 @Composable
-internal fun CircleButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    description: String,
-    onClick: () -> Unit,
-) {
-    Box(
-        Modifier
-            .size(42.dp)
-            .clip(CircleShape)
-            .background(OmaykanTheme.colors.fill)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(icon, contentDescription = description, modifier = Modifier.size(20.dp))
-    }
-}
-
-@Composable
-private fun SearchPill(
+private fun HomeHeader(
+    cartCount: Int,
     query: String,
     onQueryChange: (String) -> Unit,
-    modifier: Modifier = Modifier,
+    onOpenMenu: () -> Unit,
+    onOpenCart: () -> Unit,
 ) {
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        modifier = modifier.fillMaxWidth(),
-        placeholder = { Text("Search product…") },
-        leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
-        singleLine = true,
-        shape = RoundedCornerShape(999.dp),
-        keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = OmaykanTheme.colors.fill,
-            unfocusedContainerColor = OmaykanTheme.colors.fill,
-            focusedBorderColor = OmaykanTheme.colors.separator,
-            unfocusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
-            focusedLeadingIconColor = OmaykanTheme.colors.textSecondary,
-            unfocusedLeadingIconColor = OmaykanTheme.colors.textSecondary,
-            focusedPlaceholderColor = OmaykanTheme.colors.textTertiary,
-            unfocusedPlaceholderColor = OmaykanTheme.colors.textTertiary,
-        ),
-    )
-}
+    val colors = OmaykanTheme.colors
 
-@Composable
-private fun SectionHeading(text: String, modifier: Modifier = Modifier) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.titleLarge,
-        fontWeight = FontWeight.Bold,
-        modifier = modifier.padding(horizontal = 20.dp),
-    )
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(colors.forest)
+            .statusBarsPadding()
+            .padding(bottom = 14.dp),
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .padding(horizontal = 4.dp),
+        ) {
+            IconButton(onClick = onOpenMenu, modifier = Modifier.align(Alignment.CenterStart)) {
+                Icon(Icons.Filled.Menu, contentDescription = "Menu", tint = colors.onForest)
+            }
+            Wordmark(modifier = Modifier.align(Alignment.Center))
+            IconButton(onClick = onOpenCart, modifier = Modifier.align(Alignment.CenterEnd)) {
+                BadgedBox(
+                    badge = {
+                        if (cartCount > 0) {
+                            Badge(containerColor = colors.cta, contentColor = colors.onCta) {
+                                Text("$cartCount")
+                            }
+                        }
+                    },
+                ) {
+                    Icon(
+                        Icons.Outlined.ShoppingCart,
+                        contentDescription = if (cartCount > 0) "Cart, $cartCount items" else "Cart",
+                        tint = colors.onForest,
+                    )
+                }
+            }
+        }
+
+        SearchPill(
+            query = query,
+            onQueryChange = onQueryChange,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+    }
 }
 
 @Composable
@@ -346,7 +334,7 @@ private fun Note(text: String) {
         text = text,
         style = MaterialTheme.typography.bodyMedium,
         color = OmaykanTheme.colors.textSecondary,
-        modifier = Modifier.padding(horizontal = 20.dp),
+        modifier = Modifier.padding(horizontal = 16.dp),
     )
 }
 
@@ -355,7 +343,7 @@ private fun SearchNote(matches: Int, term: String, onClear: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp),
+            .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(

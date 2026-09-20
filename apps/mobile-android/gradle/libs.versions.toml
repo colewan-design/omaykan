@@ -28,6 +28,18 @@ serializationJson = "1.8.1"
 
 coil = "3.1.0"
 
+# Baseline profiles. `benchmark` versions both the macrobenchmark test library
+# and the Gradle plugin that drives it; they are published together and must
+# not drift apart. profileinstaller is the runtime half — the piece inside the
+# APK that hands the profile to ART.
+benchmark = "1.5.0"
+profileinstaller = "1.4.1"
+uiautomator = "2.4.0"
+
+# Order notifications. Messaging only: no Analytics, no Crashlytics.
+firebaseBom = "33.16.0"
+googleServices = "4.4.3"
+
 junit = "4.13.2"
 coroutinesTest = "1.10.2"
 turbine = "1.2.0"
@@ -73,8 +85,15 @@ okhttp-logging = { module = "com.squareup.okhttp3:logging-interceptor", version.
 okhttp-mockwebserver = { module = "com.squareup.okhttp3:mockwebserver", version.ref = "okhttp" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serializationJson" }
 
+androidx-profileinstaller = { module = "androidx.profileinstaller:profileinstaller", version.ref = "profileinstaller" }
+androidx-benchmark-macro-junit4 = { module = "androidx.benchmark:benchmark-macro-junit4", version.ref = "benchmark" }
+androidx-test-uiautomator = { module = "androidx.test.uiautomator:uiautomator", version.ref = "uiautomator" }
+
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
+
+firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }
+firebase-messaging = { module = "com.google.firebase:firebase-messaging" }
 
 junit = { module = "junit:junit", version.ref = "junit" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutinesTest" }
@@ -84,8 +103,11 @@ androidx-test-espresso-core = { module = "androidx.test.espresso:espresso-core",
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+android-test = { id = "com.android.test", version.ref = "agp" }
+androidx-baselineprofile = { id = "androidx.baselineprofile", version.ref = "benchmark" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
+google-services = { id = "com.google.gms.google-services", version.ref = "googleServices" }

@@ -62,6 +62,7 @@ import com.omaykan.seller.feature.orders.OrdersScreen
 import com.omaykan.seller.feature.products.ProductEditorScreen
 import com.omaykan.seller.feature.products.ProductFilter
 import com.omaykan.seller.feature.products.ProductsScreen
+import com.omaykan.seller.feature.products.PromotionsScreen
 
 /** The five tabs, in the reference's order. */
 enum class SellerTab(
@@ -81,6 +82,7 @@ private object Routes {
     const val MESSAGES = "messages"
     const val THREAD = "thread/{id}?name={name}"
     const val PRODUCT = "product?id={id}"
+    const val PROMOTIONS = "promotions"
 }
 
 /**
@@ -118,7 +120,12 @@ fun SellerShell(store: PairedStore, ordersSignal: Int) {
                 ordersSignal = ordersSignal,
                 onOpenMessages = { nav.navigate(Routes.MESSAGES) { launchSingleTop = true } },
                 onEditProduct = { id -> nav.navigate("product?id=${id.orEmpty()}") { launchSingleTop = true } },
+                onOpenPromotions = { nav.navigate(Routes.PROMOTIONS) { launchSingleTop = true } },
             )
+        }
+
+        composable(Routes.PROMOTIONS) {
+            PromotionsScreen(onBack = { nav.back() })
         }
 
         composable(Routes.MESSAGES) {
@@ -172,6 +179,7 @@ private fun TabsFrame(
     ordersSignal: Int,
     onOpenMessages: () -> Unit,
     onEditProduct: (String?) -> Unit,
+    onOpenPromotions: () -> Unit,
 ) {
     var tab by rememberSaveable { mutableStateOf(SellerTab.Home) }
     var productsFilter by remember { mutableStateOf<ProductFilter?>(null) }
@@ -210,6 +218,7 @@ private fun TabsFrame(
 
                 SellerTab.Products -> ProductsScreen(
                     onEdit = onEditProduct,
+                    onOpenPromotions = onOpenPromotions,
                     filterRequest = productsFilter,
                     onFilterRequestHandled = { productsFilter = null },
                 )

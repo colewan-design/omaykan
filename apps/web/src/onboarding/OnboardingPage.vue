@@ -1,11 +1,17 @@
 <script setup lang="ts">
-import { Check, Eye, EyeOff } from '@lucide/vue'
+import { ArrowLeft, ArrowRight, Check, Eye, EyeOff, LockKeyhole } from '@lucide/vue'
 import { onBeforeUnmount, reactive, ref, watch } from 'vue'
 import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import BrandLogo from '@pos/core/components/BrandLogo.vue'
 import { businessModeLabel, SUPPORT_EMAIL, supportMailto, type BusinessMode } from '@pos/shared/index'
 import { googleSignInAvailable, releaseGoogleButton, renderGoogleButton } from '@pos/core/services/google'
-import { writePendingInitialSettings, writeStaffTenant } from '@pos/web/tenantBinding'
+import { createBrowserPosRepository } from '@pos/data/index'
+import {
+  claimLocalCacheFor,
+  resolveApiBaseUrl,
+  writePendingInitialSettings,
+  writeStaffTenant,
+} from '@pos/web/tenantBinding'
 import MerchantFooter from './MerchantFooter.vue'
 import MerchantHeader from './MerchantHeader.vue'
 import MerchantPitch from './MerchantPitch.vue'
@@ -14,6 +20,7 @@ const mode = ref<'signup' | 'signin'>('signup')
 const saving = ref(false)
 const errorMessage = ref('')
 const passwordVisible = ref(false)
+const signupStep = ref<1 | 2>(1)
 
 const businessModeOptions = (['coffee-shop', 'grocery', 'restaurant', 'nail-salon'] as const).map((value) => ({
   value,
@@ -53,6 +60,8 @@ interface SignInStore {
   organizationSlug: string
 }
 const storeChoices = ref<SignInStore[]>([])
+// The unscoped token from the last sign-in, held until a shop is chosen.
+let signInToken = ''
 
 // Set once signup succeeds, holding the UI on a confirmation step rather than
 // redirecting straight to /app: the owner has an email to go and verify before
@@ -64,6 +73,19 @@ const googleButton = ref<HTMLElement | null>(null)
 
 function clearError() {
   errorMessage.value = ''
+}
+
+function advanceSignup() {
+  clearError()
+  if (!signupForm.ownerFullName.trim() || !signupForm.email.trim() || signupForm.password.length < 6) {
+    errorMessage.value = 'Add your name, a valid email, and a password with at least 6 characters.'
+    return
+  }
+  if (!/^\S+@\S+\.\S+$/.test(signupForm.email)) {
+    errorMessage.value = 'Enter a valid email address.'
+    return
+  }
+  signupStep.value = 2
 }
 
 function updateBusinessMode(value: BusinessMode) {
@@ -101,15 +123,39 @@ function bindAndEnter(
 }
 
 /**
- * Bind this browser to one shop and hand over to the register.
+ * Bind this browser to one shop, open it, and hand over to the register.
  *
- * Signing in here does not carry a session into /app — the register asks for
- * the password again on its own lock screen, and that is the point: this page
- * decides *which shop* this browser is, and the register decides who is
- * standing at it. What crosses over is the tenant binding and nothing else.
+ * This used to carry only the tenant binding, and the register asked for the
+ * password again — so every sign-in here was two, and the second landed on
+ * /app/auth looking like the first had failed. The shop is opened here now,
+ * with the token this page's sign-in was given, and the session is written
+ * where the register reads it at boot. The cache is claimed for the shop
+ * first: /app's boot wipes a cache that names another tenant, session and all.
+ *
+ * A refusal (the shop is suspended, the membership went between the two
+ * calls) is shown here, where the person is, rather than on a sign-in screen
+ * that would not say why.
  */
-function enterStore(store: SignInStore) {
-  writeStaffTenant({ organizationSlug: store.organizationSlug, storeCode: store.code })
+async function enterStore(store: SignInStore) {
+  clearError()
+  const tenant = { organizationSlug: store.organizationSlug, storeCode: store.code }
+  writeStaffTenant(tenant)
+
+  if (signInToken) {
+    saving.value = true
+    try {
+      await claimLocalCacheFor(tenant)
+      await createBrowserPosRepository({ sync: { apiBaseUrl: resolveApiBaseUrl(), ...tenant } })
+        .adoptRemoteSignIn({ token: signInToken, storeId: store.id })
+    } catch (error) {
+      errorMessage.value = error instanceof Error && error.message
+        ? error.message
+        : 'Could not open that shop. Try again.'
+      saving.value = false
+      return
+    }
+  }
+
   window.location.href = '/app'
 }
 
@@ -208,6 +254,7 @@ async function signInWithGoogle(credential: string) {
 /** Both sign-in doors end here: one shop goes straight through, several ask. */
 async function consumeSignIn(response: Response) {
   const body = await response.json().catch(() => ({})) as {
+    token?: string
     stores?: SignInStore[]
     error?: string
     message?: string
@@ -218,6 +265,8 @@ async function consumeSignIn(response: Response) {
     return
   }
 
+  signInToken = body.token ?? ''
+
   const stores = body.stores ?? []
 
   if (stores.length === 0) {
@@ -226,7 +275,7 @@ async function consumeSignIn(response: Response) {
   }
 
   if (stores.length === 1) {
-    enterStore(stores[0])
+    await enterStore(stores[0])
     return
   }
 
@@ -266,32 +315,19 @@ onBeforeUnmount(() => releaseGoogleButton(signInWithGoogle))
              pitch's grid column. -->
         <div class="auth-page auth-page--inline">
           <section class="auth-card">
-            <div class="auth-brand">
-              <BrandLogo variant="light" :size="21" />
+            <div v-if="mode === 'signup'" class="signup-progress" aria-label="Signup progress">
+              <button type="button" :class="{ active: signupStep === 1 }" @click="signupStep = 1; clearError()"><b>1</b><span>Create your account</span></button>
+              <i><ArrowRight :size="15" /></i>
+              <button type="button" :class="{ active: signupStep === 2 }" @click="advanceSignup"><b>2</b><span>Set up your store</span></button>
             </div>
-
-            <div class="segmented-control auth-mode-switch" role="group" aria-label="Get started mode">
-              <button
-                class="segment-button"
-                :class="{ active: mode === 'signup' }"
-                type="button"
-                @click="mode = 'signup'; clearError()"
-              >
-                <span>Create a store</span>
-              </button>
-              <button
-                class="segment-button"
-                :class="{ active: mode === 'signin' }"
-                type="button"
-                @click="mode = 'signin'; clearError()"
-              >
-                <span>Sign in</span>
-              </button>
-            </div>
+            <button v-else class="signup-back" type="button" @click="mode = 'signup'; clearError()"><ArrowLeft :size="14" /> Create a store</button>
 
             <div v-if="mode === 'signup'" class="auth-card__hero">
-              <h1 class="auth-card__title">Create your store</h1>
-              <p class="auth-card__copy">Live on the app and ready to ring up sales in about a minute.</p>
+              <h1 class="auth-card__title">{{ signupStep === 1 ? 'Create your account' : 'Set up your store' }}</h1>
+              <p class="auth-card__copy">
+                {{ signupStep === 1 ? 'Already have an account?' : 'Tell us a little about your business.' }}
+                <button v-if="signupStep === 1" class="signin-link" type="button" @click="mode = 'signin'; clearError()">Sign in</button>
+              </p>
             </div>
             <div v-else class="auth-card__hero">
               <h1 class="auth-card__title">Sign in</h1>
@@ -300,88 +336,20 @@ onBeforeUnmount(() => releaseGoogleButton(signInWithGoogle))
 
             <Transition name="auth-form-fade" mode="out-in">
               <form v-if="mode === 'signup'" key="signup" class="auth-form" @submit.prevent="submitSignup">
-                <label class="settings-field">
-                  <span class="settings-row__label">Business name</span>
-                  <input v-model="signupForm.businessName" class="sheet-input" type="text" autocomplete="organization" required>
-                </label>
-                <label class="settings-field">
-                  <span class="settings-row__label">Your full name</span>
-                  <input v-model="signupForm.ownerFullName" class="sheet-input" type="text" autocomplete="name" required>
-                </label>
-                <label class="settings-field">
-                  <span class="settings-row__label">Email address</span>
-                  <input v-model="signupForm.email" class="sheet-input" type="email" autocomplete="email" required>
-                  <span class="onboarding-hint">Where we send your store details. Not shown to customers.</span>
-                </label>
-                <label class="settings-field">
-                  <span class="settings-row__label">Username</span>
-                  <input v-model="signupForm.username" class="sheet-input" type="text" autocomplete="username" required>
-                  <span class="onboarding-hint">What you type to sign in.</span>
-                </label>
-                <label class="settings-field">
-                  <span class="settings-row__label">Password</span>
-                  <div class="auth-password-field">
-                    <input
-                      v-model="signupForm.password"
-                      class="sheet-input"
-                      :type="passwordVisible ? 'text' : 'password'"
-                      autocomplete="new-password"
-                      minlength="6"
-                      required
-                    >
-                    <button
-                      class="auth-password-toggle"
-                      type="button"
-                      :aria-label="passwordVisible ? 'Hide password' : 'Show password'"
-                      @click="passwordVisible = !passwordVisible"
-                    >
-                      <EyeOff v-if="passwordVisible" :size="16" />
-                      <Eye v-else :size="16" />
-                    </button>
-                  </div>
-                  <span class="onboarding-hint">At least 6 characters.</span>
-                </label>
-                <label class="settings-field">
-                  <span class="settings-row__label">Business type</span>
-                  <input
-                    v-model="signupForm.businessTypeLabel"
-                    class="sheet-input"
-                    type="text"
-                    list="business-type-suggestions"
-                    autocomplete="off"
-                    placeholder="e.g. Bakery, Flower shop, Pet supplies"
-                    required
-                  >
-                  <datalist id="business-type-suggestions">
-                    <option v-for="option in businessTypeSuggestions" :key="option" :value="option">
-                      {{ option }}
-                    </option>
-                  </datalist>
-                  <span class="onboarding-hint">Type it your way, or pick one of the suggestions.</span>
-                </label>
-                <label class="settings-field">
-                  <span class="settings-row__label">Starter setup</span>
-                  <AutocompleteSelect
-                    :model-value="signupForm.businessMode"
-                    label="Starter setup"
-                    :options="businessModeOptions"
-                    @update:model-value="(value) => updateBusinessMode(value as BusinessMode)"
-                  />
-                  <span class="onboarding-hint">Sets your starting catalog, layout, and checkout flow. Pick the closest fit; changeable later.</span>
-                </label>
-
-                <!-- Was a GCash transfer collected mid-form, against a
-                     placeholder number, while every other surface promised
-                     early access was free. Nothing is charged now, so the form
-                     says so plainly instead of asking for a reference. -->
-                <p class="onboarding-note">
-                  <strong>No payment now.</strong> Omaykan is free while we're in early access, and
-                  we'll tell you well before that changes.
-                </p>
-
-                <button class="primary-button auth-submit" type="submit" :disabled="saving">
-                  {{ saving ? 'Creating your store…' : 'Create your store' }}
-                </button>
+                <template v-if="signupStep === 1">
+                  <label class="settings-field"><span class="settings-row__label">Full name</span><input v-model="signupForm.ownerFullName" class="sheet-input" type="text" autocomplete="name" placeholder="Juan Dela Cruz" required></label>
+                  <label class="settings-field"><span class="settings-row__label">Email address</span><input v-model="signupForm.email" class="sheet-input" type="email" autocomplete="email" placeholder="name@example.com" required></label>
+                  <label class="settings-field"><span class="settings-row__label">Password</span><div class="auth-password-field"><input v-model="signupForm.password" class="sheet-input" :type="passwordVisible ? 'text' : 'password'" autocomplete="new-password" minlength="6" placeholder="Create a password" required><button class="auth-password-toggle" type="button" :aria-label="passwordVisible ? 'Hide password' : 'Show password'" @click="passwordVisible = !passwordVisible"><EyeOff v-if="passwordVisible" :size="16" /><Eye v-else :size="16" /></button></div></label>
+                  <button class="primary-button auth-submit" type="button" @click="advanceSignup">Continue to store setup <ArrowRight :size="16" /></button>
+                </template>
+                <template v-else>
+                  <label class="settings-field"><span class="settings-row__label">Business name</span><input v-model="signupForm.businessName" class="sheet-input" type="text" autocomplete="organization" placeholder="Your shop name" required></label>
+                  <label class="settings-field"><span class="settings-row__label">Username</span><input v-model="signupForm.username" class="sheet-input" type="text" autocomplete="username" placeholder="What you’ll use to sign in" required></label>
+                  <label class="settings-field"><span class="settings-row__label">Business type</span><input v-model="signupForm.businessTypeLabel" class="sheet-input" type="text" list="business-type-suggestions" autocomplete="off" placeholder="e.g. Bakery, Flower shop, Pet supplies" required><datalist id="business-type-suggestions"><option v-for="option in businessTypeSuggestions" :key="option" :value="option">{{ option }}</option></datalist></label>
+                  <label class="settings-field"><span class="settings-row__label">Starter setup</span><AutocompleteSelect :model-value="signupForm.businessMode" label="Starter setup" :options="businessModeOptions" @update:model-value="(value) => updateBusinessMode(value as BusinessMode)" /></label>
+                  <p class="onboarding-note"><strong>No payment now.</strong> Omaykan is free while we’re in early access.</p>
+                  <div class="signup-buttons"><button class="signup-back" type="button" @click="signupStep = 1; clearError()"><ArrowLeft :size="14" /> Back</button><button class="primary-button auth-submit" type="submit" :disabled="saving">{{ saving ? 'Creating your store…' : 'Create your store' }} <ArrowRight :size="16" /></button></div>
+                </template>
               </form>
 
               <form v-else key="signin" class="auth-form" @submit.prevent="submitSignIn">
@@ -394,6 +362,7 @@ onBeforeUnmount(() => releaseGoogleButton(signInWithGoogle))
                     :key="store.id"
                     class="primary-button auth-submit"
                     type="button"
+                    :disabled="saving"
                     @click="enterStore(store)"
                   >
                     {{ store.name }}
@@ -422,9 +391,7 @@ onBeforeUnmount(() => releaseGoogleButton(signInWithGoogle))
 
             <p v-if="errorMessage" class="auth-error">{{ errorMessage }}</p>
 
-            <p class="onboarding-support">
-              Stuck signing up? Email <a :href="supportMailto('Omaykan signup')">{{ SUPPORT_EMAIL }}</a>.
-            </p>
+            <p class="onboarding-support"><LockKeyhole :size="13" /> Your information is safe and secure.</p>
           </section>
         </div>
       </template>
@@ -482,6 +449,32 @@ onBeforeUnmount(() => releaseGoogleButton(signInWithGoogle))
   background: #ffffff;
 }
 
+.auth-page--inline :deep(.auth-card) {
+  width: 100%;
+  max-width: none;
+  gap: 18px;
+  padding: 30px 34px 28px;
+  border: 0;
+  border-radius: 14px;
+  box-shadow: 0 24px 70px rgba(2, 43, 22, 0.24);
+}
+
+.auth-page--inline :deep(.auth-card__title) { font-size: 24px; }
+.auth-page--inline :deep(.auth-form) { gap: 14px; }
+.auth-page--inline :deep(.settings-field) { gap: 6px; }
+.auth-page--inline :deep(.settings-row__label) { color: #25312b; font-size: 11px; }
+.auth-page--inline :deep(.sheet-input) { min-height: 44px; border-radius: 8px; background: #fff; font-size: 12px; }
+.auth-page--inline :deep(.primary-button) { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; border-radius: 8px; background: #087c3d; font-size: 12px; }
+
+.signup-progress { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; padding-bottom: 15px; border-bottom: 1px solid #e8eee9; }
+.signup-progress button { display: flex; align-items: center; gap: 8px; padding: 0; border: 0; background: none; color: #8b9590; font-size: 10px; font-weight: 700; text-align: left; cursor: pointer; }
+.signup-progress button b { display: grid; place-items: center; width: 24px; height: 24px; flex: 0 0 auto; border-radius: 50%; background: #dfe5e1; color: #fff; font-size: 10px; }
+.signup-progress button.active { color: #087c3d; }.signup-progress button.active b { background: #087c3d; }
+.signup-progress i { display: grid; place-items: center; color: #b4beb8; }
+.signin-link { padding: 0; border: 0; background: none; color: #087c3d; font: inherit; font-weight: 800; cursor: pointer; }
+.signup-back { display: inline-flex; align-items: center; gap: 6px; width: fit-content; padding: 8px 0; border: 0; background: none; color: #66716b; font-size: 11px; font-weight: 700; cursor: pointer; }
+.signup-buttons { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 14px; }.signup-buttons .auth-submit { width: 100%; }
+
 /* The success step is the whole viewport, minus the header that stays above it. */
 .onboarding-done {
   flex: 1;
@@ -532,6 +525,10 @@ onBeforeUnmount(() => releaseGoogleButton(signInWithGoogle))
 }
 
 .onboarding-support {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   margin: 0;
   font: var(--type-caption);
   line-height: 1.55;
@@ -580,5 +577,7 @@ onBeforeUnmount(() => releaseGoogleButton(signInWithGoogle))
 
 @media (max-width: 720px) {
   .onboarding-done { min-height: 0; padding-top: var(--space-6); }
+  .auth-page--inline :deep(.auth-card) { padding: 26px 20px; }
+  .signup-progress button span { display: none; }
 }
 </style>

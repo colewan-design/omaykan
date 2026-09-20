@@ -4,7 +4,11 @@ import com.omaykan.seller.core.model.SellerOrder
 import com.omaykan.seller.core.network.ApiException
 import com.omaykan.seller.core.notify.NewOrderNotifier
 import com.omaykan.seller.core.notify.NewOrderWatch
+import com.omaykan.seller.core.realtime.OrderRealtime
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -39,20 +43,17 @@ data class OrderFeedState(
 /**
  * The one place this app asks the server what is happening.
  *
- * ## Why polling
+ * ## Live, with polling underneath
  *
- * The backend broadcasts every order event on a private `store.{id}` Reverb
- * channel, and the till listens to exactly that. This app cannot: the channel
- * authorizes on store *membership* (routes/channels.php looks the caller up in
- * `store_memberships` by user id), and this app is paired as a **device**, which
- * has no membership row. A device token is what the order endpoints require and
- * a user token is what the channel requires, and no single credential satisfies
- * both today.
+ * The backend broadcasts every order event on the private `store.{id}` Reverb
+ * channel, and since staff sign in as themselves this app holds a token that
+ * channel accepts. While anything watches this feed, [OrderRealtime] keeps that
+ * channel open and every event triggers a fetch at once.
  *
- * So this polls, on a fifteen-second interval — well inside the API's 60/min,
- * and fast enough that a shop hears about an order while the customer is still
- * putting their phone away. Making it a push feed is a backend change, not an
- * app one, and it is written up in seller/README.md.
+ * Polling stays underneath it: every minute while the socket is up, every
+ * fifteen seconds while it is not — and always, on a build with no Reverb key.
+ * A socket can die quietly, and a merchant must never be reading a list that
+ * stopped updating without being told.
  *
  * ## Why a singleton, and why a flow
  *
@@ -70,10 +71,15 @@ data class OrderFeedState(
 class OrderFeed @Inject constructor(
     private val repository: SellerOrderRepository,
     private val notifier: NewOrderNotifier,
+    private val realtime: OrderRealtime,
+    private val stores: PairedStoreStore,
     @AppScope private val scope: CoroutineScope,
 ) {
     private companion object {
         const val POLL_INTERVAL_MS = 15_000L
+
+        /** While the socket is up, polling is only the safety net. */
+        const val CONNECTED_POLL_INTERVAL_MS = 60_000L
 
         /**
          * How long the loop keeps running after the last watcher leaves.
@@ -108,36 +114,46 @@ class OrderFeed @Inject constructor(
 
     /** Drives the polling. Collected only through [state]. */
     private val polled: StateFlow<OrderFeedState> = flow {
-        var last = OrderFeedState()
-
-        while (true) {
-            val inFlight = overrides.value
-
-            last = try {
-                val fetched = repository.orders()
-
-                /*
-                 * Alerts before the emission, so the sound and the list arrive
-                 * together. `arrivals` returns nothing on the first fetch of a
-                 * session — see NewOrderWatch — which is what stops opening the
-                 * app from firing a notification for every order of the day.
-                 */
-                notifier.notifyArrivals(watch.arrivals(fetched))
-
-                overrides.value = overrides.value.filterNot { (id, order) ->
-                    inFlight[id] === order
-                }
-
-                OrderFeedState(orders = fetched, loading = false, error = null)
-            } catch (e: ApiException) {
-                // The last good list is kept. See OrderFeedState.error.
-                last.copy(loading = false, error = e.message)
+        // The socket lives exactly as long as this loop: started when the first
+        // watcher arrives, closed when the last one has gone.
+        coroutineScope {
+            stores.paired.first()?.id?.let { storeId ->
+                launch { realtime.run(storeId) { ticks.trySend(Unit) } }
             }
 
-            emit(last)
+            var last = OrderFeedState()
 
-            // Either the interval elapses or somebody pulled to refresh.
-            withTimeoutOrNull(POLL_INTERVAL_MS) { ticks.receive() }
+            while (true) {
+                val inFlight = overrides.value
+
+                last = try {
+                    val fetched = repository.orders()
+
+                    /*
+                     * Alerts before the emission, so the sound and the list arrive
+                     * together. `arrivals` returns nothing on the first fetch of a
+                     * session — see NewOrderWatch — which is what stops opening the
+                     * app from firing a notification for every order of the day.
+                     */
+                    notifier.notifyArrivals(watch.arrivals(fetched))
+
+                    overrides.value = overrides.value.filterNot { (id, order) ->
+                        inFlight[id] === order
+                    }
+
+                    OrderFeedState(orders = fetched, loading = false, error = null)
+                } catch (e: ApiException) {
+                    // The last good list is kept. See OrderFeedState.error.
+                    last.copy(loading = false, error = e.message)
+                }
+
+                emit(last)
+
+                // Either the interval elapses, somebody pulled to refresh, or the
+                // socket said something happened.
+                val interval = if (realtime.connected.value) CONNECTED_POLL_INTERVAL_MS else POLL_INTERVAL_MS
+                withTimeoutOrNull(interval) { ticks.receive() }
+            }
         }
     }.stateIn(
         scope = scope,

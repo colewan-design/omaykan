@@ -2,7 +2,11 @@ package com.omaykan.storefront.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
@@ -26,7 +30,10 @@ import com.omaykan.storefront.feature.catalog.ProductDetailScreen
 import com.omaykan.storefront.feature.checkout.CheckoutScreen
 import com.omaykan.storefront.feature.checkout.OrderReviewScreen
 import com.omaykan.storefront.feature.home.MainShell
+import com.omaykan.storefront.feature.home.MarketTab
 import com.omaykan.storefront.feature.order.OrderScreen
+import com.omaykan.storefront.feature.orders.OrderFilter
+import com.omaykan.storefront.feature.orders.OrdersScreen
 
 /**
  * The market front page is always the root.
@@ -41,10 +48,29 @@ fun OmaykanNavHost(
     resumeShop: StoreRef?,
     modifier: Modifier = Modifier,
     navController: NavHostController = rememberNavController(),
+    /** An order notification was tapped: open that order over the market. */
+    openOrder: String? = null,
+    onOrderOpened: () -> Unit = {},
 ) {
+    /*
+     * Which tab the shell is on, held here rather than inside it.
+     *
+     * CatalogScreen draws the same tab bar while sitting on top of the shell,
+     * so a tap there has to be able to both pop back and choose the tab it
+     * pops back to. One saveable here is the only place both screens can see.
+     */
+    var tab by rememberSaveable { mutableStateOf(MarketTab.Home) }
+
     LaunchedEffect(resumeShop) {
         if (resumeShop != null) {
             navController.navigate(CatalogRoute(resumeShop.orgSlug, resumeShop.storeCode))
+        }
+    }
+
+    LaunchedEffect(openOrder) {
+        if (openOrder != null) {
+            navController.navigate(OrderRoute(openOrder))
+            onOrderOpened()
         }
     }
 
@@ -55,6 +81,8 @@ fun OmaykanNavHost(
     ) {
         composable<HomeRoute> {
             MainShell(
+                tab = tab,
+                onTabChange = { tab = it },
                 onOpenProduct = { store, productId ->
                     navController.navigate(ProductRoute(store.orgSlug, store.storeCode, productId))
                 },
@@ -70,6 +98,12 @@ fun OmaykanNavHost(
                     navController.navigate(CartRoute(ref.orgSlug, ref.storeCode))
                 },
                 onOpenOrder = { orderId -> navController.navigate(OrderRoute(orderId)) },
+                onOpenOrders = { stage ->
+                    val filter = stage?.let { wanted ->
+                        OrderFilter.entries.firstOrNull { it.stage == wanted }
+                    }
+                    navController.navigate(OrdersRoute(filter?.name))
+                },
                 onOpenProfile = { navController.navigate(ProfileRoute) },
                 onOpenAddresses = { navController.navigate(AddressesRoute) },
                 onOpenPayment = { navController.navigate(PaymentMethodsRoute) },
@@ -89,6 +123,13 @@ fun OmaykanNavHost(
                     navController.navigate(CartRoute(route.orgSlug, route.storeCode))
                 },
                 onBack = navController::navigateUp,
+                // Pop rather than push: the shell is already underneath, and
+                // navigating to it again would stack a second market on top of
+                // the shop the shopper is trying to leave.
+                onSelectTab = { picked ->
+                    tab = picked
+                    navController.popBackStack(HomeRoute, inclusive = false)
+                },
             )
         }
 
@@ -163,9 +204,27 @@ fun OmaykanNavHost(
             )
         }
 
+        composable<OrdersRoute> { entry ->
+            val requested = entry.toRoute<OrdersRoute>().filter
+                ?.let { name -> OrderFilter.entries.firstOrNull { it.name == name } }
+
+            // Applied once per visit and then handed back, so coming back from
+            // an order shows the filter the shopper last chose, not the stage
+            // tile they tapped on the account page three screens ago.
+            var applied by rememberSaveable { mutableStateOf(false) }
+
+            OrdersScreen(
+                onOpenOrder = { orderId -> navController.navigate(OrderRoute(orderId)) },
+                onBack = navController::navigateUp,
+                requestedFilter = if (applied) null else requested,
+                onFilterApplied = { applied = true },
+            )
+        }
+
         composable<OrderRoute> { entry ->
             OrderScreen(
                 justPlaced = entry.toRoute<OrderRoute>().justPlaced,
+                onBack = navController::navigateUp,
                 onDone = {
                     navController.navigate(HomeRoute) {
                         popUpTo(HomeRoute) { inclusive = true }

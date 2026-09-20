@@ -114,6 +114,27 @@ data class TrackedOrder(
             else -> OrderStage.Preparing
         }
 
+    /**
+     * A delivery nobody has taken yet — the one moment a "rider assigned"
+     * notification is still ahead of the shopper.
+     */
+    val awaitsRider: Boolean
+        get() = isDelivery && !cancelled && status != "completed" &&
+            (deliveryStage == null || deliveryStage == "pending")
+
+    /**
+     * [stage]'s label for one order, where a single order can say more than
+     * the bucket it is counted in: an accepted-but-not-collected delivery is
+     * counted as on the way and reads as "Rider assigned", as it does on the
+     * Orders tab and the website.
+     */
+    val stageLabel: String?
+        get() = if (stage == OrderStage.OnTheWay && deliveryStage == "assigned") {
+            "Rider assigned"
+        } else {
+            stage?.label
+        }
+
     private companion object {
         val CANCELLED = setOf("cancelled", "voided")
         val RIDER_HOLDING = setOf("assigned", "picked_up")

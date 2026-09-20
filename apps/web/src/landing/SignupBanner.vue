@@ -106,7 +106,7 @@ function dismiss(): void {
   align-items: center;
   gap: 12px;
   padding: 0 var(--fd-gutter);
-  background: #ede5d8;
+  background: #eeeeee;
   color: #231d18;
 }
 

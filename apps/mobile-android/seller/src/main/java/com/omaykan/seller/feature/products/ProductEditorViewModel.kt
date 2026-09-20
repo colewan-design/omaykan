@@ -1,12 +1,15 @@
 package com.omaykan.seller.feature.products
 
+import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.omaykan.seller.core.data.CatalogRepository
+import com.omaykan.seller.core.data.PhotoEncoder
 import com.omaykan.seller.core.model.Category
 import com.omaykan.seller.core.model.Product
 import com.omaykan.seller.core.model.ProductDraft
+import com.omaykan.seller.core.model.StorefrontFields
 import com.omaykan.seller.core.model.formatQuantity
 import com.omaykan.seller.core.network.ApiException
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -15,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.IOException
 import java.math.BigDecimal
 import java.math.RoundingMode
 import javax.inject.Inject
@@ -27,6 +31,11 @@ data class ProductForm(
     val stock: String = "",
     val lowStock: String = "",
     val active: Boolean = true,
+    /** The primary photo's URL — already uploaded — or null for none. */
+    val imageUrl: String? = null,
+    /** "kg", "pack", "bundle" — what one of the price buys. */
+    val unit: String = "",
+    val description: String = "",
 )
 
 data class ProductEditorUiState(
@@ -43,6 +52,9 @@ data class ProductEditorUiState(
     val stockError: String? = null,
     val lowStockError: String? = null,
     val saving: Boolean = false,
+    /** A picked photo on its way up. Save waits for it rather than racing it. */
+    val uploadingPhoto: Boolean = false,
+    val photoError: String? = null,
     /** The server's refusal of the save, in its own words. */
     val error: String? = null,
     val saved: Boolean = false,
@@ -62,6 +74,7 @@ data class ProductEditorUiState(
 class ProductEditorViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val catalog: CatalogRepository,
+    private val photos: PhotoEncoder,
 ) : ViewModel() {
 
     private val productId: String? = savedStateHandle.get<String>("id")?.takeIf { it.isNotBlank() }
@@ -118,9 +131,39 @@ class ProductEditorViewModel @Inject constructor(
 
     fun onActive(value: Boolean) = edit { copy(active = value) }
 
+    fun onUnit(value: String) = edit { copy(unit = value) }
+
+    fun onDescription(value: String) = edit { copy(description = value.take(DESCRIPTION_MAX)) }
+
+    fun onRemovePhoto() = edit { copy(imageUrl = null) }
+
+    /**
+     * Scale the picked photo down on the phone, upload it, and hold its URL.
+     *
+     * Uploaded now rather than at Save so the save is one small sync event, and
+     * so a photo the server refuses is said beside the photo, not as a failed
+     * save. `PhotoEncoder` is the one the shop photo already uses: 1280px on the
+     * long edge, JPEG.
+     */
+    fun onPhotoPicked(uri: Uri) {
+        if (_state.value.uploadingPhoto || !_state.value.canEdit) return
+        _state.update { it.copy(uploadingPhoto = true, photoError = null) }
+
+        viewModelScope.launch {
+            try {
+                val url = catalog.uploadPhoto(photos.jpegDataUrl(uri))
+                _state.update { it.copy(uploadingPhoto = false, form = it.form.copy(imageUrl = url)) }
+            } catch (e: ApiException) {
+                _state.update { it.copy(uploadingPhoto = false, photoError = e.message) }
+            } catch (_: IOException) {
+                _state.update { it.copy(uploadingPhoto = false, photoError = "That photo couldn't be read. Try another one.") }
+            }
+        }
+    }
+
     fun save() {
         val current = _state.value
-        if (current.saving || !current.canEdit || current.loading) return
+        if (current.saving || current.uploadingPhoto || !current.canEdit || current.loading) return
 
         val form = current.form
         val cents = parsePriceCents(form.price)
@@ -170,6 +213,11 @@ class ProductEditorViewModel @Inject constructor(
                         stockQty = if (current.tracksStock) stock else null,
                         lowStockThreshold = lowStock,
                         active = form.active,
+                        storefront = StorefrontFields(
+                            imageUrl = form.imageUrl,
+                            unitLabel = form.unit,
+                            description = form.description,
+                        ),
                     ),
                 )
                 _state.update { it.copy(saving = false, saved = true) }
@@ -192,7 +240,13 @@ private fun Product.toForm() = ProductForm(
     stock = stockQty?.let(::formatQuantity).orEmpty(),
     lowStock = lowStockThreshold?.let(::formatQuantity).orEmpty(),
     active = active,
+    imageUrl = imageUrl,
+    unit = unitLabel.orEmpty(),
+    description = description.orEmpty(),
 )
+
+/** SyncController::DESCRIPTION_MAX. Longer is cut there anyway; stopping here says so. */
+internal const val DESCRIPTION_MAX = 2000
 
 /** 18000 → "180", 18050 → "180.50" — what a merchant would type. */
 internal fun centsToInput(cents: Long): String =

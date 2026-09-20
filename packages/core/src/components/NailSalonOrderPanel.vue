@@ -4,6 +4,7 @@ import { computed, reactive, ref } from 'vue'
 import { formatCurrency, paymentMethodOptions } from '@pos/shared/index'
 import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import PaymentSheet from '@pos/core/components/PaymentSheet.vue'
+import DiscountControl from '@pos/core/components/DiscountControl.vue'
 import { usePosStore } from '@pos/core/stores/pos'
 import { haptic, ImpactStyle } from '@pos/core/utils/haptics'
 
@@ -21,7 +22,7 @@ const orderTypeOptions: { value: 'dine_in' | 'takeaway'; label: string }[] = [
 
 const taxRateLabel = computed(() => {
   if (store.subtotalCents === 0) return '0%'
-  return `${((store.taxCents / store.subtotalCents) * 100).toFixed(2)}%`
+  return `${((store.taxCents / Math.max(1, store.subtotalCents - store.discountCents)) * 100).toFixed(2)}%`
 })
 
 const nextOrderNumber = computed(() => String((store.activeShift?.orderCount ?? 0) + 1).padStart(3, '0'))
@@ -47,7 +48,8 @@ function adjustQty(productId: string, delta: 1 | -1) {
 }
 
 async function confirmPayment() {
-  await store.completeOrder()
+  // Refused or unreachable: the sheet stays open with the reason.
+  if (!(await store.completeOrder())) return
   showPayment.value = false
   haptic(ImpactStyle.Medium)
 }
@@ -152,6 +154,7 @@ async function openPayment() {
         <span>Subtotal</span>
         <strong>{{ formatCurrency(store.subtotalCents) }}</strong>
       </div>
+      <DiscountControl />
       <div class="totals-row">
         <span>Tax ({{ taxRateLabel }})</span>
         <strong>{{ formatCurrency(store.taxCents) }}</strong>

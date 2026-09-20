@@ -381,7 +381,7 @@ function savedHref(item: SavedProduct): string {
   display: grid;
   place-items: center;
   background: var(--sf-forest, #1f2e25);
-  color: var(--sf-cream, #f6f1e8);
+  color: var(--sf-cream, #ffffff);
   font-family: var(--sf-serif);
   font-size: 38px;
   font-weight: 700;
@@ -469,7 +469,7 @@ function savedHref(item: SavedProduct): string {
   height: 96px;
   overflow: hidden;
   border-radius: 6px;
-  background: var(--sf-sand, #ede5d8);
+  background: var(--sf-sand, #eeeeee);
   color: var(--acct-faint);
 }
 .dash-order__art img { width: 100%; height: 100%; object-fit: cover; }
@@ -523,7 +523,7 @@ function savedHref(item: SavedProduct): string {
   aspect-ratio: 1 / 1;
   overflow: hidden;
   border-radius: 8px;
-  background: var(--sf-sand, #ede5d8);
+  background: var(--sf-sand, #eeeeee);
   color: var(--acct-faint);
 }
 .dash-saved__art img { width: 100%; height: 100%; object-fit: cover; }

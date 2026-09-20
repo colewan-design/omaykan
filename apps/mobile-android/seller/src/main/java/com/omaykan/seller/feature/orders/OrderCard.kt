@@ -253,10 +253,12 @@ private fun Lines(order: SellerOrder) {
             color = SellerTheme.colors.separator,
         )
 
-        // Whatever the total holds beyond the basket and the delivery fee —
-        // VAT, on a shop that charges it. Without this line a ₱240 basket and
-        // a ₱49 fee sat above a ₱317.80 total that visibly did not add up.
-        val extraCents = order.totalCents - order.subtotalCents - order.deliveryFeeCents
+        // Whatever the total holds beyond the basket, less its discount, and
+        // the delivery fee — VAT, on a shop that charges it. Without this line
+        // a ₱240 basket and a ₱49 fee sat above a ₱317.80 total that visibly
+        // did not add up.
+        val extraCents = order.totalCents - order.subtotalCents + order.discountCents - order.deliveryFeeCents
+        if (order.discountCents > 0) SummaryLine(order.discountLabel ?: "Discount", order.discountCents, off = true)
         if (order.deliveryFeeCents > 0) SummaryLine("Delivery fee", order.deliveryFeeCents)
         if (extraCents > 0) SummaryLine("Tax", extraCents)
 
@@ -279,7 +281,7 @@ private fun Lines(order: SellerOrder) {
 }
 
 @Composable
-private fun SummaryLine(label: String, cents: Long) {
+private fun SummaryLine(label: String, cents: Long, off: Boolean = false) {
     Row(Modifier.padding(bottom = 4.dp)) {
         Text(
             text = label,
@@ -288,7 +290,7 @@ private fun SummaryLine(label: String, cents: Long) {
             modifier = Modifier.weight(1f),
         )
         Text(
-            text = Money.peso(cents),
+            text = if (off) "−" + Money.peso(cents) else Money.peso(cents),
             style = MaterialTheme.typography.bodySmall,
             color = SellerTheme.colors.textSecondary,
         )

@@ -183,6 +183,58 @@ class SubscriptionGatewayTest extends TestCase
             && $request->url() === 'https://api.paymongo.com/v1/checkout_sessions/'.self::SESSION);
     }
 
+    /** What we know about the payer is sent, so they do not retype it. */
+    public function test_known_billing_details_are_prefilled(): void
+    {
+        config(['paymongo.secret_key' => 'sk_test_x']);
+        $subscription = $this->subscription();
+
+        Http::fake(['api.paymongo.com/v2/checkout_sessions' => Http::response([
+            'data' => ['id' => self::SESSION, 'attributes' => ['checkout_url' => 'https://checkout.paymongo.com/x']],
+        ], 200)]);
+
+        app(\App\Services\Billing\PayMongoGateway::class)->openCheckout(
+            $subscription,
+            'https://omaykan.com/ok',
+            'https://omaykan.com/no',
+            ['name' => 'Aling Nena', 'email' => 'nena@example.com'],
+        );
+
+        Http::assertSent(function ($request) {
+            $billing = $request->data()['data']['attributes']['billing'] ?? null;
+
+            return $billing === ['name' => 'Aling Nena', 'email' => 'nena@example.com'];
+        });
+    }
+
+    /**
+     * A staff user can sign in by username and have no email at all. An
+     * empty string would prefill the form with nothing while still counting
+     * as answered, so the field is omitted instead.
+     */
+    public function test_empty_billing_details_are_omitted_rather_than_sent_blank(): void
+    {
+        config(['paymongo.secret_key' => 'sk_test_x']);
+        $subscription = $this->subscription();
+
+        Http::fake(['api.paymongo.com/v2/checkout_sessions' => Http::response([
+            'data' => ['id' => self::SESSION, 'attributes' => ['checkout_url' => 'https://checkout.paymongo.com/x']],
+        ], 200)]);
+
+        app(\App\Services\Billing\PayMongoGateway::class)->openCheckout(
+            $subscription,
+            'https://omaykan.com/ok',
+            'https://omaykan.com/no',
+            ['name' => 'Aling Nena', 'email' => null],
+        );
+
+        Http::assertSent(function ($request) {
+            $billing = $request->data()['data']['attributes']['billing'] ?? null;
+
+            return $billing === ['name' => 'Aling Nena'];
+        });
+    }
+
     /** Without keys the gateway path stays shut rather than half-working. */
     public function test_the_gateway_is_disabled_without_a_key(): void
     {

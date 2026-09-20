@@ -185,6 +185,10 @@ class SellerSubscriptionController extends Controller
             $subscription,
             rtrim(config('app.url'), '/').'/app.html#/settings?subscription=paid',
             rtrim(config('app.url'), '/').'/app.html#/settings?subscription=cancelled',
+            // The owner, because `abortUnlessOwner` above means that is who
+            // this is. No phone: nothing in the schema holds one, and
+            // PayMongo asks for it as optional anyway.
+            ['name' => $context->user->name, 'email' => $context->user->email],
         );
 
         $payment = SubscriptionPayment::query()->create([

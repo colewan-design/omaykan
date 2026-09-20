@@ -51,8 +51,12 @@ class PayMongoGateway
      * is the live platform price, not the one frozen on the subscription row
      * at signup — the same rule the merchant's own screen follows.
      */
-    public function openCheckout(Subscription $subscription, string $successUrl, string $cancelUrl): array
-    {
+    public function openCheckout(
+        Subscription $subscription,
+        string $successUrl,
+        string $cancelUrl,
+        array $billing = [],
+    ): array {
         $plan = PlatformSetting::current()->planSettings();
         $amount = (int) ($plan['amountCents'] ?? 0);
 
@@ -76,6 +80,19 @@ class PayMongoGateway
                     'success_url' => $successUrl,
                     'cancel_url' => $cancelUrl,
                     'description' => 'Omaykan subscription',
+                    /*
+                     * Whatever we already know about the payer, so the
+                     * checkout does not ask a merchant to retype their own
+                     * name and email on every renewal. Left editable: the
+                     * account's email is not always the one they want a
+                     * receipt at.
+                     *
+                     * Only non-empty values are sent. A staff user can sign
+                     * in by username with no email at all, and an empty
+                     * string is worse than an absent field — it prefills the
+                     * form with nothing and still counts as answered.
+                     */
+                    ...(array_filter($billing) === [] ? [] : ['billing' => array_filter($billing)]),
                     /*
                      * Ours, carried through PayMongo and back. The settlement
                      * does not depend on it — it re-reads the session by id —

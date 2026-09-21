@@ -255,6 +255,12 @@ class SubscriptionGatewayTest extends TestCase
             === ['gcash', 'card', 'qrph']);
     }
 
+    /** Left alone, the checkout offers QRPh and nothing else — what an individual account takes. */
+    public function test_the_default_payment_method_is_qrph_alone(): void
+    {
+        $this->assertSame(['qrph'], config('paymongo.payment_methods'));
+    }
+
     /** Without keys the gateway path stays shut rather than half-working. */
     public function test_the_gateway_is_disabled_without_a_key(): void
     {

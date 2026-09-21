@@ -8,7 +8,7 @@ import { getPosRepository } from '@pos/core/services/runtime'
  * What the shop owes us, and how it says it paid.
  *
  * Two ways to pay, and the panel leads with the one that finishes by itself:
- * GCash through PayMongo, which settles without anybody reviewing it, and the
+ * a QRPh code through PayMongo, which settles without anybody reviewing it, and the
  * manual transfer underneath for a shop that would rather send money the way
  * it always has (documentation/plan.md §4a).
  *
@@ -117,7 +117,7 @@ async function submit() {
 }
 
 /**
- * Send the merchant to GCash.
+ * Send the merchant to the PayMongo checkout, where the QR code is.
  *
  * The row is written server-side before this returns, so an abandoned
  * checkout is still something an operator can look up rather than a gap.
@@ -139,7 +139,7 @@ async function payOnline() {
 }
 
 /**
- * Coming back from GCash.
+ * Coming back from the checkout.
  *
  * Only ever an accelerator: the webhook settles the same checkout whether or
  * not the merchant returns to this screen. So a failure here is swallowed —
@@ -195,11 +195,12 @@ onMounted(async () => {
     -->
     <div v-if="gatewayReady && !pending" class="subs__pay">
       <button type="button" class="subs__paybtn" :disabled="payingOnline" @click="payOnline">
-        {{ payingOnline ? 'Opening GCash…' : `Pay ${priceLabel} with GCash` }}
+        {{ payingOnline ? 'Opening the QR code…' : `Pay ${priceLabel} by QR` }}
       </button>
       <p class="subs__payhint">
-        Opens GCash. Your subscription updates as soon as the payment clears —
-        nobody has to check it by hand.
+        Shows a QRPh code — scan it with GCash, Maya or your bank's app. Your
+        subscription updates as soon as the payment clears — nobody has to
+        check it by hand.
       </p>
       <p v-if="gatewayError" class="subs__error">{{ gatewayError }}</p>
     </div>

@@ -65,7 +65,7 @@ Two customer storefronts exist and have **drifted apart**: the mobile one suppor
 | Legacy backend | Firebase / Firestore + `api/*.ts` on `server/` | Live today, being retired |
 | On-device DB (merchant) | IndexedDB (mirrored to `localStorage`) today; SQLite is the target | See §4 |
 | Customer payments | **COD only** — settled at handover | No gateway, deliberately. See §4a |
-| Merchant subscription | PayMongo hosted GCash checkout, or a manual transfer an operator verifies | Gateway added 2026-09-20. See §4a |
+| Merchant subscription | PayMongo hosted checkout (QRPh), or a manual transfer an operator verifies | Gateway added 2026-09-20. See §4a |
 
 ---
 
@@ -156,7 +156,7 @@ What COD costs us, and must be designed for in Phase 3:
 
 **The merchant's own subscription takes a gateway. Customer orders still do not.** The two were briefly under one no-gateway decision; as of **2026-09-20 they are separate decisions**, because the arguments above are about *customer* money and only some of them survive the move to a subscription.
 
-A merchant can now pay through **PayMongo**, with hosted GCash checkout, and the subscription settles itself. The manual transfer stays beside it for a shop that would rather send money the way it always has, and an install with no PayMongo keys behaves exactly as it did before — the Pay button does not appear. See [subscription-and-suspension.md §6.3](./subscription-and-suspension.md).
+A merchant can now pay through **PayMongo**, with a hosted checkout that shows a QRPh code — scannable from GCash, Maya or any bank app — and the subscription settles itself. QRPh only, because the PayMongo account is an individual one (2026-09-21); `PAYMONGO_PAYMENT_METHODS` widens it if that ever changes. The manual transfer stays beside it for a shop that would rather send money the way it always has, and an install with no PayMongo keys behaves exactly as it did before — the Pay button does not appear. See [subscription-and-suspension.md §6.3](./subscription-and-suspension.md).
 
 What changed the answer: the manual route costs an operator's attention per merchant per month and gives no way to dun anybody automatically. That is fine at tens of merchants and not at hundreds, and building it after the volume arrives means building it under pressure. The objections that did not carry over are the customer-facing ones — a subscription is one predictable charge to a business we already have a relationship with, not a stranger at a door, so there is no float to hold, no change to make and no cash to reconcile.
 

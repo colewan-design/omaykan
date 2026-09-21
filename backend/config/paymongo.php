@@ -29,27 +29,27 @@ return [
     'secret_key' => env('PAYMONGO_SECRET_KEY'),
 
     /*
-     * What a merchant may pay with.
+     * What a merchant may pay with. QRPh only, by default.
      *
-     * Verified against the account rather than guessed: every one of these
-     * renders on the hosted checkout — QRPh, cards, the three e-wallets, and
-     * BPI under online banking. A method the account has not enabled is
-     * accepted when the session is created and then simply does not appear,
-     * which is a confusing way to find out, so change this list only against
-     * a checkout you have actually opened.
+     * The PayMongo account behind this install is an individual one, not a
+     * registered business, and QRPh is the method that account type is meant
+     * to take. It also covers everyone anyway: a QRPh code scans from GCash,
+     * Maya and practically every Philippine bank app, so a merchant who pays
+     * with GCash today still pays with GCash — by scanning, not by being
+     * redirected. And it is the cheapest method to receive, which matters
+     * because the fee comes out of the subscription revenue.
      *
-     * `billease` and `atome` are deliberately absent. They are buy-now-pay-
-     * later, and putting a shop owner into instalment debt for a ₱499
-     * subscription is not a thing to offer by default. Both work if you add
-     * them — that is what the environment variable is for.
-     *
-     * Fees differ per method and come out of the subscription revenue: cards
-     * cost more than e-wallets, which cost more than QRPh. Worth a look at
-     * PayMongo's pricing before widening this.
+     * A method the account has not enabled is accepted when the session is
+     * created and then simply does not appear on the hosted page, which is a
+     * confusing way to find out. So widen this only against a checkout you
+     * have actually opened — `gcash,paymaya,grab_pay,card,dob` all render on
+     * a business account. `billease` and `atome` are buy-now-pay-later and
+     * should stay out: instalment debt for a ₱499 subscription is not a thing
+     * to offer a shop owner.
      */
     'payment_methods' => array_values(array_filter(array_map(
         'trim',
-        explode(',', (string) env('PAYMONGO_PAYMENT_METHODS', 'gcash,paymaya,grab_pay,card,qrph,dob')),
+        explode(',', (string) env('PAYMONGO_PAYMENT_METHODS', 'qrph')),
     ))),
 
     /*

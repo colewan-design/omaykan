@@ -6,38 +6,30 @@ import {
   Check,
   ChevronRight,
   CircleDollarSign,
-  Clock3,
-  Heart,
   HeartHandshake,
   Leaf,
   MapPin,
   MessageCircle,
-  Minus,
-  Phone,
-  Plus,
   Search,
   Share2,
   ShieldCheck,
   SlidersHorizontal,
   ShoppingBag,
-  ShoppingBasket,
   ShoppingCart,
   Star,
   Store,
   Truck,
-  UserCircle,
   X,
 } from '@lucide/vue'
-import { formatCurrency, storefrontUrl, type Product } from '@pos/shared/index'
-import { categoryIcon } from '@pos/core/utils/categoryIcons'
+import { formatCurrency, storeCheckoutPath, storefrontUrl, type Product } from '@pos/shared/index'
 import type { StoreSummary } from '@pos/web/commerce/api'
 import { useStorefrontCart, type CartLine } from '@pos/web/commerce/cart'
 import { retryStorefrontCatalog, useStockedCategories, useStorefrontCatalog } from '@pos/web/commerce/catalog'
 import { DELIVERY_BASE_FEE_CENTS, haversineKm, quoteDelivery } from '@pos/web/commerce/delivery'
 import { BASKET_PARAM, encodeBasketHandoff } from '@pos/web/commerce/basketHandoff'
 import { useDeliveryLocation } from '@pos/web/commerce/deliveryLocation'
+import { useSavedProducts } from '@pos/web/commerce/favorites'
 import { SHOP_ROOT_DOMAIN, mainSiteOrigin } from '@pos/web/commerce/shopDomain'
-import ProductArt from '@pos/web/landing/ProductArt.vue'
 import MenuCard from './MenuCard.vue'
 import ShopCart from './ShopCart.vue'
 
@@ -59,7 +51,7 @@ const shopName = computed(() => catalog.shop?.name || props.store?.name || 'This
 const shopKind = computed(() => catalog.shop?.businessTypeLabel || props.store?.businessTypeLabel || '')
 const shopAddress = computed(() => catalog.shop?.address || props.store?.address || '')
 const shopPhoto = computed(() => catalog.shop?.imageUrl || props.store?.imageUrl || '')
-const coverPhoto = computed(() => shopPhoto.value || '/storefront/market-stall-cover.jpg')
+const coverPhoto = computed(() => shopPhoto.value || '/storefront/seller-hero-v2.webp')
 const initials = computed(() =>
   shopName.value
     .split(/\s+/)
@@ -70,8 +62,7 @@ const initials = computed(() =>
 )
 const shopSummary = computed(() => {
   const kind = shopKind.value ? shopKind.value.toLowerCase() : 'local shop'
-  const place = shopAddress.value ? ` in ${shopAddress.value}` : ''
-  return `Shop everyday favorites from this ${kind}${place}. Order for local delivery or convenient pickup.`
+  return `Shop everyday favorites from this ${kind}. Fresh, local, and made for the community.`
 })
 
 watch(shopName, (name) => (document.title = `${name} — Omaykan`), { immediate: true })
@@ -80,7 +71,6 @@ const shareUrl = computed(() =>
   storefrontUrl(props.slug, { rootDomain: SHOP_ROOT_DOMAIN, origin: mainSite || window.location.origin }),
 )
 const copied = ref(false)
-const favorite = ref(false)
 let copiedTimer: ReturnType<typeof setTimeout> | null = null
 
 async function share() {
@@ -121,15 +111,53 @@ const deliveryLabel = computed(() => {
   if (!quote.serviceable) return 'Pickup only from your location'
   return `${formatCurrency(quote.feeCents)} delivery · ${quote.distanceKm} km`
 })
+const deliveryDetail = computed(() => {
+  const quote = deliveryQuote.value
+  if (quote === null) return 'No minimum order'
+  if (!quote.serviceable) return 'Pickup is still available'
+  return `${quote.distanceKm} km from this store`
+})
+const storeOpen = computed(() => !catalog.closed && !catalog.shop?.orderingPausedMessage)
+
+/**
+ * The line under the name. Only what the shop's own record says: it is taking
+ * orders, it has paused (in its own words, "back at 4:00 PM"), or it is closed.
+ * There are no business hours or preparation times in the schema, so nothing
+ * here claims either (see documentation/merchant-features.md §3).
+ */
+const statusLabel = computed(() => {
+  if (catalog.closed) return 'Not taking orders'
+  return catalog.shop?.orderingPausedMessage ? 'Paused for now' : 'Taking orders now'
+})
+/** Blank while paused: the banner over the menu already says until when. */
+const statusDetail = computed(() => {
+  if (catalog.closed) return 'Check back soon'
+  return catalog.shop?.orderingPausedMessage ? '' : 'Pay cash or GCash when it arrives'
+})
+
+// ── Saved items ────────────────────────────────────────────────────────────
+//
+// The heart on each card is the shopper's wishlist (commerce/favorites.ts),
+// the same one the account page lists. It is kept in the browser, so on a
+// shop's own subdomain it is that subdomain's list; on omaykan.com it is the
+// account page's.
+const savedItems = useSavedProducts()
+const savedNotice = ref('')
+let savedTimer: ReturnType<typeof setTimeout> | null = null
+
+function toggleSave(product: Product) {
+  const nowSaved = savedItems.toggle(product)
+  savedNotice.value = nowSaved ? `${product.name} saved for later` : `${product.name} removed from saved items`
+  if (savedTimer) clearTimeout(savedTimer)
+  savedTimer = setTimeout(() => (savedNotice.value = ''), 2400)
+}
 
 const activeCategory = ref(ALL)
+/** "See all" on the favourites: every aisle in full, not three from each. */
+const expanded = ref(false)
 const searchTerm = ref('')
 const menuTop = ref<HTMLElement | null>(null)
 const needle = computed(() => searchTerm.value.trim().toLowerCase())
-
-function pillIcon(name: string) {
-  return categoryIcon(name) ?? ShoppingBasket
-}
 
 const sections = computed(() => {
   const matches = (product: Product) =>
@@ -137,36 +165,23 @@ const sections = computed(() => {
     product.name.toLowerCase().includes(needle.value) ||
     (product.brand ?? '').toLowerCase().includes(needle.value)
 
-  return categories.value
+  const available = categories.value
     .filter((category) => activeCategory.value === ALL || category.id === activeCategory.value)
     .map((category) => {
       const products = catalog.products.filter((product) => product.categoryId === category.id && matches(product))
-      const capped = activeCategory.value === ALL && needle.value === ''
+      const capped = activeCategory.value === ALL && needle.value === '' && !expanded.value
       return { category, total: products.length, products: capped ? products.slice(0, PREVIEW_COUNT) : products }
     })
     .filter((section) => section.total > 0)
+
+  return available
 })
 
 const featuredProducts = computed(() => catalog.products.slice(0, 3))
-const sortMode = ref<'popular' | 'name' | 'price-low' | 'price-high'>('popular')
-const desktopProducts = computed(() => {
-  const products = catalog.products.filter((product) => {
-    const categoryMatches = activeCategory.value === ALL || product.categoryId === activeCategory.value
-    const searchMatches =
-      needle.value === '' ||
-      product.name.toLowerCase().includes(needle.value) ||
-      (product.brand ?? '').toLowerCase().includes(needle.value)
-    return categoryMatches && searchMatches
-  })
-  const sorted = [...products]
-  if (sortMode.value === 'name') sorted.sort((a, b) => a.name.localeCompare(b.name))
-  if (sortMode.value === 'price-low') sorted.sort((a, b) => a.priceCents - b.priceCents)
-  if (sortMode.value === 'price-high') sorted.sort((a, b) => b.priceCents - a.priceCents)
-  return sorted.slice(0, 12)
-})
 
 function pick(categoryId: string) {
   activeCategory.value = categoryId
+  expanded.value = false
   searchTerm.value = ''
   void nextTick(() => menuTop.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
 }
@@ -175,8 +190,16 @@ function clearSearch() {
   searchTerm.value = ''
 }
 
+function showWholeMenu() {
+  activeCategory.value = ALL
+  searchTerm.value = ''
+  expanded.value = true
+  void nextTick(() => menuTop.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+}
+
 function resetMenuFilters() {
   activeCategory.value = ALL
+  expanded.value = false
   searchTerm.value = ''
   void nextTick(() => menuTop.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
 }
@@ -217,9 +240,12 @@ function startNewBasket() {
   if (product) cart.add(product)
 }
 
+/**
+ * The cart, or this shop's own checkout (/shop/<slug>/checkout). Both are on
+ * the main site; from a subdomain the basket travels in the link.
+ */
 function cartUrl(step: 'cart' | 'checkout'): string {
   const params = new URLSearchParams()
-  if (step === 'checkout') params.set('step', 'checkout')
   if (mainSite && props.store && lines.value.length > 0) {
     params.set(
       BASKET_PARAM,
@@ -231,10 +257,11 @@ function cartUrl(step: 'cart' | 'checkout'): string {
     )
   }
   const query = params.toString()
-  return `${mainSite}/cart${query ? `?${query}` : ''}`
+  const path = step === 'checkout' && props.store ? storeCheckoutPath(props.store.orgSlug) : '/cart'
+  return `${mainSite}${path}${query ? `?${query}` : ''}`
 }
 
-const cartHref = computed(() => cartUrl('cart'))
+const checkoutHref = computed(() => cartUrl('checkout'))
 const messageHref = computed(() => {
   const params = new URLSearchParams({ section: 'messages', shop: props.slug })
   if (props.store?.storeCode) params.set('store', props.store.storeCode)
@@ -244,7 +271,7 @@ const messageHref = computed(() => {
 const sheetOpen = ref(false)
 
 function checkout() {
-  window.location.href = cartUrl('checkout')
+  window.location.href = checkoutHref.value
 }
 function reload() {
   window.location.reload()
@@ -264,6 +291,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKey)
   document.body.style.overflow = ''
   if (copiedTimer) clearTimeout(copiedTimer)
+  if (savedTimer) clearTimeout(savedTimer)
 })
 
 const promises = [
@@ -275,32 +303,6 @@ const promises = [
 
 <template>
   <div class="fd shop">
-    <header v-if="store" class="shop-desktop-header">
-      <a class="shop-desktop-brand" :href="`${mainSite}/`" aria-label="Omaykan home">
-        <img class="shop-desktop-brand__mark" src="/logo-mark.png" alt="" />
-        <span><img src="/logo-wordmark.png" alt="Omaykan" /><small>Good food brings us closer</small></span>
-      </a>
-      <label class="shop-desktop-search">
-        <Search :size="19" :stroke-width="2" />
-        <input v-model="searchTerm" type="search" placeholder="Search for fresh food, stores, or categories..." aria-label="Search the store" @input="activeCategory = ALL" />
-      </label>
-      <nav class="shop-desktop-nav" aria-label="Main navigation">
-        <a :href="`${mainSite}/`">Home</a>
-        <a href="#catalog">Categories</a>
-        <a href="#featured-title">Fresh Picks</a>
-        <a :href="`${mainSite}/seller/signup`">For Sellers</a>
-        <a :href="`${mainSite}/about`">About</a>
-      </nav>
-      <div class="shop-desktop-account">
-        <a :href="`${mainSite}/account`"><UserCircle :size="28" :stroke-width="1.8" /> Sign In</a>
-        <span aria-hidden="true" />
-        <a class="shop-desktop-cart-link" :href="cartHref" aria-label="Open cart">
-          <ShoppingCart :size="27" :stroke-width="1.8" />
-          <b v-if="itemCount">{{ itemCount }}</b>
-        </a>
-      </div>
-    </header>
-
     <main v-if="!store" class="shop-missing">
       <Store :size="44" :stroke-width="1.4" aria-hidden="true" />
       <template v-if="directoryFailed">
@@ -324,19 +326,15 @@ const promises = [
             <ArrowLeft :size="21" :stroke-width="2" />
           </button>
           <div class="shop-hero__tools">
-            <button type="button" class="shop-float" :class="{ 'shop-float--active': favorite }" :aria-label="favorite ? 'Remove store from favorites' : 'Add store to favorites'" :aria-pressed="favorite" @click="favorite = !favorite">
-              <Heart :size="20" :stroke-width="2" :fill="favorite ? 'currentColor' : 'none'" />
-            </button>
             <button type="button" class="shop-float" :aria-label="copied ? 'Store link copied' : 'Share store'" @click="share">
               <Check v-if="copied" :size="20" :stroke-width="2.2" />
               <Share2 v-else :size="20" :stroke-width="2" />
             </button>
-            <a class="shop-float shop-float--cart" :href="cartHref" aria-label="Open cart">
-              <ShoppingCart :size="21" :stroke-width="2" />
-              <span v-if="itemCount" class="shop-float__badge">{{ itemCount }}</span>
-            </a>
           </div>
-          <p class="shop-hero__motto" aria-hidden="true">Good food,<br />brighter days</p>
+          <div class="shop-hero__motto" aria-hidden="true">
+            <p>Good food,<br />brighter days</p>
+            <span>Local flavors.<br />Real people.</span>
+          </div>
           <div class="shop-hero__sign" aria-hidden="true">
             <strong>{{ shopName }}</strong>
             <span>{{ shopKind || 'Local store' }}</span>
@@ -353,33 +351,32 @@ const promises = [
           </div>
           <div class="shop-profile__heading">
             <h1 id="shop-name">{{ shopName }}</h1>
-            <span><ShieldCheck :size="14" /> Local seller</span>
+            <span class="shop-profile__verified"><ShieldCheck :size="16" fill="currentColor" /> Local seller</span>
+            <p v-if="!catalog.loading" class="shop-profile__status">
+              <span :class="{ 'is-open': storeOpen }"><i />{{ statusLabel }}</span>
+              <template v-if="statusDetail">
+                <b aria-hidden="true">·</b>
+                <span>{{ statusDetail }}</span>
+              </template>
+            </p>
           </div>
-          <p v-if="shopAddress" class="shop-profile__address"><MapPin :size="16" :stroke-width="2.2" /> {{ shopAddress }}</p>
-          <div class="shop-service-row" aria-label="Order options">
-            <button type="button" class="shop-service" @click="delivery.openDialog()"><Truck :size="16" /> {{ deliveryLabel }}</button>
-            <span class="shop-service"><ShoppingBag :size="16" /> Pickup available</span>
-          </div>
-          <div class="shop-profile__actions">
-            <a class="shop-action shop-action--primary" :href="messageHref"><MessageCircle :size="18" /> Message</a>
+          <div class="shop-profile__services" aria-label="Store services">
+            <button type="button" class="shop-service-card" @click="delivery.openDialog()">
+              <Truck :size="25" :stroke-width="1.9" />
+              <span><strong>{{ deliveryLabel }}</strong><small>{{ deliveryDetail }}</small></span>
+            </button>
+            <div class="shop-service-card">
+              <ShoppingBag :size="25" :stroke-width="1.9" />
+              <span><strong>Pickup available</strong><small>Collect at the store</small></span>
+            </div>
+            <a class="shop-action shop-action--primary" :href="messageHref"><MessageCircle :size="22" /> Message</a>
             <button type="button" class="shop-action shop-action--secondary" @click="share">
-              <Check v-if="copied" :size="17" />
-              <Share2 v-else :size="17" />
-              {{ copied ? 'Link copied' : 'Share Store' }}
+              <Check v-if="copied" :size="21" />
+              <Share2 v-else :size="21" />
+              {{ copied ? 'Link copied' : 'Share' }}
             </button>
           </div>
           <p class="shop-profile__summary">{{ shopSummary }}</p>
-          <div class="shop-payments">
-            <span>We accept:</span>
-            <strong><CircleDollarSign :size="16" /> Cash</strong>
-            <strong><span class="shop-payments__g">G</span> GCash</strong>
-          </div>
-          <nav v-if="categories.length" class="shop-desktop-pills" aria-label="Product categories">
-            <button type="button" :class="{ 'is-active': activeCategory === ALL }" @click="pick(ALL)">All</button>
-            <button v-for="category in categories" :key="category.id" type="button" :class="{ 'is-active': activeCategory === category.id }" @click="pick(category.id)">
-              <component :is="pillIcon(category.name)" :size="16" :stroke-width="1.9" /> {{ category.name }}
-            </button>
-          </nav>
         </div>
       </section>
 
@@ -394,7 +391,7 @@ const promises = [
         <nav v-if="categories.length" class="shop-pills" aria-label="Menu sections">
           <button type="button" class="shop-pill" :class="{ 'shop-pill--on': activeCategory === ALL }" :aria-pressed="activeCategory === ALL" @click="pick(ALL)">All</button>
           <button v-for="category in categories" :key="category.id" type="button" class="shop-pill" :class="{ 'shop-pill--on': activeCategory === category.id }" :aria-pressed="activeCategory === category.id" @click="pick(category.id)">
-            <component :is="pillIcon(category.name)" :size="16" :stroke-width="1.9" /> {{ category.name }}
+            {{ category.name }}
           </button>
         </nav>
         <div ref="menuTop" class="shop-anchor" />
@@ -415,114 +412,52 @@ const promises = [
           <section v-if="activeCategory === ALL && !needle && featuredProducts.length" class="shop-featured" aria-labelledby="featured-title">
             <header class="shop-section__head">
               <span class="shop-section__icon shop-section__icon--star"><Star :size="20" fill="currentColor" /></span>
-              <div><h2 id="featured-title"><span class="shop-mobile-only">Shop favorites</span><span class="shop-desktop-only">Best Sellers</span></h2><p><span class="shop-mobile-only">Featured from this store</span><span class="shop-desktop-only">Our most loved items</span></p></div>
-              <button type="button" class="shop-featured__all" @click="resetMenuFilters">See All <ChevronRight :size="15" /></button>
+              <h2 id="featured-title">Shop favorites</h2>
+              <button v-if="!expanded" type="button" class="shop-featured__all" @click="showWholeMenu">See all <ChevronRight :size="15" /></button>
             </header>
             <div class="shop-featured__grid">
-              <MenuCard v-for="product in featuredProducts" :id="`featured-${product.id}`" :key="product.id" :product="product" :quantity="quantityOf(product.id)" :category-name="categories.find((category) => category.id === product.categoryId)?.name" :merchant-image-url="shopPhoto" featured @add="add" @decrement="cart.decrement" />
+              <MenuCard v-for="product in featuredProducts" :id="`featured-${product.id}`" :key="product.id" :product="product" :quantity="quantityOf(product.id)" :category-name="categories.find((category) => category.id === product.categoryId)?.name" :merchant-image-url="shopPhoto" :saved="savedItems.isSaved(product.id)" featured @add="add" @decrement="cart.decrement" @toggle-save="toggleSave" />
             </div>
           </section>
 
           <section v-for="section in sections" :key="section.category.id" class="shop-section shop-section--mobile" :aria-labelledby="`sec-${section.category.id}`">
             <header class="shop-section__head">
-              <span class="shop-section__icon"><component :is="pillIcon(section.category.name)" :size="20" :stroke-width="1.9" /></span>
               <h2 :id="`sec-${section.category.id}`">{{ section.category.name }}</h2>
               <button v-if="section.products.length < section.total" type="button" class="shop-section__more" @click="pick(section.category.id)">See all <ChevronRight :size="15" /></button>
             </header>
             <div class="shop-grid">
-              <MenuCard v-for="product in section.products" :id="`item-${product.id}`" :key="product.id" class="shop-item" :product="product" :quantity="quantityOf(product.id)" :category-name="section.category.name" :merchant-image-url="shopPhoto" @add="add" @decrement="cart.decrement" />
+              <MenuCard v-for="product in section.products" :id="`item-${product.id}`" :key="product.id" class="shop-item" :product="product" :quantity="quantityOf(product.id)" :category-name="section.category.name" :merchant-image-url="shopPhoto" :saved="savedItems.isSaved(product.id)" @add="add" @decrement="cart.decrement" @toggle-save="toggleSave" />
             </div>
           </section>
 
-          <section id="catalog" class="shop-products-desktop" aria-labelledby="all-products-title">
-            <header>
-              <h2 id="all-products-title">All Products</h2>
-              <label>Sort by:
-                <select v-model="sortMode" aria-label="Sort products">
-                  <option value="popular">Popular</option>
-                  <option value="name">Name</option>
-                  <option value="price-low">Price: Low to high</option>
-                  <option value="price-high">Price: High to low</option>
-                </select>
-              </label>
-            </header>
-            <div class="shop-products-desktop__grid">
-              <MenuCard v-for="product in desktopProducts" :id="`desktop-item-${product.id}`" :key="product.id" :product="product" :quantity="quantityOf(product.id)" :category-name="categories.find((category) => category.id === product.categoryId)?.name" :merchant-image-url="shopPhoto" @add="add" @decrement="cart.decrement" />
-            </div>
-          </section>
         </template>
 
-        <section class="shop-details shop-details--mobile" aria-label="Store details">
-          <div><span class="shop-details__icon"><MapPin :size="19" /></span><p><strong>Location</strong><small>{{ shopAddress || 'Address available at checkout' }}</small></p></div>
-          <div><span class="shop-details__icon"><Truck :size="19" /></span><p><strong>Delivery</strong><small>{{ deliveryLabel }}</small></p></div>
-          <div><span class="shop-details__icon"><CircleDollarSign :size="19" /></span><p><strong>Payment</strong><small>Cash or GCash</small></p></div>
+        <section class="shop-details" aria-labelledby="store-info-title">
+          <h2 id="store-info-title">Store information</h2>
+          <div class="shop-details__grid">
+            <div><span class="shop-details__icon"><MapPin :size="19" /></span><p><strong>Location</strong><small>{{ shopAddress || 'Address available at checkout' }}</small></p></div>
+            <div><span class="shop-details__icon"><Truck :size="19" /></span><p><strong>Delivery</strong><small>{{ deliveryLabel }}<br />{{ deliveryDetail }}</small></p></div>
+            <div><span class="shop-details__icon"><CircleDollarSign :size="19" /></span><p><strong>Payment</strong><small>Cash · GCash</small></p></div>
+          </div>
         </section>
 
-        <section class="shop-why shop-why--mobile" aria-labelledby="shop-why-title">
+        <section class="shop-why" aria-labelledby="shop-why-title">
           <h2 id="shop-why-title">Why shop here?</h2>
           <ul class="shop-promises">
             <li v-for="item in promises" :key="item.title"><span class="shop-promises__icon"><component :is="item.icon" :size="20" /></span><span><strong>{{ item.title }}</strong><small>{{ item.text }}</small></span></li>
           </ul>
         </section>
 
-        <footer class="shop-footer shop-footer--mobile">
-          <p class="shop-script">Good food, brighter days</p>
+        <footer class="shop-footer">
           <div><strong>{{ shopName }}</strong><small>{{ shopKind || 'Local seller' }} · Powered by <b>omaykan</b></small></div>
+          <p class="shop-script">Good food, brighter days <Leaf :size="18" fill="currentColor" /></p>
         </footer>
       </div>
       </div>
 
-      <aside class="shop-desktop-aside" aria-label="Store order summary and information">
-        <section class="shop-desktop-card shop-desktop-cart">
-          <header>
-            <h2>Your Cart ({{ lines.length }})</h2>
-            <a :href="cartHref">View Cart <ChevronRight :size="16" /></a>
-          </header>
-          <p v-if="lines.length === 0" class="shop-desktop-cart__empty">Your cart is ready for something fresh.</p>
-          <ul v-else>
-            <li v-for="line in lines" :key="line.product.id">
-              <div class="shop-desktop-cart__thumb"><ProductArt :product="line.product" :merchant-image-url="shopPhoto" :size="22" /></div>
-              <div class="shop-desktop-cart__item"><strong>{{ line.product.name }}</strong><small>{{ line.quantity }} {{ line.product.unitLabel || 'item' }}</small></div>
-              <b>{{ formatCurrency(line.product.priceCents * line.quantity) }}</b>
-              <div class="shop-desktop-cart__step" role="group" :aria-label="`${line.product.name} quantity`">
-                <button type="button" :aria-label="`Remove one ${line.product.name}`" @click="cart.decrement(line.product.id)"><Minus :size="14" /></button>
-                <span>{{ line.quantity }}</span>
-                <button type="button" :aria-label="`Add one more ${line.product.name}`" @click="add(line.product)"><Plus :size="14" /></button>
-              </div>
-            </li>
-          </ul>
-          <div v-if="lines.length" class="shop-desktop-cart__subtotal"><span>Subtotal</span><strong>{{ formatCurrency(itemsTotalCents) }}</strong></div>
-          <a class="shop-desktop-cart__button" :href="cartHref">View Cart <ChevronRight :size="18" /></a>
-        </section>
-
-        <section class="shop-desktop-card shop-desktop-info">
-          <h2>Store Information</h2>
-          <div class="shop-desktop-info__grid">
-            <div><span><MapPin :size="20" /></span><p><strong>Location</strong><small>{{ shopAddress || 'Address available at checkout' }}</small></p></div>
-            <div><span><Clock3 :size="20" /></span><p><strong>Operating Hours</strong><small>Contact the store for today's hours</small></p></div>
-            <div><span><Truck :size="20" /></span><p><strong>Delivery</strong><small>{{ deliveryLabel }}</small></p></div>
-            <div><span><Phone :size="20" /></span><p><strong>Contact</strong><small><a :href="messageHref">Message this store</a></small></p></div>
-          </div>
-        </section>
-
-        <section class="shop-desktop-card shop-desktop-why">
-          <h2>Why shop here?</h2>
-          <ul class="shop-promises">
-            <li v-for="item in promises" :key="item.title"><span class="shop-promises__icon"><component :is="item.icon" :size="20" /></span><span><strong>{{ item.title }}</strong><small>{{ item.text }}</small></span></li>
-          </ul>
-          <div class="shop-desktop-signoff">
-            <p class="shop-script">Good food, brighter days</p>
-            <div><strong>{{ shopName }}</strong><small>Proud to be part of</small><img src="/logo-wordmark.png" alt="Omaykan" /></div>
-          </div>
-        </section>
-      </aside>
     </main>
 
-    <footer v-if="store" class="shop-desktop-footer">
-      <a :href="`${mainSite}/`"><img src="/logo-wordmark.png" alt="Omaykan" /><span>Good food brings us closer</span></a>
-      <nav aria-label="Footer navigation"><a :href="`${mainSite}/about`">About</a><a :href="`${mainSite}/seller/signup`">For Sellers</a><a :href="`${mainSite}/about`">Help</a><a :href="`${mainSite}/about`">Terms</a><a :href="`${mainSite}/about`">Privacy</a></nav>
-      <small>Powered by <strong>Omaykan</strong></small>
-    </footer>
+    <p class="shop-toast" :class="{ 'shop-toast--on': savedNotice, 'shop-toast--raised': store && itemCount > 0 }" role="status" aria-live="polite">{{ savedNotice }}</p>
 
     <button v-if="store && itemCount > 0" type="button" class="shop-bar" @click="sheetOpen = true">
       <span class="shop-bar__basket"><ShoppingCart :size="23" /><b>{{ itemCount }}</b></span>

@@ -46,6 +46,74 @@ const form = reactive({
 
 const imageSizeWarning = ref('')
 
+/**
+ * An unsaved new product survives the sheet going away.
+ *
+ * The sheet only closes on its Close button, but a reload, a dropped tab or a
+ * slip onto the sidebar still takes it down, and a product with six photos and
+ * a description is a lot to type twice. So the form is kept in localStorage as
+ * it is filled, handed back the next time Add Product opens, and dropped only
+ * when it saves or the owner chooses Start over.
+ *
+ * New products only. A draft of an edit would be restored over whatever the
+ * product has become since, which is a worse surprise than retyping a field.
+ */
+const DRAFT_KEY = 'pos.productDraft'
+const restoredDraft = ref(false)
+let blankForm = ''
+
+function readDraft(): Partial<typeof form> | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY)
+    return raw ? (JSON.parse(raw).form ?? null) : null
+  } catch {
+    return null
+  }
+}
+
+function writeDraft() {
+  const json = JSON.stringify(form)
+  try {
+    if (json === blankForm) {
+      localStorage.removeItem(DRAFT_KEY)
+      return
+    }
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ savedAt: new Date().toISOString(), form }))
+  } catch {
+    // Photos are data URLs and can outgrow the quota. Keep the typing, which
+    // is the part that is tedious to redo, and let the photos go.
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ savedAt: new Date().toISOString(), form: { ...form, photos: [] } }))
+    } catch {
+      // Storage is off or full; the sheet still works, it just cannot remember.
+    }
+  }
+}
+
+function clearDraft() {
+  try {
+    localStorage.removeItem(DRAFT_KEY)
+  } catch {
+    // Nothing to clear if storage is unavailable.
+  }
+  restoredDraft.value = false
+}
+
+function restoreDraft() {
+  const draft = readDraft()
+  if (!draft) return
+  Object.assign(form, draft)
+  // Categories can be deleted between visits; a stale id would leave the
+  // picker blank and the product unsaveable.
+  if (!store.categories.some((category) => category.id === form.categoryId)) {
+    form.categoryId = store.categories[0]?.id ?? ''
+  }
+  if (!Array.isArray(form.businessModes) || form.businessModes.length === 0) {
+    form.businessModes = [store.settings.businessMode]
+  }
+  restoredDraft.value = JSON.stringify(form) !== blankForm
+}
+
 /** Enough for a pack front, back, nutrition panel and a size reference. */
 const MAX_PHOTOS = 6
 
@@ -90,12 +158,24 @@ watch(
       form.trackInventory = false
       form.stockQty = 0
       form.lowStockThreshold = 5
+      blankForm = JSON.stringify(form)
+      restoreDraft()
     }
     confirmDelete.value = false
     imageSizeWarning.value = ''
   },
   { immediate: true },
 )
+
+watch(form, () => {
+  if (!isEdit.value) writeDraft()
+}, { deep: true })
+
+/** Throws the draft away and gives back an empty form. */
+function startOver() {
+  clearDraft()
+  Object.assign(form, JSON.parse(blankForm))
+}
 
 /** Live "-N%" preview under the Compare at field; null when it isn't a discount. */
 const compareAtPreview = computed(() => {
@@ -108,6 +188,25 @@ const compareAtPreview = computed(() => {
 const isEdit = computed(() => Boolean(props.product))
 const title = computed(() => (isEdit.value ? 'Edit Product' : 'Add Product'))
 const categoryOptions = computed(() => store.categories.map((cat) => ({ value: cat.id, label: cat.name })))
+
+// A new shop has no categories, and a product cannot be saved without one, so
+// the picker adds them in place rather than sending the owner off to the
+// Categories tab and back.
+const addingCategory = ref(false)
+const categoryError = ref('')
+
+async function addCategory(name: string) {
+  addingCategory.value = true
+  categoryError.value = ''
+  try {
+    const category = await store.createCategory(name)
+    form.categoryId = category.id
+  } catch {
+    categoryError.value = 'Could not add that category. Please try again.'
+  } finally {
+    addingCategory.value = false
+  }
+}
 
 const isValid = computed(
   () =>
@@ -231,6 +330,7 @@ async function save() {
       await store.editProduct({ ...props.product, ...input, sku: props.product.sku })
     } else {
       await store.createProduct(input)
+      clearDraft()
     }
     emit('saved')
   } finally {
@@ -244,13 +344,9 @@ async function destroy() {
   emit('saved')
 }
 
-function handleOverlayClick(e: MouseEvent) {
-  if (e.target === e.currentTarget) emit('close')
-}
-
-function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') emit('close')
-}
+// Deliberately no backdrop click and no Escape: a stray tap beside the sheet
+// or a key meant for a field used to throw the whole form away. The Close
+// button is the one way out.
 </script>
 
 <template>
@@ -258,9 +354,8 @@ function handleKeydown(e: KeyboardEvent) {
     <div
       class="sheet-overlay"
       role="dialog"
+      aria-modal="true"
       :aria-label="title"
-      @click="handleOverlayClick"
-      @keydown="handleKeydown"
     >
       <div class="sheet-panel product-sheet">
         <div class="sheet-grabber" />
@@ -274,6 +369,11 @@ function handleKeydown(e: KeyboardEvent) {
             <X :size="18" />
           </button>
         </div>
+
+        <p v-if="restoredDraft" class="ps-draft" role="status">
+          <span>Picked up where you left off — this product was never saved.</span>
+          <button type="button" class="ps-draft__reset" @click="startOver">Start over</button>
+        </p>
 
           <!-- Two-column body -->
           <div class="product-sheet__cols">
@@ -354,7 +454,11 @@ function handleKeydown(e: KeyboardEvent) {
                   v-model="form.categoryId"
                   label="Category"
                   :options="categoryOptions"
+                  create-label="category"
+                  :disabled="addingCategory"
+                  @create="addCategory"
                 />
+                <p v-if="categoryError" class="ps-hint ps-hint--error" role="alert">{{ categoryError }}</p>
               </div>
 
               <!-- Price -->

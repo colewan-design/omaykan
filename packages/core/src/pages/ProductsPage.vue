@@ -5,6 +5,7 @@ import {
   Trash2, TrendingDown, X,
 } from '@lucide/vue'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import FilterDropdown from '@pos/core/components/FilterDropdown.vue'
 import ProductSheet from '@pos/core/components/ProductSheet.vue'
 import PromotionsPanel from '@pos/core/components/PromotionsPanel.vue'
 import { usePosStore } from '@pos/core/stores/pos'
@@ -34,6 +35,29 @@ const storefrontOptions: { value: BusinessMode | 'all'; label: string }[] = [
   { value: 'restaurant', label: 'Restaurant' },
   { value: 'nail-salon', label: 'Nail salon' },
 ]
+const statusOptions = [
+  { value: 'all' as const, label: 'All status' },
+  { value: 'active' as const, label: 'Active' },
+  { value: 'inactive' as const, label: 'Inactive' },
+]
+const stockOptions = [
+  { value: 'all' as const, label: 'All stock' },
+  { value: 'in-stock' as const, label: 'In stock' },
+  { value: 'low-stock' as const, label: 'Low stock' },
+  { value: 'out-of-stock' as const, label: 'Out of stock' },
+]
+const sortOptions = [
+  { value: 'name-asc' as const, label: 'Name (A–Z)' },
+  { value: 'name-desc' as const, label: 'Name (Z–A)' },
+  { value: 'price-asc' as const, label: 'Price (low–high)' },
+  { value: 'price-desc' as const, label: 'Price (high–low)' },
+  { value: 'low-stock' as const, label: 'Lowest stock' },
+  { value: 'recently-added' as const, label: 'Recently added' },
+]
+const categoryOptions = computed(() => [
+  { value: 'all', label: 'All categories' },
+  ...store.categories.map((category) => ({ value: category.id, label: category.name })),
+])
 
 function setActiveTab(tab: 'products' | 'categories' | 'promotions') {
   if (activeTab.value === tab) return
@@ -132,6 +156,18 @@ function togglePageSelection() {
 }
 
 function clearSelection() { selectedIds.value = new Set() }
+
+const selectionOptions = computed(() => [
+  { value: 'page' as const, label: allPageSelected.value ? 'Deselect this page' : 'Select this page', disabled: pageProducts.value.length === 0 },
+  { value: 'all' as const, label: `Select all ${processedProducts.value.length}`, disabled: processedProducts.value.length === 0 || selectedIds.value.size === processedProducts.value.length },
+  { value: 'clear' as const, label: 'Clear selection', disabled: selectedIds.value.size === 0 },
+])
+
+function onSelectionAction(action: 'page' | 'all' | 'clear') {
+  if (action === 'page') togglePageSelection()
+  else if (action === 'all') selectedIds.value = new Set(processedProducts.value.map((product) => product.id))
+  else clearSelection()
+}
 
 function toggleCategory(id: string) {
   const next = new Set(collapsedCategoryIds.value)
@@ -266,12 +302,13 @@ onUnmounted(() => document.removeEventListener('click', handleDocumentClick))
         <div class="ptoolbar">
           <label class="pfilter pfilter--search"><Search :size="17" aria-hidden="true" /><input ref="searchInputEl" v-model="searchQuery" type="search" placeholder="Search products, SKU, barcode…" aria-label="Search products" /><button v-if="searchQuery" type="button" aria-label="Clear search" @click.prevent="searchQuery = ''; searchInputEl?.focus()"><X :size="14" /></button></label>
 
-          <label class="pfilter"><Store :size="17" aria-hidden="true" /><span><small>Storefront</small><select v-model="modeFilter" aria-label="Storefront"><option v-for="option in storefrontOptions" :key="option.value" :value="option.value">{{ option.label }}</option></select></span><ChevronDown :size="15" aria-hidden="true" /></label>
-          <label class="pfilter"><Tag :size="17" aria-hidden="true" /><span><small>Category</small><select v-model="categoryFilter" aria-label="Category"><option value="all">All categories</option><option v-for="category in store.categories" :key="category.id" :value="category.id">{{ category.name }}</option></select></span><ChevronDown :size="15" aria-hidden="true" /></label>
-          <label class="pfilter"><Circle :size="17" aria-hidden="true" /><span><small>Status</small><select v-model="statusFilter" aria-label="Status"><option value="all">All status</option><option value="active">Active</option><option value="inactive">Inactive</option></select></span><ChevronDown :size="15" aria-hidden="true" /></label>
-          <label class="pfilter"><Layers3 :size="17" aria-hidden="true" /><span><small>Stock</small><select v-model="stockFilter" aria-label="Stock"><option value="all">All stock</option><option value="in-stock">In stock</option><option value="low-stock">Low stock</option><option value="out-of-stock">Out of stock</option></select></span><ChevronDown :size="15" aria-hidden="true" /></label>
-          <label class="pfilter pfilter--sort"><ArrowUpDown :size="17" aria-hidden="true" /><span><small>Sort by</small><select v-model="sortBy" aria-label="Sort by"><option value="name-asc">Name (A–Z)</option><option value="name-desc">Name (Z–A)</option><option value="price-asc">Price (low–high)</option><option value="price-desc">Price (high–low)</option><option value="low-stock">Lowest stock</option><option value="recently-added">Recently added</option></select></span><ChevronDown :size="15" aria-hidden="true" /></label>
-          <button class="pfilter pfilter--selection" type="button" :aria-label="allPageSelected ? 'Deselect page' : 'Select page'" @click="togglePageSelection"><span class="pcheck" :class="{ 'pcheck--checked': allPageSelected || selectedIds.size > 0 }"><Check v-if="allPageSelected || selectedIds.size > 0" :size="12" /></span><span><small>Selection</small><strong>{{ selectedIds.size }} selected</strong></span><ChevronDown :size="15" aria-hidden="true" /></button>
+          <FilterDropdown v-model="modeFilter" label="Storefront" :options="storefrontOptions"><template #icon><Store :size="17" aria-hidden="true" /></template></FilterDropdown>
+          <FilterDropdown v-model="categoryFilter" label="Category" :options="categoryOptions"><template #icon><Tag :size="17" aria-hidden="true" /></template></FilterDropdown>
+          <FilterDropdown v-model="statusFilter" label="Status" :options="statusOptions"><template #icon><Circle :size="17" aria-hidden="true" /></template></FilterDropdown>
+          <FilterDropdown v-model="stockFilter" label="Stock" :options="stockOptions"><template #icon><Layers3 :size="17" aria-hidden="true" /></template></FilterDropdown>
+          <FilterDropdown v-model="sortBy" class="pfilter--sort" label="Sort by" :options="sortOptions"><template #icon><ArrowUpDown :size="17" aria-hidden="true" /></template></FilterDropdown>
+          <!-- The checkbox still toggles the page in one click; the rest of the chip opens the menu. -->
+          <FilterDropdown class="pfilter--selection" label="Selection" align="end" :display="`${selectedIds.size} selected`" :options="selectionOptions" @select="onSelectionAction"><template #icon><span class="pcheck" :class="{ 'pcheck--checked': allPageSelected || selectedIds.size > 0 }" role="checkbox" :aria-checked="allPageSelected" :aria-label="allPageSelected ? 'Deselect page' : 'Select page'" @click.stop="togglePageSelection"><Check v-if="allPageSelected || selectedIds.size > 0" :size="12" /></span></template></FilterDropdown>
         </div>
 
         <Transition name="bulk-bar"><div v-if="selectedIds.size > 0" class="bulk-bar" role="toolbar" aria-label="Bulk actions"><div class="bulk-bar__left"><span class="bulk-bar__count">{{ selectedIds.size }} selected</span><button class="bulk-bar__link" type="button" @click="selectedIds = new Set(processedProducts.map((product) => product.id))">Select all {{ processedProducts.length }}</button><button class="bulk-bar__link" type="button" @click="clearSelection">Clear</button></div><div class="bulk-bar__actions"><button class="table-action" type="button" @click="bulkSetAvailability(true)">Mark active</button><button class="table-action" type="button" @click="bulkSetAvailability(false)">Mark inactive</button><button class="danger-button bulk-bar__delete" type="button" @click="bulkDelete"><Trash2 :size="14" /> Delete</button></div></div></Transition>

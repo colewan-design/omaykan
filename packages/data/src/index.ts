@@ -1084,6 +1084,8 @@ interface DemoSeedOrderPlan {
 }
 
 const demoProductMap = new Map(demoProducts.map((product) => [product.id, product]))
+const demoProductIds = new Set(demoProductMap.keys())
+const demoCategoryIds = new Set(demoCategories.map((category) => category.id))
 
 function demoTimestamp(daysAgo: number, hour: number, minute: number, extraMinutes = 0) {
   const date = new Date()
@@ -2046,13 +2048,40 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     }
 
     await pullCatalogChanges()
-    return {
-      categories: await store.read<Category[]>(storageKeys.categories, []),
-      products: await store.read<Product[]>(storageKeys.products, []),
+    return readShopCatalog()
+  }
+
+  /**
+   * The catalog a till tied to a shop has cached, and nothing else.
+   *
+   * Such a till never shows the bundled demo shelf: a merchant looking at 550
+   * sample products would believe their shop has them, while the server — and
+   * the shop's public page — has none. Older builds seeded that shelf into
+   * the cache whenever a sync failed, and a later pull kept it, so it is
+   * stripped here too. Demo ids are slugs and the server's are UUIDs, so
+   * nothing real can match.
+   */
+  async function readShopCatalog() {
+    const storedProducts = await store.read<Product[]>(storageKeys.products, [])
+    const storedCategories = await store.read<Category[]>(storageKeys.categories, [])
+    const products = storedProducts.filter((product) => !demoProductIds.has(product.id))
+    const categories = storedCategories.filter((category) => !demoCategoryIds.has(category.id))
+
+    if (products.length !== storedProducts.length) {
+      await store.write(storageKeys.products, products)
     }
+    if (categories.length !== storedCategories.length) {
+      await store.write(storageKeys.categories, categories)
+    }
+
+    return { products, categories }
   }
 
   async function loadCachedCatalog() {
+    if (await isOnlineSyncEnabled()) {
+      return readShopCatalog()
+    }
+
     const storedProducts = await store.read<Product[] | null>(storageKeys.products, null)
     const storedCategories = await store.read<Category[] | null>(storageKeys.categories, null)
 

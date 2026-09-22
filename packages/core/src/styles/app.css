@@ -3290,6 +3290,36 @@ button {
   gap: var(--space-2);
 }
 
+/* The restored-draft notice under the sheet's title. */
+.ps-draft {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--separator));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-elevated));
+  color: var(--text-primary);
+  font: 500 0.8125rem/1.125rem var(--font-sans);
+}
+
+.ps-draft__reset {
+  flex: none;
+  padding: 4px 2px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: 600 0.8125rem/1.125rem var(--font-sans);
+  cursor: pointer;
+}
+
+.ps-draft__reset:hover {
+  text-decoration: underline;
+}
+
 /* Inline stock qty + threshold side by side */
 .ps-stock-row {
   display: grid;
@@ -3537,6 +3567,10 @@ button {
 .ps-hint strong {
   color: var(--accent);
   font-weight: 700;
+}
+
+.ps-hint--error {
+  color: var(--danger);
 }
 
 /* ── Products page — responsive ─────────────────────────────────────────── */
@@ -3863,6 +3897,110 @@ button {
 
 .pfilter--selection {
   text-align: left;
+}
+
+/* FilterDropdown: the chip is one button, so the chevron opens it too. */
+.fdrop {
+  min-width: 0;
+  display: flex;
+}
+
+.fdrop__trigger {
+  width: 100%;
+  margin: 0;
+  text-align: left;
+}
+
+.fdrop__trigger:focus-visible {
+  outline: 0;
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--separator));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.fdrop--open .fdrop__trigger {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--separator));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.fdrop__chevron {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.fdrop--open .fdrop__chevron {
+  transform: rotate(180deg);
+  color: var(--accent);
+}
+
+.fdrop__menu {
+  position: fixed;
+  z-index: 300;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 5px;
+  list-style: none;
+  overflow-y: auto;
+  border: 1px solid var(--separator);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  box-shadow: 0 14px 34px rgba(20, 43, 32, 0.14), 0 2px 6px rgba(20, 43, 32, 0.06);
+  outline: 0;
+}
+
+.fdrop__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--text-primary);
+  font: 500 0.8125rem/1.125rem var(--font-sans);
+  cursor: pointer;
+  user-select: none;
+}
+
+.fdrop__option > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdrop__option > svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.fdrop__option--highlighted {
+  background: var(--fill);
+}
+
+.fdrop__option--selected {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.fdrop__option--disabled {
+  color: var(--text-tertiary);
+  cursor: default;
+}
+
+.fdrop-menu-enter-active,
+.fdrop-menu-leave-active {
+  transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+
+.fdrop-menu-enter-from,
+.fdrop-menu-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+@media (pointer: coarse) {
+  .fdrop__option {
+    min-height: 44px;
+  }
 }
 
 .pcheck {

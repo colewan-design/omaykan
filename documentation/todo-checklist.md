@@ -62,6 +62,49 @@ Plan for all eight: [merchant-features.md](./merchant-features.md). **All eight 
 - [ ] **Decide: wishlist** — Android-only (`SavedProductsStore.kt`), with no server side. Keep it local or drop it ([mobile-plan.md §12.5](./mobile-plan.md))
 - [ ] **Compose UI tests over checkout**
 
+## Web audit — 2026-09-22
+
+Found by a live crawl of omaykan.com and all five shop subdomains, at 1440px
+and 390px, signed out. It checked 141 links and clicked each kind of button on
+a fresh page load, skipping anything that would place, send, pay for or create
+something. Pages behind a sign-in were checked in the code only.
+
+### Broken now (confirmed live)
+
+- [ ] **Shop page delivery card and cart "Set address" do nothing** — on all 5 shops, at both widths. `delivery.openDialog()` sets a flag that only `AddressDialog` in `FdHeader.vue` reads, and the shop page redesign removed that header. Shoppers on a shop page cannot set a location or get a delivery quote. Fix: mount `AddressDialog` in `ShopPage.vue`
+- [ ] **Shop page "Message" button is a dead end** — it links to `/account?section=messages`, but production builds with `VITE_FEATURE_MESSAGES=false`, so the section does not exist and the shopper lands on the account dashboard. `ShopPage.vue` never checks `MESSAGING_ENABLED` (`ProductDetail.vue` does). Hide it behind the flag, or ship messaging
+- [ ] **`omaykan.com/shop/<slug>` shows the general homepage** — the main site's nginx has no `/shop/` route, so the path falls through to `index.html`. Low exposure, because links use the subdomain, but `storefrontUrl()` falls back to this path for a slug that cannot be a subdomain. Fix: `location /shop/ { try_files /shop.html =404; }`. It must be a plain prefix, not `^~`, so the `/shop/<slug>/checkout` regex still wins
+- [ ] **`omaykan.com/customers` returns 404** — nginx maps it to `customers.html`, which no build contains. Nothing links to it. Remove the line or build the page
+
+### Account features that promise things that don't exist
+
+Checked in the code; the audit could not open these pages signed out.
+
+- [ ] **Store credit** — always ₱0, yet the page says "Credit comes off your total automatically at checkout". Checkout applies no credit and there is no backend for it. Hide the page or build a ledger
+- [ ] **Gift cards** — codes are saved only in the browser (`sf_gift_cards`) and labelled "applies at checkout". Checkout never reads them and there is no backend. Hide the page or build redemption
+- [ ] **Refer a friend** — the code is a hash of the email, made in the browser. The page says "their first order carries your code", but nothing reads `?ref=` and there is no backend for it, so no referral is ever recorded. Hide the page or build tracking
+- [ ] **Help, Privacy and Terms all link to `/about`** — in `MerchantHeader.vue` and `MerchantFooter.vue`. There are no privacy-policy or terms pages
+- [ ] **Shopper homepage tab title reads "The POS for Modern Hospitality"** — `index.html` serves the shopper storefront under the seller pitch's title, and `/shop/<slug>` gets the same title
+
+### Order process — seller confirms and sets the delivery fee
+
+The intended flow (2026-09-22): the customer checks out; the seller confirms the
+order and sets the delivery fee; the customer is told the final amount by email
+and in the account page.
+
+- [ ] **Seller confirm step** — an online order goes straight to `order_status = 'preparing'` (`OnlineOrderController`); there is no awaiting-confirmation state and no confirm action in `SellerOrderController`
+- [ ] **Seller sets the delivery fee** — today `DeliveryQuoter` sets it from distance when the order is placed, and that is what is charged. Needs an endpoint, the till's Orders page, and the seller Android app
+- [ ] **"Final amount" email to the customer** — the only email is `OnlineOrderConfirmationMail`, sent at checkout with the automatic fee and a subject that already says "confirmed". Nothing is sent after that
+- [ ] **Final amount in the account page** — order status already updates live on the `order.{id}` channel; the account page needs a "waiting for the shop" state and the confirmed total
+- [ ] **Checkout copy and the Android checkout** — both web and Android show an automatic fee as if it were final. Web's fine print already says "the shop confirms prices and the delivery fee", which is true only once this ships
+- [ ] **Decide: must the customer accept the final amount** before the shop proceeds, or is the email a notice?
+- [ ] **Decide: fee shown at checkout** — an estimate (a range, "confirmed by the shop") or none until the shop sets it?
+- [ ] **Decide: do pickup orders need the confirm step?** — there is no fee to set
+
+### Not covered yet
+
+- [ ] **Signed-in audit** — the till (`/app`), rider, platform admin, support inbox, the shopper account pages, and placing an order, plus both Android apps. Needs a test shopper account and a test seller account
+
 ## Analytics
 
 - [ ] **Something reads the telemetry** — `trackAppEvent` events are flushed to the backend and never consumed. No PostHog, no report ([feature-audit.md §3.5](./feature-audit.md), [analytics.md](./analytics.md))

@@ -188,6 +188,116 @@ sudo -u www-data env HOME=/tmp php artisan ...
 
 Directory swaps are reversible.
 
+**Updated 2026-09-22, 13:19 UTC.** Frontend only, finishing the 13:08 shop page
+rework:
+- With "All" selected, every aisle now shows, 3 items each. Before, only the
+  first aisle did, so most of the menu could only be reached through the pills.
+- "See all" on the favourites opens the whole menu.
+- Product-card hearts now save to the wishlist in `commerce/favorites.ts` and
+  stay across reloads.
+- The shop-cover heart, which saved nothing, is gone.
+- The invented "Open today · Usually prepares orders in 15–30 min" is replaced
+  by the shop's real ordering state.
+- At phone width, "Store information" and "Why shop here?" stack one per row.
+- The fallback cover is now `seller-hero-v2.webp` (155 KB, down from a 2.5 MB PNG).
+
+No backend, no migration, no nginx change.
+
+| | Roll back to | Holds |
+|---|---|---|
+| Frontend | `web.bak-20260922-131920-shop-page-finish` | the 13:08 shop-page-rework build |
+
+Verified after the swap: the main pages and the shop checkout serve their own
+titles, and the new cover returns 200. A headless browser opened
+`nenas-market-stall.omaykan.com` at 1440px and 390px. It saw all five aisles
+(15 cards, and 20 after "See all") and "Taking orders now". A heart survived a
+reload and was then removed again. Adding an item and pressing checkout landed
+on `/shop/nenas-market-stall/checkout`. No console errors.
+
+**Updated 2026-09-22, 13:08 UTC.** Frontend only, a full build from the
+working tree: the shop page rework (`ShopPage.vue`, `MenuCard.vue`,
+`store-menu.css`, and the new fallback cover `public/storefront/seller-hero-v2.png`),
+all uncommitted. The 12:32 store-checkout work is unchanged. No backend, no
+migration, no nginx change.
+
+| | Roll back to | Holds |
+|---|---|---|
+| Frontend | `web.bak-20260922-130838-shop-page-rework` | the 12:32 store-checkout build |
+
+Verified after the swap: `/`, `/cart`, `/account`, `/app`, `/seller/signup`,
+the shop subdomain and `/shop/nenas-market-stall/checkout` serve their own
+titles, and the new cover image returns 200. A headless browser, at 1440px and
+390px, opened `nenas-market-stall.omaykan.com`, saw the shop's name as the
+heading and no horizontal overflow, added an item and pressed checkout. It
+landed on `/shop/nenas-market-stall/checkout` with no console errors.
+
+**Updated 2026-09-22, 12:32 UTC.** Frontend plus one nginx line: each shop's
+own checkout at `/shop/<slug>/checkout` (§6a). The shop page's checkout button
+and `/cart`'s "Proceed to checkout" now go there; `/cart?step=checkout`
+forwards. Built from the working tree, whose other uncommitted files were last
+touched before the 2026-09-21 14:01 release, so nothing else new went out. No
+backend, no migration.
+
+| | Roll back to | Holds |
+|---|---|---|
+| Frontend | `web.bak-20260922-123208-store-checkout` | the 2026-09-21 14:01 sales-redesign build |
+| nginx | `/root/nginx-omaykan.bak-20260922-123208-store-checkout` | the config without the checkout line |
+
+The nginx line went in before the swap and is harmless with the old tree:
+`checkout.html` is missing there, so the path 404s. Verified after the swap:
+`/`, `/cart`, `/account`, `/app`, `/seller/signup`, the shop subdomain and
+`/shop/nenas-market-stall/checkout` (with a trailing slash and a query too)
+serve their own titles, and `/api/stores` returns 200. A headless browser, at
+1440px and 390px, added an item on `nenas-market-stall.omaykan.com`, pressed
+checkout, and landed on the shop's checkout signed out. The page was titled
+"Checkout — Aling Nena Market Stall", showed the line and the sign-in prompt,
+had no horizontal overflow and logged no console errors. No order was placed.
+
+**Updated 2026-09-21, 14:01 UTC.** Frontend only, a full build from the
+working tree again: the Sales page redesign (KPI cards, a trend chart, payment
+and order-type breakdowns, peak hours, a recent-sales table), adding a
+category from the product sheet's category picker, and whatever else was
+uncommitted in the tree at the time, including in-progress `OrdersPage.vue`
+work. No backend, no migration, no nginx change.
+
+| | Roll back to | Holds |
+|---|---|---|
+| Frontend | `web.bak-20260921-140115-sales-redesign` | the 13:36 demo-catalog build below |
+
+Verified after the swap: the catalog and `/api/stores` calls return 200, the
+five public pages serve their own titles, `/app` serves the new bundle, and a
+headless browser found no errors on the landing page, a shop page or `/app`
+(apart from the signed-out 401s noted below).
+
+**Updated 2026-09-21, 13:36 UTC.** A full frontend build from the working tree,
+plus one backend config file.
+
+- **Frontend.** A till signed in to a shop no longer shows the bundled demo
+  catalog. Before this, a failed sync filled an empty cache with the 550 demo
+  products, and a later pull kept them, so a merchant with no products on the
+  server saw a full Products page while their shop page said "We couldn't find
+  that shop". `readShopCatalog()` in `packages/data` now drops demo ids from
+  the cache. The build also carries the uncommitted Products-page filter work
+  (`ProductsPage.vue`, `FilterDropdown.vue`, `app.css`).
+- **Backend.** Only `config/paymongo.php` (the default payment methods are now
+  `qrph` alone, from `dc91931`) and `.env.example` were copied in, and the
+  config was re-cached. Every other backend file already matched `HEAD` by
+  md5. The live `.env` does not set `PAYMONGO_PAYMENT_METHODS`, so the
+  subscription checkout now offers QRPh only. No migration.
+
+| | Roll back to | Holds |
+|---|---|---|
+| Frontend | `web.bak-20260921-133551-demo-catalog-strip` | the 2026-09-20 PayMongo build |
+| Backend config | `/root/backend-file-bak-20260921-133551/` | the previous `paymongo.php` and `.env.example`; copy back, then `config:cache` |
+
+Verified after the swap: the catalog and `/api/stores` calls return 200;
+`/`, `/app`, `/cart`, `/seller/signup` and `nenas-market-stall.omaykan.com`
+serve their own titles; `config('paymongo.payment_methods')` reads `qrph`;
+and a headless browser found no console errors on the landing or shop page.
+A signed-out `/app` logs 401s from its sync and staff calls before it
+redirects to sign-in. No changed code makes those calls, but they were not
+compared against the previous build.
+
 **Updated 2026-09-19, 00:55 UTC.** Frontend only, signup page only again:
 signing in on `/seller/signup` now lands in `/app` signed in. Until now it
 bound the browser to the shop and sent it to `/app` with no session, so the
@@ -856,6 +966,22 @@ server {
     location ^~ /.well-known/acme-challenge/ { root /var/www/html; }
     location / { return 301 https://$host$request_uri; }
 }
+```
+
+**Each shop's own checkout — `omaykan.com/shop/<slug>/checkout`.** Checkout is
+dressed as the shop it is for (its photo, name, address, and a way back to its
+menu) instead of every shop finishing on the same `/cart` page. It is its own
+entry, `checkout.html`, and it lives on the **main** host for the reason above:
+the shop page's checkout button carries the basket across as
+`/shop/<slug>/checkout?basket=…`. `/cart` is still the basket; its "Proceed to
+checkout" goes to the shop's checkout, carrying unticked lines as `?skip=`, and
+an old `/cart?step=checkout` link forwards there. The main site's server block
+needs one line before this frontend goes out, or the path falls through to
+`index.html` with a 200 (see §3.1 — read the `<title>`, it should be
+"Checkout — Omaykan" before the page loads):
+
+```nginx
+location ~ ^/shop/[^/]+/checkout/?$ { try_files /checkout.html =404; }
 ```
 
 **3. Build** with `VITE_SHOP_ROOT_DOMAIN=omaykan.com` in `.env.production`, and

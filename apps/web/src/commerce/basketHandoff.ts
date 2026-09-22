@@ -5,13 +5,16 @@
 // Google sign-in stay on omaykan.com (Google will not take a wildcard origin),
 // so the shop page hands the basket over in the checkout link instead:
 //
-//   https://omaykan.com/cart?step=checkout&basket=<slug>~<storeCode>~<id>*<qty>.<id>*<qty>
+//   https://omaykan.com/shop/<slug>/checkout?basket=<slug>~<storeCode>~<id>*<qty>.<id>*<qty>
 //
-// Only ids and quantities travel. The cart page prices them again from the
+// (or /cart?basket=… for the cart). Only ids and quantities travel. The page prices them again from the
 // shop's live shelf, and the server prices the order from its own rows, so
 // nothing in the link can change what anything costs.
 
-import { UUID } from '@pos/web/commerce/cart'
+import { fetchStores } from '@pos/web/commerce/api'
+import { UUID, useStorefrontCart, type CartShop } from '@pos/web/commerce/cart'
+import { loadStorefrontCatalog } from '@pos/web/commerce/catalog'
+import { setStorefrontContext } from '@pos/web/commerce/context'
 
 export const BASKET_PARAM = 'basket'
 
@@ -56,4 +59,61 @@ export function decodeBasketHandoff(raw: string | null): BasketHandoff | null {
   if (lines.length === 0 || lines.length > MAX_LINES) return null
 
   return { orgSlug, storeCode, lines }
+}
+
+/**
+ * Take a basket handed over in this page's address, if there is one.
+ *
+ * It replaces whatever basket this origin had: the customer pressed checkout
+ * on that shop a moment ago, and an order can only come from one shop anyway.
+ * Lines are priced from the shop's live shelf; one that is no longer on it is
+ * left out rather than carried as a line checkout would refuse.
+ *
+ * The parameter is taken off the address either way, so a refresh or a shared
+ * link does not hand the same basket over again on top of later changes.
+ *
+ * `onlyFor` is the shop a page is for: a handoff naming any other is dropped.
+ * Leaves the storefront context pointed at the handed-over shop when it takes
+ * one. Never throws — with the directory or shelf out of reach the page opens
+ * on the basket it already had, and the shop still has the lines one tap back.
+ */
+export async function adoptHandedOverBasket(onlyFor?: string): Promise<void> {
+  const params = new URLSearchParams(window.location.search)
+  const raw = params.get(BASKET_PARAM)
+  if (raw === null) return
+
+  params.delete(BASKET_PARAM)
+  const query = params.toString()
+  window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}`)
+
+  const handoff = decodeBasketHandoff(raw)
+  if (!handoff || (onlyFor !== undefined && handoff.orgSlug !== onlyFor)) return
+
+  try {
+    const stores = await fetchStores()
+    const store = stores.find((s) => s.orgSlug === handoff.orgSlug && s.storeCode === handoff.storeCode)
+    if (!store) return
+
+    const shop: CartShop = {
+      orgSlug: store.orgSlug,
+      storeCode: store.storeCode,
+      storeAddress: store.address,
+      businessMode: store.businessMode as CartShop['businessMode'],
+      storeLat: store.lat,
+      storeLng: store.lng,
+      name: store.name,
+    }
+    setStorefrontContext(shop)
+
+    const catalog = await loadStorefrontCatalog()
+    const onShelf = new Map(catalog.products.map((product) => [product.id, product]))
+    const cart = useStorefrontCart()
+    cart.clear()
+    for (const line of handoff.lines) {
+      const product = onShelf.get(line.productId)
+      if (product && !product.outOfStock) cart.add(product, line.quantity, shop)
+    }
+  } catch {
+    // Directory or shelf unreachable: open the page on the basket it had.
+  }
 }

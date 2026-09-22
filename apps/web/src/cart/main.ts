@@ -1,10 +1,9 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import { setStorefrontContext } from '@pos/web/commerce/context'
-import { fetchStores } from '@pos/web/commerce/api'
-import { BASKET_PARAM, decodeBasketHandoff } from '@pos/web/commerce/basketHandoff'
-import { readCartShop, useStorefrontCart, type CartShop } from '@pos/web/commerce/cart'
-import { loadStorefrontCatalog } from '@pos/web/commerce/catalog'
+import { storeCheckoutPath } from '@pos/shared/index'
+import { ORG_SLUG, setStorefrontContext } from '@pos/web/commerce/context'
+import { adoptHandedOverBasket } from '@pos/web/commerce/basketHandoff'
+import { readCartShop, useStorefrontCart } from '@pos/web/commerce/cart'
 import CartPage from './CartPage.vue'
 import '@pos/core/styles/tokens.css'
 import '@pos/core/styles/app.css'
@@ -16,63 +15,28 @@ import '@pos/web/landing/landing.css'
 document.documentElement.dataset.theme = 'light'
 
 /**
- * A basket handed over from a shop's subdomain (see commerce/basketHandoff.ts).
- *
- * It replaces whatever basket this origin had: the customer pressed checkout
- * on that shop a moment ago, and an order can only come from one shop anyway.
- * Lines are priced from the shop's live shelf; one that is no longer on it is
- * left out rather than carried as a line checkout would refuse.
- *
- * The parameter is taken off the address either way, so a refresh or a shared
- * cart link does not hand the same basket over again on top of later changes.
+ * Checkout is each shop's own page now, /shop/<slug>/checkout. `/cart?step=checkout`
+ * is what went out before that — in sign-in return links, in bookmarks, and
+ * from shop pages still open in someone's tab — so it goes on to the shop's
+ * checkout rather than stopping at the cart. Only with a basket to check out:
+ * an empty one has nowhere to send them, and the cart page says so.
  */
-async function importHandedOverBasket(): Promise<void> {
+function forwardToShopCheckout(): boolean {
   const params = new URLSearchParams(window.location.search)
-  const raw = params.get(BASKET_PARAM)
-  if (raw === null) return
-
-  params.delete(BASKET_PARAM)
-  const query = params.toString()
-  window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}`)
-
-  const handoff = decodeBasketHandoff(raw)
-  if (!handoff) return
-
-  try {
-    const stores = await fetchStores()
-    const store = stores.find((s) => s.orgSlug === handoff.orgSlug && s.storeCode === handoff.storeCode)
-    if (!store) return
-
-    const shop: CartShop = {
-      orgSlug: store.orgSlug,
-      storeCode: store.storeCode,
-      storeAddress: store.address,
-      businessMode: store.businessMode as CartShop['businessMode'],
-      storeLat: store.lat,
-      storeLng: store.lng,
-      name: store.name,
-    }
-    setStorefrontContext(shop)
-
-    const catalog = await loadStorefrontCatalog()
-    const onShelf = new Map(catalog.products.map((product) => [product.id, product]))
-    const cart = useStorefrontCart()
-    cart.clear()
-    for (const line of handoff.lines) {
-      const product = onShelf.get(line.productId)
-      if (product && !product.outOfStock) cart.add(product, line.quantity, shop)
-    }
-  } catch {
-    // Directory or shelf unreachable: open the cart as it was. The shop page
-    // still has the basket, one tap back.
-  }
+  if (params.get('step') !== 'checkout' || useStorefrontCart().cartLines.value.length === 0) return false
+  const slug = readCartShop()?.orgSlug || ORG_SLUG
+  if (!slug) return false
+  window.location.replace(storeCheckoutPath(slug))
+  return true
 }
 
-importHandedOverBasket().finally(() => {
+adoptHandedOverBasket().finally(() => {
+  if (forwardToShopCheckout()) return
+
   // The basket belongs to whichever shop it was filled from, which need not be
   // the build-time tenant. Set before mount for the reason landing/main.ts
-  // gives: the catalog composable loads once, on first use, and the order has
-  // to be posted to the same store the lines were priced by.
+  // gives: the catalog composable loads once, on first use, and the lines have
+  // to be checked against the same store they were priced by.
   const shop = readCartShop()
   if (shop) setStorefrontContext(shop)
 

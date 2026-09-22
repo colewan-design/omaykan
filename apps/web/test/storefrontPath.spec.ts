@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   isShopSubdomainLabel,
   slugFromShopHost,
+  slugFromStoreCheckoutPath,
   slugFromStorefrontPath,
+  storeCheckoutPath,
   storefrontPath,
   storefrontUrl,
 } from '@pos/shared/index'
@@ -79,5 +81,27 @@ describe('slugFromStorefrontPath', () => {
     expect(slugFromStorefrontPath('/shop/a/b')).toBe('')
     expect(slugFromStorefrontPath('/cart')).toBe('')
     expect(slugFromStorefrontPath('/shop/%E0%A4%A')).toBe('')
+  })
+})
+
+describe('storeCheckoutPath', () => {
+  it('hangs off the shop page path', () => {
+    expect(storeCheckoutPath('marias-kitchen')).toBe('/shop/marias-kitchen/checkout')
+  })
+
+  it('reads the slug back, with or without a trailing slash', () => {
+    expect(slugFromStoreCheckoutPath('/shop/marias-kitchen/checkout')).toBe('marias-kitchen')
+    expect(slugFromStoreCheckoutPath('/shop/marias-kitchen/checkout/')).toBe('marias-kitchen')
+    expect(slugFromStoreCheckoutPath(storeCheckoutPath('a b&c'))).toBe('a b&c')
+  })
+
+  it('is blank for anything that is not one shop checkout', () => {
+    for (const path of ['/shop/marias-kitchen', '/shop/checkout', '/shop//checkout', '/shop/a/b/checkout', '/cart', '/checkout']) {
+      expect(slugFromStoreCheckoutPath(path)).toBe('')
+    }
+  })
+
+  it('is not mistaken for a shop page', () => {
+    expect(slugFromStorefrontPath('/shop/marias-kitchen/checkout')).toBe('')
   })
 })

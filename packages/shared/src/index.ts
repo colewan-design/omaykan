@@ -1425,6 +1425,27 @@ export function storefrontUrl(slug: string, options: { rootDomain?: string; orig
   return `${options.origin.replace(/\/+$/, '')}${storefrontPath(slug)}`
 }
 
+// -- A shop's own checkout -----------------------------------------------------
+//
+// `/shop/<slug>/checkout`, always on the main site and never on the shop's
+// subdomain: sign-in, Google sign-in and the customer's saved addresses all
+// live on the main origin, so that is where an order has to be placed from.
+// The shop's name is in the path so the page can dress itself as that shop
+// before anything has loaded, and so a link to it can't open another shop's.
+
+export const STORE_CHECKOUT_SUFFIX = '/checkout'
+
+export function storeCheckoutPath(slug: string): string {
+  return `${storefrontPath(slug)}${STORE_CHECKOUT_SUFFIX}`
+}
+
+/** The slug in a `/shop/<slug>/checkout` path, or '' for any other path. */
+export function slugFromStoreCheckoutPath(pathname: string): string {
+  const trimmed = pathname.replace(/\/$/, '')
+  if (!trimmed.endsWith(STORE_CHECKOUT_SUFFIX)) return ''
+  return slugFromStorefrontPath(trimmed.slice(0, -STORE_CHECKOUT_SUFFIX.length))
+}
+
 /** The slug a shop subdomain names, or '' for the root, `www`, or any other host. */
 export function slugFromShopHost(hostname: string, rootDomain: string): string {
   const host = hostname.trim().toLowerCase().replace(/\.$/, '')

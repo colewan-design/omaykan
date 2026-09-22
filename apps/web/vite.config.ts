@@ -61,6 +61,14 @@ function entryRouteAliases(shopRootDomain: string): Plugin {
       return
     }
 
+    // A shop's own checkout, /shop/<slug>/checkout — before the shop page
+    // rule below, which would otherwise take it. checkout/main.ts reads the
+    // slug off the path, as shop/main.ts does.
+    if (/^\/shop\/[^/?]+\/checkout\/?(\?|$)/.test(req.url ?? '')) {
+      req.url = '/checkout.html'
+      return
+    }
+
     // A shop's own page, /shop/<slug>. The slug is read back off the path by
     // shop/main.ts, so only the file served changes here, not the URL.
     if (req.url?.startsWith('/shop/')) {
@@ -189,6 +197,7 @@ export default defineConfig(({ mode }) => {
           account: path.resolve(__dirname, 'account.html'),
           cart: path.resolve(__dirname, 'cart.html'),
           shop: path.resolve(__dirname, 'shop.html'),
+          checkout: path.resolve(__dirname, 'checkout.html'),
           rider: path.resolve(__dirname, 'rider.html'),
           platformAdmin: path.resolve(__dirname, 'platform-admin.html'),
           supportInbox: path.resolve(__dirname, 'support-inbox.html'),

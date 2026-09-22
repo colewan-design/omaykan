@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import {
   ArrowRight,
   Banknote,
   Bike,
-  Check,
-  ChevronLeft,
   HandCoins,
   HeartHandshake,
   Lock,
@@ -14,7 +12,7 @@ import {
   Store,
   Trash2,
 } from '@lucide/vue'
-import { formatCurrency } from '@pos/shared/index'
+import { formatCurrency, storeCheckoutPath } from '@pos/shared/index'
 import FdHeader from '@pos/web/landing/FdHeader.vue'
 import FdFooter from '@pos/web/landing/FdFooter.vue'
 import ProductRow from '@pos/web/landing/ProductRow.vue'
@@ -24,8 +22,8 @@ import { useStorefrontCatalog } from '@pos/web/commerce/catalog'
 import { useCustomerAccount } from '@pos/web/commerce/customer'
 import { useSavedProducts } from '@pos/web/commerce/favorites'
 import { useCheckout } from '@pos/web/commerce/checkout'
+import { ORG_SLUG } from '@pos/web/commerce/context'
 import { DELIVERY_BASE_FEE_CENTS } from '@pos/web/commerce/delivery'
-import CheckoutForm from './CheckoutForm.vue'
 
 // The cart as a page, in the highland redesign: a photographic banner, the
 // lines on the left with a tick beside each, the order summary on the right,
@@ -35,14 +33,13 @@ import CheckoutForm from './CheckoutForm.vue'
 // a page, and a page is what lets a shopper choose which lines go into this
 // order: anything left unticked stays in the basket for next time.
 //
-// Three steps on one document, like the drawer had — cart, checkout, placed.
-// Checkout is in the URL (?step=checkout) so Back walks out of it, and so a
-// shopper sent off to sign in comes back to the step they left.
+// Checkout itself is not here: it is the shop's own page, /shop/<slug>/checkout
+// (checkout/StoreCheckoutPage.vue), dressed as that shop rather than as
+// Omaykan. Lines left unticked travel there as ?skip= and stay in the basket.
 //
 // Every slot the reference fills with something the API does not have holds
-// something it does: no delivery-date promises (nothing here knows one), a
-// promo code box that asks the server before it promises anything, and the
-// reassurances are the platform's own promises rather than claims about a
+// something it does: no delivery-date promises (nothing here knows one), and
+// the reassurances are the platform's own promises rather than claims about a
 // product.
 
 const cart = useStorefrontCart()
@@ -113,71 +110,27 @@ function toggleAll() {
 const checkout = useCheckout(selectedLines)
 const totals = checkout.totals
 
-// ── Steps ─────────────────────────────────────────────────────────────────
-
-type Step = 'cart' | 'checkout' | 'placed'
-
-function readStep(): Step {
-  try {
-    return new URLSearchParams(window.location.search).get('step') === 'checkout' ? 'checkout' : 'cart'
-  } catch {
-    return 'cart'
-  }
-}
-
-const step = ref<Step>(readStep())
-
-function goTo(next: 'cart' | 'checkout') {
-  step.value = next
-  window.history.pushState({}, '', next === 'checkout' ? `${window.location.pathname}?step=checkout` : window.location.pathname)
-  window.scrollTo({ top: 0, behavior: 'smooth' })
-}
-
-function applyUrl() {
-  if (step.value !== 'placed') step.value = readStep()
-}
-
-onMounted(() => window.addEventListener('popstate', applyUrl))
-onBeforeUnmount(() => window.removeEventListener('popstate', applyUrl))
-
-// A checkout step with nothing ticked, or nobody signed in to place it, is
-// the cart. Waits for the shelf: until it is in, every line counts as orderable.
-watch(
-  [() => selectedLines.value.length, () => checkout.checkoutGated.value, () => catalog.loading],
-  ([count, gated, loading]) => {
-    if (step.value !== 'checkout') return
-    if (gated || (!loading && count === 0)) {
-      step.value = 'cart'
-      window.history.replaceState({}, '', window.location.pathname)
-    }
-  },
-  { immediate: true },
-)
+// ── On to the shop's checkout ─────────────────────────────────────────────
 
 /**
- * The shop has paused its own online ordering. The server refuses the order
- * anyway; saying so on the button is the difference between a shopper who
- * comes back at four and one who fills in an address for nothing.
+ * Checkout, on the shop's own page. The build-time tenant stands in only for
+ * a basket from before the shop was written down beside it.
  */
-const orderingPaused = computed(() => catalog.shop?.orderingPausedMessage ?? '')
-
-async function placeOrder() {
-  if (orderingPaused.value) return
-  if (await checkout.placeOrder()) {
-    step.value = 'placed'
-    unticked.value = new Set()
-    window.history.replaceState({}, '', window.location.pathname)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
-}
-
-const heading = computed(() => {
-  if (step.value === 'checkout') return 'Checkout'
-  if (step.value === 'placed') return 'Order placed'
-  return 'Shopping cart'
+const checkoutHref = computed(() => {
+  const slug = cart.cartShop.value?.orgSlug || ORG_SLUG
+  const skipped = cart.cartLines.value
+    .filter((line) => unticked.value.has(line.product.id))
+    .map((line) => line.product.id)
+  const params = new URLSearchParams()
+  if (skipped.length > 0) params.set('skip', skipped.join('.'))
+  const query = params.toString()
+  return `${storeCheckoutPath(slug)}${query ? `?${query}` : ''}`
 })
 
-watch(heading, (title) => (document.title = `${title} — Omaykan`), { immediate: true })
+/** Signing in comes back to the shop's checkout, not to this page. */
+const signInHref = computed(() => `/account?next=${encodeURIComponent(checkoutHref.value)}`)
+
+document.title = 'Shopping cart — Omaykan'
 
 // ── Around the edges ──────────────────────────────────────────────────────
 
@@ -242,7 +195,7 @@ function search(term: string) {
         </div>
 
         <div class="cartpg-hero__copy">
-          <h1 class="cartpg-hero__title">{{ heading }}</h1>
+          <h1 class="cartpg-hero__title">Shopping cart</h1>
           <p class="cartpg-hero__tag">Local finds. Greater tomorrows.</p>
         </div>
 
@@ -253,56 +206,11 @@ function search(term: string) {
         <nav class="cartpg-crumbs" aria-label="Breadcrumb">
           <a href="/">Home</a>
           <span aria-hidden="true">›</span>
-          <a v-if="step === 'checkout'" href="/cart" @click.prevent="goTo('cart')">Cart</a>
-          <span v-else class="cartpg-crumbs__here">Cart</span>
-          <template v-if="step === 'checkout'">
-            <span aria-hidden="true">›</span>
-            <span class="cartpg-crumbs__here">Checkout</span>
-          </template>
+          <span class="cartpg-crumbs__here">Cart</span>
         </nav>
 
-        <!-- ── Placed ──────────────────────────────────────────────────── -->
-        <section v-if="step === 'placed' && checkout.placed.value" class="cartpg-done">
-          <div class="cartpg-done__mark" aria-hidden="true">
-            <Check :size="30" :stroke-width="3" />
-          </div>
-          <h2 class="cartpg-done__title">Order {{ checkout.placed.value.ticketNumber }} is in</h2>
-          <p class="cartpg-done__note">
-            {{ shopName || 'The shop' }} is looking at it now. We'll reach you on the
-            {{ checkout.placed.value.reachBy }} you gave us.
-          </p>
-
-          <ul class="cartpg-done__lines">
-            <li v-for="line in checkout.placed.value.lines" :key="line.product.id">
-              <span>{{ line.quantity }} × {{ line.product.name }}</span>
-              <span>{{ formatCurrency(line.product.priceCents * line.quantity) }}</span>
-            </li>
-          </ul>
-
-          <dl class="cartpg-rows cartpg-done__rows">
-            <div v-if="checkout.placed.value.deliveryFeeCents">
-              <dt>Delivery</dt>
-              <dd>{{ formatCurrency(checkout.placed.value.deliveryFeeCents) }}</dd>
-            </div>
-            <div class="cartpg-rows__total">
-              <dt>Paid on {{ checkout.placed.value.method === 'delivery' ? 'delivery' : 'pickup' }}</dt>
-              <dd>{{ formatCurrency(checkout.placed.value.totalCents) }}</dd>
-            </div>
-          </dl>
-
-          <div class="cartpg-done__actions">
-            <a href="/account?section=orders" class="cartpg-cta">Track your order <ArrowRight :size="16" :stroke-width="2" /></a>
-            <a href="/" class="cartpg-ghost">Keep shopping</a>
-          </div>
-
-          <p v-if="cart.cartLines.value.length > 0" class="cartpg-done__left">
-            {{ cart.itemCount.value }} item{{ cart.itemCount.value === 1 ? ' is' : 's are' }} still in your cart.
-            <button type="button" class="cartpg-linkbtn" @click="goTo('cart')">Back to your cart</button>
-          </p>
-        </section>
-
         <!-- ── Empty ───────────────────────────────────────────────────── -->
-        <section v-else-if="cart.cartLines.value.length === 0" class="cartpg-empty">
+        <section v-if="cart.cartLines.value.length === 0" class="cartpg-empty">
           <MountainMark :size="84" class="cartpg-empty__mark" />
           <h2 class="cartpg-empty__title">Your cart is empty</h2>
           <p class="cartpg-empty__note">
@@ -321,7 +229,6 @@ function search(term: string) {
         <!-- ── Cart and checkout ───────────────────────────────────────── -->
         <div v-else class="cartpg-grid">
           <div class="cartpg-col">
-            <template v-if="step === 'cart'">
               <div class="cartpg-listhead">
                 <h2 class="sf-h2">Your cart ({{ cart.itemCount.value }} item{{ cart.itemCount.value === 1 ? '' : 's' }})</h2>
                 <label v-if="orderable.length > 1" class="cartpg-all">
@@ -399,60 +306,24 @@ function search(term: string) {
                   </div>
                 </li>
               </ul>
-            </template>
-
-            <template v-else>
-              <button type="button" class="cartpg-back" @click="goTo('cart')">
-                <ChevronLeft :size="17" :stroke-width="2" />
-                Back to cart
-              </button>
-              <CheckoutForm :checkout="checkout" />
-            </template>
           </div>
 
           <aside class="cartpg-side">
             <section class="cartpg-summary" aria-labelledby="cartpg-summary-title">
               <h2 id="cartpg-summary-title" class="cartpg-summary__title">Order summary</h2>
 
-              <!-- At checkout, what is actually being ordered: not the whole
-                   basket once anything has been unticked. -->
-              <ul v-if="step === 'checkout'" class="cartpg-mini">
-                <li v-for="line in selectedLines" :key="line.product.id">
-                  <span class="cartpg-mini__thumb">
-                    <img v-if="line.product.imageUrl" :src="line.product.imageUrl" alt="" />
-                  </span>
-                  <span class="cartpg-mini__name">{{ line.product.name }}</span>
-                  <span class="cartpg-mini__qty">× {{ line.quantity }}</span>
-                </li>
-              </ul>
-
               <dl class="cartpg-rows">
                 <div>
                   <dt>Subtotal ({{ totals.itemCount }} item{{ totals.itemCount === 1 ? '' : 's' }})</dt>
                   <dd>{{ formatCurrency(totals.subtotalCents) }}</dd>
                 </div>
-                <div v-if="checkout.appliedPromo.value" class="cartpg-rows__promo">
-                  <dt>
-                    {{ checkout.appliedPromo.value.code }} · {{ checkout.appliedPromo.value.description }}
-                    <button type="button" class="cartpg-promo__remove" @click="checkout.removePromo()">Remove</button>
-                  </dt>
-                  <dd>−{{ formatCurrency(totals.discountCents) }}</dd>
-                </div>
                 <div v-if="totals.taxCents > 0">
                   <dt>VAT</dt>
                   <dd>{{ formatCurrency(totals.taxCents) }}</dd>
                 </div>
-                <div v-if="step === 'cart'">
+                <div>
                   <dt>Delivery</dt>
                   <dd class="cartpg-rows__soft">From {{ formatCurrency(DELIVERY_BASE_FEE_CENTS) }} at checkout</dd>
-                </div>
-                <div v-else-if="checkout.isDelivery.value">
-                  <dt>Delivery{{ checkout.deliveryQuote.value ? '' : ' (estimate)' }}</dt>
-                  <dd>{{ formatCurrency(checkout.deliveryFeeCents.value) }}</dd>
-                </div>
-                <div v-else>
-                  <dt>Pickup</dt>
-                  <dd>Free</dd>
                 </div>
                 <div class="cartpg-rows__pay">
                   <dt><Banknote :size="16" :stroke-width="1.8" /> How you pay</dt>
@@ -460,61 +331,37 @@ function search(term: string) {
                 </div>
                 <div class="cartpg-rows__total">
                   <dt>Total</dt>
-                  <dd>{{ formatCurrency(step === 'checkout' ? checkout.grandTotalCents.value : totals.totalCents) }}</dd>
+                  <dd>{{ formatCurrency(totals.totalCents) }}</dd>
                 </div>
               </dl>
-
-              <!-- Asked of the server before anything is promised: the page
-                   never shows a discount the order would not get. -->
-              <div v-if="step === 'checkout' && !checkout.appliedPromo.value" class="cartpg-promo">
-                <form class="cartpg-promo__form" @submit.prevent="checkout.applyPromo()">
-                  <input
-                    v-model="checkout.promoInput.value"
-                    class="cartpg-promo__input"
-                    maxlength="40"
-                    autocapitalize="characters"
-                    placeholder="Promo code"
-                    aria-label="Promo code"
-                  />
-                  <button
-                    type="submit"
-                    class="cartpg-promo__apply"
-                    :disabled="checkout.promoChecking.value || checkout.promoInput.value.trim() === ''"
-                  >
-                    {{ checkout.promoChecking.value ? 'Checking…' : 'Apply' }}
-                  </button>
-                </form>
-                <p v-if="checkout.promoMessage.value" class="cartpg-promo__message" role="alert">
-                  {{ checkout.promoMessage.value }}
-                </p>
-              </div>
 
               <p v-if="!checkout.canOrderOnline.value" class="cartpg-warn">
                 This shop doesn't take online orders yet.
               </p>
-              <p v-if="checkout.error.value" class="cartpg-error">{{ checkout.error.value }}</p>
 
               <!-- ── The one button ─────────────────────────────────────── -->
-              <template v-if="step === 'cart'">
-                <!-- Still trading the stored token for an account: neither door
+              <!-- Still trading the stored token for an account: neither door
                      is the right one to show yet. -->
                 <button v-if="account.hydrating.value" type="button" class="cartpg-cta cartpg-cta--block" disabled>
                   One moment…
                 </button>
-                <a v-else-if="checkout.checkoutGated.value" :href="checkout.signInHref.value" class="cartpg-cta cartpg-cta--block">
+                <a v-else-if="checkout.checkoutGated.value" :href="signInHref" class="cartpg-cta cartpg-cta--block">
                   Sign in to check out
                   <ArrowRight :size="16" :stroke-width="2" />
                 </a>
                 <button
-                  v-else
+                  v-else-if="!checkout.canOrderOnline.value || selectedLines.length === 0"
                   type="button"
                   class="cartpg-cta cartpg-cta--block"
-                  :disabled="!checkout.canOrderOnline.value || selectedLines.length === 0"
-                  @click="goTo('checkout')"
+                  disabled
                 >
                   Proceed to checkout
                   <ArrowRight :size="16" :stroke-width="2" />
                 </button>
+                <a v-else :href="checkoutHref" class="cartpg-cta cartpg-cta--block">
+                  Proceed to checkout
+                  <ArrowRight :size="16" :stroke-width="2" />
+                </a>
                 <p v-if="selectedLines.length === 0 && orderable.length > 0" class="cartpg-fine">
                   Tick at least one item to check out.
                 </p>
@@ -522,28 +369,6 @@ function search(term: string) {
                   Orders are placed from an account, so your addresses and order history stay with
                   you. Your cart is kept while you sign in.
                 </p>
-              </template>
-
-              <template v-else>
-                <a
-                  v-if="checkout.needsSignIn.value || checkout.checkoutGated.value"
-                  :href="checkout.signInHref.value"
-                  class="cartpg-cta cartpg-cta--block"
-                >
-                  Sign in to finish
-                </a>
-                <button
-                  v-else
-                  type="button"
-                  class="cartpg-cta cartpg-cta--block"
-                  :disabled="!checkout.canSubmit.value || checkout.submitting.value || orderingPaused !== ''"
-                  @click="placeOrder"
-                >
-                  {{ checkout.submitting.value ? 'Placing your order…' : `Place order — ${formatCurrency(checkout.grandTotalCents.value)}` }}
-                </button>
-                <p v-if="orderingPaused" class="cartpg-fine" role="status"><strong>{{ orderingPaused }}</strong> Your cart is kept until then.</p>
-                <p v-else class="cartpg-fine">The shop confirms prices and the delivery fee when it accepts the order.</p>
-              </template>
 
               <p class="cartpg-secure">
                 <Lock :size="13" :stroke-width="2" />
@@ -572,7 +397,6 @@ function search(term: string) {
         </div>
 
         <ProductRow
-          v-if="step !== 'checkout'"
           :title="shopName ? `More from ${shopName}` : 'You may also like'"
           :products="recommended"
           @select="openProduct"
@@ -859,21 +683,6 @@ function search(term: string) {
 }
 .cartpg-remove:hover { color: var(--sf-clay-deep); text-decoration: underline; text-underline-offset: 3px; }
 
-.cartpg-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-bottom: 14px;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--sf-muted);
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.cartpg-back:hover { color: var(--sf-clay); }
 
 /* ── Summary ────────────────────────────────────────────────────────── */
 
@@ -899,26 +708,6 @@ function search(term: string) {
   color: var(--sf-ink);
 }
 
-.cartpg-mini {
-  display: grid;
-  gap: 8px;
-  margin: 0 0 14px;
-  padding: 0 0 14px;
-  list-style: none;
-  border-bottom: 1px solid var(--sf-rule);
-}
-.cartpg-mini li { display: flex; align-items: center; gap: 10px; font-size: 13px; }
-.cartpg-mini__thumb {
-  flex-shrink: 0;
-  width: 34px;
-  height: 34px;
-  overflow: hidden;
-  border-radius: 5px;
-  background: var(--sf-sand);
-}
-.cartpg-mini__thumb img { width: 100%; height: 100%; object-fit: cover; }
-.cartpg-mini__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sf-ink); }
-.cartpg-mini__qty { color: var(--sf-muted); font-weight: 600; }
 
 .cartpg-rows { margin: 0; }
 .cartpg-rows > div {
@@ -941,15 +730,6 @@ function search(term: string) {
 .cartpg-rows__total dd { font-size: 22px; font-weight: 800; }
 
 .cartpg-warn { margin: 10px 0 0; font-size: 13px; font-weight: 600; color: #a05a14; }
-.cartpg-error {
-  margin: 12px 0 0;
-  padding: 9px 12px;
-  border-radius: 6px;
-  background: #fbeae4;
-  font-size: 13px;
-  font-weight: 600;
-  color: #9a3b2a;
-}
 
 .cartpg-cta {
   display: inline-flex;
@@ -1001,18 +781,6 @@ function search(term: string) {
   text-align: center;
 }
 
-.cartpg-linkbtn {
-  margin-left: 6px;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--sf-clay);
-  font: inherit;
-  font-weight: 600;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  cursor: pointer;
-}
 
 /* ── Promise card ───────────────────────────────────────────────────── */
 
@@ -1064,10 +832,9 @@ function search(term: string) {
 }
 .cartpg-promise__list svg { flex-shrink: 0; color: var(--sf-forest); }
 
-/* ── Empty and placed ───────────────────────────────────────────────── */
+/* ── Empty ─────────────────────────────────────────────────────── */
 
-.cartpg-empty,
-.cartpg-done {
+.cartpg-empty {
   max-width: 560px;
   margin: 20px auto 64px;
   padding: 40px 32px;
@@ -1078,19 +845,16 @@ function search(term: string) {
 }
 
 .cartpg-empty__mark { margin: 0 auto 10px; color: var(--sf-forest); }
-.cartpg-empty__title,
-.cartpg-done__title {
+.cartpg-empty__title {
   margin: 0 0 8px;
   font-family: var(--sf-serif);
   font-size: 26px;
   font-weight: 700;
   color: var(--sf-ink);
 }
-.cartpg-empty__note,
-.cartpg-done__note { margin: 0 auto; max-width: 40ch; font-size: 15px; line-height: 1.6; color: var(--sf-muted); }
+.cartpg-empty__note { margin: 0 auto; max-width: 40ch; font-size: 15px; line-height: 1.6; color: var(--sf-muted); }
 
-.cartpg-empty__actions,
-.cartpg-done__actions {
+.cartpg-empty__actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -1100,35 +864,6 @@ function search(term: string) {
 
 .cartpg-empty__saved { margin: 22px 0 0; font-size: 14px; color: var(--sf-muted); }
 .cartpg-empty__saved a { color: var(--sf-clay); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
-
-.cartpg-done__mark {
-  display: grid;
-  place-items: center;
-  width: 66px;
-  height: 66px;
-  margin: 0 auto 16px;
-  border-radius: 50%;
-  background: #e4efe4;
-  color: #2f7a4a;
-}
-
-.cartpg-done__lines {
-  margin: 24px 0 0;
-  padding: 16px 0 0;
-  border-top: 1px solid var(--sf-rule);
-  list-style: none;
-  text-align: left;
-}
-.cartpg-done__lines li {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 3px 0;
-  font-size: 14px;
-  color: var(--sf-muted);
-}
-.cartpg-done__rows { margin-top: 8px; text-align: left; }
-.cartpg-done__left { margin: 20px 0 0; font-size: 14px; color: var(--sf-muted); }
 
 /* ── Narrower screens ───────────────────────────────────────────────── */
 
@@ -1167,16 +902,6 @@ function search(term: string) {
     text-align: left;
   }
   .cartpg-remove { margin: 0 0 0 auto; }
-  .cartpg-empty,
-  .cartpg-done { padding: 32px 20px; }
+  .cartpg-empty { padding: 32px 20px; }
 }
-/* The promo code: a field that asks, and a row that shows what it took off. */
-.cartpg-promo { display: block; padding: 4px 0; }
-.cartpg-promo__form { display: flex; gap: 8px; }
-.cartpg-promo__input { flex: 1; min-width: 0; padding: 9px 12px; border: 1px solid #ddd8ce; border-radius: 10px; font: inherit; text-transform: uppercase; }
-.cartpg-promo__apply { padding: 9px 16px; border: 0; border-radius: 10px; background: #1f3b2d; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
-.cartpg-promo__apply:disabled { opacity: 0.55; cursor: default; }
-.cartpg-promo__message { margin: 6px 0 0; color: #9a3412; font-size: 13px; }
-.cartpg-rows__promo dt, .cartpg-rows__promo dd { color: #1f6b3c; }
-.cartpg-promo__remove { margin-left: 6px; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; }
 </style>

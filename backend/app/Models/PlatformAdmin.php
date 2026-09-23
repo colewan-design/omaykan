@@ -59,6 +59,20 @@ class PlatformAdmin extends Authenticatable
         return static::query()->where('email', strtolower(trim($email)))->first();
     }
 
+    /**
+     * The operator who has already signed in with this Google account.
+     *
+     * Matched on Google's `sub`, which does not change when the address on the
+     * Google account does. Kept out of `$fillable` on purpose: this column is
+     * what makes a Google mailbox equal to cross-tenant access, so it is
+     * written in exactly one place — [PlatformAdminAuthController::google],
+     * through `forceFill` — and never from a request body.
+     */
+    public static function findByGoogleSub(string $sub): ?self
+    {
+        return static::query()->where('google_sub', $sub)->first();
+    }
+
     public function isDisabled(): bool
     {
         return $this->disabled_at !== null;

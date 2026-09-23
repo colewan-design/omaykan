@@ -227,6 +227,19 @@ export function loginRider(email: string, password: string): Promise<RiderSessio
   )
 }
 
+/**
+ * Signs in with a Google ID token. Signs in only — the endpoint refuses an
+ * identity with no rider account behind it, because approval hangs on a licence
+ * and a plate that no Google credential carries.
+ */
+export function loginRiderWithGoogle(credential: string): Promise<RiderSession> {
+  return postJson<RiderSession>(
+    '/api/rider/auth/google',
+    { credential },
+    'Could not sign you in with Google.',
+  )
+}
+
 export function fetchRider(): Promise<{ rider: RiderProfile }> {
   return request<{ rider: RiderProfile }>('/api/rider/me', {
     fallbackError: 'Could not load your account.',

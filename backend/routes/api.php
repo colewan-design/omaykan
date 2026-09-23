@@ -168,6 +168,11 @@ Route::post('/signup', [SignupController::class, 'store'])
  */
 Route::post('/platform-admin/login', [PlatformAdminAuthController::class, 'login'])
     ->middleware('throttle:5,1');
+// Also creates nothing: it signs in a row `platform-admin:create` already made.
+// Kept on the same tight throttle as the password door — this is the one
+// identity that acts across every tenant.
+Route::post('/platform-admin/auth/google', [PlatformAdminAuthController::class, 'google'])
+    ->middleware('throttle:5,1');
 
 Route::middleware(['auth:platform', 'platform.active', 'throttle:60,1'])->group(function () {
     Route::post('/platform-admin/logout', [PlatformAdminAuthController::class, 'logout']);
@@ -298,6 +303,11 @@ Route::middleware('auth:customer')->prefix('customer')->group(function () {
 Route::post('/rider/register', [RiderAuthController::class, 'register'])
     ->middleware('throttle:4,1');
 Route::post('/rider/login', [RiderAuthController::class, 'login'])
+    ->middleware('throttle:10,1');
+// Signs in an existing rider and never registers one: approval hangs on a
+// licence and a plate that Google knows nothing about. Throttled with the
+// password door it shares a card with.
+Route::post('/rider/auth/google', [RiderAuthController::class, 'google'])
     ->middleware('throttle:10,1');
 
 /*

@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import {
+  googleSignInAvailable,
+  releaseGoogleButton,
+  renderGoogleButton,
+} from '@pos/core/services/google'
 import { messageFor, useRiderSession } from '@pos/web/rider/rider'
 
 /*
@@ -38,6 +43,52 @@ async function submit() {
     submitting.value = false
   }
 }
+
+// -- Google ------------------------------------------------------------------
+
+/*
+ * Sign-in only, and only on this card. The endpoint behind it refuses a Google
+ * account with no rider profile, because approval rests on a licence and a
+ * plate that no credential carries — so there is deliberately no Google button
+ * on the registration form, where it would look like a way to skip them.
+ */
+
+const googleSlot = ref<HTMLElement | null>(null)
+/** Blank client id, or a blocked script: either way the gap closes up. */
+const googleUsable = ref(googleSignInAvailable())
+
+async function onGoogleCredential(credential: string) {
+  if (submitting.value) return
+
+  submitting.value = true
+  formError.value = ''
+
+  try {
+    await session.signInWithGoogle(credential)
+  } catch (error) {
+    // The 403 for "no rider profile yet" arrives here and says so in words —
+    // it is the one message on this card worth reading carefully, so it goes
+    // through unchanged rather than being flattened into the fallback.
+    formError.value = messageFor(error, 'Could not sign you in with Google.')
+  } finally {
+    submitting.value = false
+  }
+}
+
+onMounted(async () => {
+  if (!googleUsable.value || googleSlot.value === null) return
+
+  try {
+    await renderGoogleButton(googleSlot.value, onGoogleCredential)
+  } catch {
+    // Blocked, offline, or Google having a bad day. Not shown: the form above
+    // does the same job, and a red line about a button nobody pressed only
+    // makes the page look broken.
+    googleUsable.value = false
+  }
+})
+
+onBeforeUnmount(() => releaseGoogleButton(onGoogleCredential))
 </script>
 
 <template>
@@ -72,6 +123,13 @@ async function submit() {
       <button class="rdr-btn rdr-btn--block" type="submit" :disabled="submitting">
         {{ submitting ? 'Signing in…' : 'Sign in' }}
       </button>
+
+      <!-- Google's own button renders into this slot; it is an iframe, which is
+           why it is a bare div and not styled from here. -->
+      <template v-if="googleUsable">
+        <p class="rdr-or"><span>or</span></p>
+        <div ref="googleSlot" class="rdr-google" :class="{ 'rdr-google--busy': submitting }" />
+      </template>
     </form>
 
     <!-- Under the button, not beside the password field: a rider who is about

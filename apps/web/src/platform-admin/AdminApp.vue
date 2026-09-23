@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import {
+  googleSignInAvailable,
+  releaseGoogleButton,
+  renderGoogleButton,
+} from '@pos/core/services/google'
 import {
   BarChart3,
   Bike,
@@ -116,6 +121,57 @@ async function signIn() {
   }
 }
 
+// -- Google --------------------------------------------------------------
+
+/*
+ * A second door onto an operator account that already exists. The endpoint
+ * refuses any Google identity with no row behind it — operator accounts are
+ * made from the console — so this button widens nothing; it only saves the
+ * password.
+ */
+
+const googleSlot = ref<HTMLElement | null>(null)
+/** Blank client id, or a blocked script: either way the gap closes up. */
+const googleUsable = ref(googleSignInAvailable())
+
+async function onGoogleCredential(credential: string) {
+  if (signingIn.value) return
+
+  signingIn.value = true
+  authError.value = ''
+  try {
+    operator.value = (await api.signInWithGoogle(credential)).admin
+    passwordInput.value = ''
+    await loadSettings()
+    readHash()
+  } catch (err) {
+    authError.value = err instanceof Error ? err.message : 'Could not sign in.'
+  } finally {
+    signingIn.value = false
+  }
+}
+
+/*
+ * The slot only exists while the gate is on screen, and the gate is behind
+ * `restoring` as well as `operator` — so the button is drawn when the switch
+ * puts the element in the DOM rather than once on mount. `flush: 'post'` is
+ * what makes the element there to draw into.
+ */
+watch(googleSlot, async (slot) => {
+  if (!googleUsable.value || slot === null) return
+
+  try {
+    await renderGoogleButton(slot, onGoogleCredential)
+  } catch {
+    // Blocked, offline, or Google having a bad day. Not shown: the form above
+    // does the same job, and a red line about a button nobody pressed only
+    // makes the gate look broken.
+    googleUsable.value = false
+  }
+}, { flush: 'post' })
+
+onBeforeUnmount(() => releaseGoogleButton(onGoogleCredential))
+
 async function signOut() {
   await api.signOut()
   operator.value = null
@@ -199,6 +255,13 @@ watch(view, () => {
         <button type="submit" class="adm-btn gate__submit" :disabled="signingIn">
           {{ signingIn ? 'Signing in…' : 'Sign in' }}
         </button>
+
+        <!-- Google's own button renders into this slot; it is an iframe, which
+             is why it is a bare div and not styled from here. -->
+        <template v-if="googleUsable">
+          <p class="gate__or"><span>or</span></p>
+          <div ref="googleSlot" class="gate__google" :class="{ 'gate__google--busy': signingIn }" />
+        </template>
 
         <p v-if="authError" class="gate__error">{{ authError }}</p>
       </form>
@@ -311,6 +374,38 @@ watch(view, () => {
   margin: 0;
   color: var(--sf-clay-deep);
   font-size: 13px;
+}
+
+/* A rule with the word sitting in a gap in it, rather than three elements
+   pretending to be one. */
+.gate__or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 2px 0;
+  color: var(--sf-muted);
+  font-size: 12.5px;
+}
+
+.gate__or::before,
+.gate__or::after {
+  flex: 1;
+  height: 1px;
+  background: var(--sf-rule);
+  content: '';
+}
+
+/* Google's button is an iframe and brings its own everything. All this does is
+   centre it and stop a double-press while a sign-in is already in flight. */
+.gate__google {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+}
+
+.gate__google--busy {
+  pointer-events: none;
+  opacity: 0.55;
 }
 
 .adm-legacy {

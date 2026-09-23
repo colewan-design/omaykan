@@ -318,6 +318,23 @@ export const api = {
     return data
   },
 
+  /**
+   * Sign in with a Google ID token.
+   *
+   * Signs in only. The endpoint behind it creates nothing — an operator row is
+   * made from the console with `platform-admin:create`, and a Google identity
+   * with no row is refused — so this is a second door onto an existing account,
+   * never a way to become one.
+   */
+  async signInWithGoogle(credential: string): Promise<{ token: string; admin: Operator }> {
+    const data = await request<{ token: string; admin: Operator }>('/auth/google', {
+      method: 'POST',
+      body: { credential },
+    })
+    setToken(data.token)
+    return data
+  },
+
   me: () => request<{ admin: Operator }>('/me'),
 
   async signOut(): Promise<void> {

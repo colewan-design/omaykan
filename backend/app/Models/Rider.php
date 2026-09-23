@@ -137,6 +137,21 @@ class Rider extends Authenticatable
         return static::query()->where('email', strtolower(trim($email)))->first();
     }
 
+    /**
+     * The rider who has already signed in with this Google account.
+     *
+     * Matched on Google's `sub` and never on the email, because the email on a
+     * Google account can change and the `sub` cannot. Deliberately not in
+     * `$fillable`: the column is the link between a Google identity and a rider
+     * who can read strangers' home addresses, and it is written by
+     * [RiderAuthController::google] through `forceFill` alone — never from
+     * anything a request body carries.
+     */
+    public static function findByGoogleSub(string $sub): ?self
+    {
+        return static::query()->where('google_sub', $sub)->first();
+    }
+
     public function isApproved(): bool
     {
         return $this->status === self::STATUS_APPROVED;

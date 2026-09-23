@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Rider;
+use App\Services\GoogleIdentity;
+use App\Services\GoogleIdentityException;
+use App\Services\GoogleIdentityVerifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -145,6 +148,56 @@ class RiderAuthController extends Controller
         return $this->sessionResponse($rider);
     }
 
+    /**
+     * Sign in with Google.
+     *
+     * Never registers. A rider account is a claim to be handed strangers'
+     * addresses, and the thing that earns it is a licence photo and a plate
+     * photo an operator has looked at — none of which Google knows anything
+     * about. So this door is the staff door, not the shopper one: it signs in
+     * an account that already exists and refuses everything else. Someone with
+     * a valid Google account and no rider record is told to register, which is
+     * the only route that collects what approval actually depends on.
+     *
+     * Like [login], it lets rejected and suspended riders through to their own
+     * status screen. That screen is their only way back to an operator, and a
+     * refusal at the door would read as a broken button.
+     */
+    public function google(Request $request, GoogleIdentityVerifier $verifier): JsonResponse
+    {
+        $validated = $request->validate([
+            'credential' => ['required', 'string'],
+        ]);
+
+        try {
+            $identity = $verifier->verify($validated['credential']);
+        } catch (GoogleIdentityException $e) {
+            // Reported so a misconfigured client id or an unreachable Google
+            // reads as itself in the log, rather than as riders saying the
+            // button does nothing.
+            report($e);
+
+            throw ValidationException::withMessages(['credential' => $e->getMessage()]);
+        }
+
+        // False for an address on a Workspace domain that never completed
+        // verification. Trusting it would make this a way into any rider
+        // account whose address somebody can merely type.
+        if (! $identity->emailVerified) {
+            throw ValidationException::withMessages([
+                'credential' => 'That Google account has an unverified email address. Verify it with Google first.',
+            ]);
+        }
+
+        $rider = $this->riderFor($identity);
+
+        if ($rider === null) {
+            abort(403, "That Google account doesn't have a rider profile yet. Register first — we need your licence and plate before you can take jobs.");
+        }
+
+        return $this->sessionResponse($rider);
+    }
+
     /** Signs out this device only; other phones stay signed in. */
     public function logout(Request $request): JsonResponse
     {
@@ -258,6 +311,48 @@ class RiderAuthController extends Controller
         $trimmed = trim($value);
 
         return $trimmed === '' ? null : $trimmed;
+    }
+
+    /**
+     * The rider behind a Google identity: the one already linked to it, or the
+     * one that owns the address.
+     *
+     * The second case links on an address match, which is only safe because the
+     * address has been proved — [google] refuses anything Google will not call
+     * verified before this is reached. That makes the link the same claim as
+     * receiving mail at it, made by the party that can read the mailbox.
+     *
+     * Returns null rather than creating anything. That is the whole policy of
+     * this door; see [google].
+     */
+    private function riderFor(GoogleIdentity $identity): ?Rider
+    {
+        $linked = Rider::findByGoogleSub($identity->sub);
+
+        if ($linked !== null) {
+            // Google lets someone change the address on their account. Follow
+            // it, unless another rider already holds the new one — that would
+            // collide on a unique column and 500 the sign-in, and a stale
+            // address is much the lesser problem.
+            $collision = Rider::findByEmail($identity->email);
+
+            if ($collision === null || $collision->is($linked)) {
+                $linked->email = $identity->email;
+                $linked->save();
+            }
+
+            return $linked;
+        }
+
+        $existing = Rider::findByEmail($identity->email);
+
+        if ($existing === null) {
+            return null;
+        }
+
+        $existing->forceFill(['google_sub' => $identity->sub])->save();
+
+        return $existing;
     }
 
     private function sessionResponse(Rider $rider, int $status = 200): JsonResponse

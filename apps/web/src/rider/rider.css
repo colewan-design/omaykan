@@ -1020,3 +1020,37 @@ body:has(.rdr-apply) { height: 100vh; height: 100svh; overflow: hidden; }
 .rdr-main--tabbed {
   padding-bottom: 104px;
 }
+
+/* -- Google sign-in -------------------------------------------------------- */
+
+/* A rule with the word sitting in a gap in it, rather than three elements
+   pretending to be one. */
+.rdr-or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0 14px;
+  font-size: 13px;
+  color: var(--rdr-faint);
+}
+
+.rdr-or::before,
+.rdr-or::after {
+  flex: 1;
+  height: 1px;
+  background: var(--rdr-rule);
+  content: '';
+}
+
+/* Google's button is an iframe and brings its own everything. All this does is
+   centre it and stop a double-press while a sign-in is already in flight. */
+.rdr-google {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+}
+
+.rdr-google--busy {
+  pointer-events: none;
+  opacity: 0.55;
+}

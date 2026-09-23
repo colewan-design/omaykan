@@ -113,8 +113,20 @@ ssh omaykan "cd /var/www/omaykan &&
   systemctl reload nginx"
 ```
 
-**The build bakes in the environment.** See §4 — this is the step that has
-already broken production once.
+**That command needs a reachable catalog API** — the prerender at the end of it
+does. See §4; with no local backend, `PRERENDER_API_BASE=https://omaykan.com`
+is the usual answer. Two things about failing it that are easy to misread:
+
+- An aborted prerender **still leaves a populated `dist/`** from `vite build`,
+  holding unprerendered shells. `dist/index.html` around 6 KB instead of ~196 KB
+  is the tell. Check that size before uploading — the shells work, and ship no
+  markup to a crawler.
+- Its preview server binds port 4178, so a run that died without releasing it
+  fails the next build with `Port 4178 is already in use`. Nothing is listening;
+  those are TIME_WAIT sockets from the previous run. Run it again.
+
+**The build bakes in the environment.** See §4 — this is the step that has now
+broken production twice.
 
 **A moved public path needs its nginx block before the swap, not after.** The
 21:26 deploy moved the seller signup form from `/signup` to `/seller/signup`,
@@ -257,6 +269,62 @@ sudo -u www-data env HOME=/tmp php artisan ...
 ### 3.3 Rollback
 
 Directory swaps are reversible.
+
+**Updated 2026-09-23, 16:45 UTC+8.** Sign in with Google, on every login form.
+Backend first, then frontend — the new cards call two endpoints that did not
+exist.
+
+Two separate faults, fixed together:
+
+- **The button had vanished from the three cards that already had it.** Nothing
+  was removed from the code. `apps/web/.env.production` is untracked, and the
+  14:52 build went out with `VITE_GOOGLE_CLIENT_ID=` blank — carrying
+  `.env.production.example`'s comment verbatim, so it looks regenerated rather
+  than edited. A blank id makes `googleSignInAvailable()` false, which ships no
+  GIS script at all and hides every button silently. The id is back in
+  `.env.production` and in `.env` (which had never had the line, so the dev
+  server never showed the button either). **This is the failure mode §4 warns
+  about, and it is now the second time it has bitten.**
+- **Riders and the operator console never had it.** Both now do, through
+  `POST /api/rider/auth/google` and `POST /api/platform-admin/auth/google`.
+
+Both new endpoints **sign in only and never register**, which is the staff
+policy, not the shopper one:
+
+- A rider account is earned with a licence photo and a plate photo an operator
+  has reviewed; no Google credential carries either. A Google account with no
+  rider row is told to register. There is deliberately no Google button on the
+  rider *registration* form, where it would look like a way past the documents.
+- An operator account is made from the console with `platform-admin:create`. A
+  Google identity with no row is refused and logged. Worth stating plainly,
+  because this is the identity that acts across every tenant: it makes control
+  of that Google mailbox equivalent to the operator's password, so an operator's
+  Google account wants 2FA on it, and removing an operator means disabling the
+  row here — not only revoking their Google access.
+
+Schema: `google_sub`, nullable and unique, on `riders` and `platform_admins`.
+No `avatar_url` on either — a rider's `avatar_path` is a private-disk key and a
+remote URL in it would break the picture — and `password` stays NOT NULL on
+both, because neither door can create a row that has never had one.
+
+| | Roll back to | Holds |
+|---|---|---|
+| Backend | `backend-prev-20260923-164500-google-rider-admin` | the build before the two Google endpoints |
+| Frontend | `web.bak-20260923-164500-google-rider-admin` | the 16:18 build: Google on three cards, not five |
+| Database | `/root/db-backups/omaykan-predeploy-20260923-google-rider-admin.dump` | taken immediately before `migrate` |
+
+Rolling the backend back needs the migration reversed first (`migrate:rollback
+--step=1`); the column is additive, so a frontend-only rollback is safe on its
+own.
+
+Verified after the swap: 544 backend tests and 113 frontend tests pass, and
+`vue-tsc` is clean. On the live host, `/account`, `/seller/signup`, `/app`,
+`/rider` and `/platform-admin` all serve 200 and all five reach
+`assets/google-*.js` with the client id in it. Both new endpoints answer 422 to
+an absent credential and 422 to a junk one — the two `GoogleIdentityException`
+lines in `laravel-2026-09-23.log` at 08:41:51 UTC are those probes. The staff
+and customer Google endpoints still answer, `/api/stores` returns 200, and
+nginx's error log is clean.
 
 **Updated 2026-09-22, 13:19 UTC.** Frontend only, finishing the 13:08 shop page
 rework:
@@ -868,6 +936,25 @@ falls back to the demo catalog, which is itself empty unless
 every `.env*`**, so it is not in the repository. `apps/web/.env.production.example`
 is committed alongside it as the reproducible record — keep the two in step, and
 treat a blank tenant slug as a release blocker.
+
+**It has now happened twice.** On 2026-09-23 the 14:52 build went out with
+`VITE_GOOGLE_CLIENT_ID=` blank, and the Google button disappeared from the
+shopper, seller and staff sign-in cards. Same shape as the outage above: a blank
+value is a supported configuration — it means "this build ships no Google
+button" — so nothing failed, nothing logged, and the pages rendered correctly
+with a feature missing. The file carried `.env.production.example`'s comment
+verbatim, which is what regenerating it from the example looks like.
+
+Because the file is untracked, **git shows nothing when this happens**, and the
+loss is invisible in a diff and in review. Two habits catch it:
+
+- Diff the live values against the example before a build:
+  `comm -13 <(grep -oE '^VITE_[A-Z0-9_]+' apps/web/.env.production | sort) <(grep -oE '^VITE_[A-Z0-9_]+' apps/web/.env.production.example | sort)`
+  finds keys the example has and your file does not. Keys present in both but
+  *blank* in yours are the dangerous case — read those by eye.
+- Grep the finished bundle for what must be in it. A feature switched on by a
+  `VITE_*` value leaves that value in `dist/assets/`; if it is not there, the
+  build shipped the feature off.
 
 ### The build now renders the public pages, and needs an API to do it
 

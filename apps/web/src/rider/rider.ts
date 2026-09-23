@@ -2,6 +2,7 @@ import { computed, reactive } from 'vue'
 import {
   fetchRider,
   loginRider,
+  loginRiderWithGoogle,
   logoutRider,
   registerRider,
   RiderApiError,
@@ -89,6 +90,10 @@ export function useRiderSession() {
     return adopt(await loginRider(email, password))
   }
 
+  async function signInWithGoogle(credential: string): Promise<RiderProfile> {
+    return adopt(await loginRiderWithGoogle(credential))
+  }
+
   /**
    * Re-reads the account from the API.
    *
@@ -124,7 +129,17 @@ export function useRiderSession() {
     state.rider = null
   }
 
-  return { rider, signedIn, hydrating, approved, register, signIn, refresh, signOut }
+  return {
+    rider,
+    signedIn,
+    hydrating,
+    approved,
+    register,
+    signIn,
+    signInWithGoogle,
+    refresh,
+    signOut,
+  }
 }
 
 /**

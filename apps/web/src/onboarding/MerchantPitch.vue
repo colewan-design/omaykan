@@ -17,12 +17,22 @@ import {
   UserRound,
   UsersRound,
 } from '@lucide/vue'
+import { storefrontUrl } from '@pos/shared/index'
 import { SIZES, srcSet } from '@pos/web/ui/responsiveImg'
+import { SHOP_ROOT_DOMAIN, mainSiteOrigin } from '@pos/web/commerce/shopDomain'
+
+/** Each named shop's own page; the last card is the signup form below. */
+function shopHref(slug: string): string {
+  return storefrontUrl(slug, {
+    rootDomain: SHOP_ROOT_DOMAIN,
+    origin: mainSiteOrigin() || window.location.origin,
+  })
+}
 
 const stories = [
-  { name: 'Balili Highland Farm', kind: 'Farm produce', location: 'La Trinidad, Benguet', image: '/about/market-community.webp', href: '/?shop=balili-highland-farm' },
-  { name: 'Aling Nena Market Stall', kind: 'Public market stall', location: 'Baguio City', image: '/hero-merchant-redesign.webp', href: '/?shop=nenas-market-stall' },
-  { name: 'Lourdes Mini Grocery', kind: 'Mini grocery', location: 'Baguio City', image: '/about/shop-owner.webp', href: '/?shop=lourdes-mini-grocery' },
+  { name: 'Balili Highland Farm', kind: 'Farm produce', location: 'La Trinidad, Benguet', image: '/about/market-community.webp', href: shopHref('balili-highland-farm') },
+  { name: 'Aling Nena Market Stall', kind: 'Public market stall', location: 'Baguio City', image: '/hero-merchant-redesign.webp', href: shopHref('nenas-market-stall') },
+  { name: 'Lourdes Mini Grocery', kind: 'Mini grocery', location: 'Baguio City', image: '/about/shop-owner.webp', href: shopHref('lourdes-mini-grocery') },
   { name: 'Your shop could be next', kind: 'Built for local business', location: 'Across the Philippines', image: '/solution-analytics.png', href: '#register' },
 ]
 </script>

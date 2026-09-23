@@ -33,9 +33,10 @@ async function resolveShop(): Promise<{ slug: string; store: StoreSummary | null
   const named = shopSlugFromHost() || slugFromStorefrontPath(window.location.pathname)
   const fromQuery = new URLSearchParams(window.location.search).get('shop') ?? ''
 
-  // The header's shop search links to `?shop=<other>` on the current page,
-  // which would otherwise reopen this same shop. Send it to that shop's own
-  // address instead. Never resolves: the page is being left.
+  // `?shop=<other>` on this shop's own page — what every link made before
+  // shops had their own address looks like. It would otherwise reopen this
+  // same shop; send it to the one it names. Never resolves: the page is
+  // being left.
   if (named !== '' && fromQuery !== '' && fromQuery !== named) {
     const origin = mainSiteOrigin() || window.location.origin
     window.location.replace(storefrontUrl(fromQuery, { rootDomain: SHOP_ROOT_DOMAIN, origin }))

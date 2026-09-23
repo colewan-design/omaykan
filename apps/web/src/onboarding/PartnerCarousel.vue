@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { storefrontUrl } from '@pos/shared/index'
 import { fetchStores, type StoreSummary } from '@pos/web/commerce/api'
+import { SHOP_ROOT_DOMAIN, mainSiteOrigin } from '@pos/web/commerce/shopDomain'
 import { vReveal } from '@pos/web/landing/reveal'
 
 /**
@@ -100,9 +102,12 @@ function stopAutoplay() {
   timer = 0
 }
 
-/** The landing page, pointed at this shop — the same ?shop= its own directory uses. */
+/** The shop's own page — the same address its card in the directory carries. */
 function shopUrl(shop: StoreSummary): string {
-  return `/?shop=${encodeURIComponent(shop.orgSlug)}`
+  return storefrontUrl(shop.orgSlug, {
+    rootDomain: SHOP_ROOT_DOMAIN,
+    origin: mainSiteOrigin() || window.location.origin,
+  })
 }
 
 /** First letter of the shop name, for a shop with no usable photo. */

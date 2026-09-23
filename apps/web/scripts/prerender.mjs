@@ -36,7 +36,7 @@
 import path from 'node:path'
 import { writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { preview } from 'vite'
+import { loadEnv, preview } from 'vite'
 import { chromium } from 'playwright'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -45,6 +45,14 @@ const DIST = path.join(ROOT, 'dist')
 const API_BASE = process.env.PRERENDER_API_BASE?.trim() || 'http://127.0.0.1:8000'
 const SITE_URL = (process.env.PRERENDER_SITE_URL?.trim() || 'https://omaykan.com').replace(/\/+$/, '')
 const PORT = Number(process.env.PRERENDER_PORT ?? 4178)
+
+/**
+ * Where shops live, read from the same `.env.production` the bundle was built
+ * from so the sitemap cannot name an address the build does not link to.
+ * Blank for a build with no shop domain, where a shop's page is a path on the
+ * main site instead.
+ */
+const SHOP_ROOT_DOMAIN = (loadEnv('production', ROOT, 'VITE_').VITE_SHOP_ROOT_DOMAIN ?? '').trim().toLowerCase()
 
 /**
  * `minLinks` and `minText` are the floor a page must clear to be written.
@@ -75,12 +83,27 @@ function isoDate() {
   return new Date().toISOString().slice(0, 10)
 }
 
-function sitemapXml(paths) {
+function sitemapXml(urls) {
   const today = isoDate()
-  const entries = paths
-    .map((p) => `  <url>\n    <loc>${SITE_URL}${p}</loc>\n    <lastmod>${today}</lastmod>\n  </url>`)
+  const entries = urls
+    .map((u) => `  <url>\n    <loc>${u}</loc>\n    <lastmod>${today}</lastmod>\n  </url>`)
     .join('\n')
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${entries}\n</urlset>\n`
+}
+
+/**
+ * A shop's canonical address, the same one `storefrontUrl` builds for the
+ * bundle: its subdomain where a shop domain is configured, and `/shop/<slug>`
+ * on the main site where it is not.
+ *
+ * The rule is duplicated rather than imported because that helper is
+ * TypeScript in `packages/shared` and this script runs in plain node. Only the
+ * hostname-shape half of it is repeated: the API answers with real shops, and
+ * signup never issues a slug that cannot be a subdomain.
+ */
+function shopUrl(slug) {
+  const canBeHost = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(slug)
+  return SHOP_ROOT_DOMAIN !== '' && canBeHost ? `https://${slug}.${SHOP_ROOT_DOMAIN}` : `${SITE_URL}/shop/${slug}`
 }
 
 /**
@@ -204,11 +227,14 @@ async function main() {
       }
     }
 
-    // `/shop/<slug>` rather than `<slug>.omaykan.com`: a sitemap may only
-    // speak for its own host, and the path form is served from it.
-    const paths = ['/', ...EXTRA_SITEMAP_PATHS, ...shops.map((slug) => `/shop/${slug}`)]
-    await writeFile(path.join(DIST, 'sitemap.xml'), sitemapXml(paths), 'utf8')
-    console.log(`  sitemap.xml      → ${paths.length} urls`)
+    // Each shop as `<slug>.omaykan.com` — the address the directory links and
+    // the only one production serves the shop page at. A sitemap normally
+    // speaks only for its own host; listing another is allowed when that host
+    // points back at this sitemap, and every subdomain serves the main site's
+    // `robots.txt`, which names it.
+    const urls = [...['/', ...EXTRA_SITEMAP_PATHS].map((p) => `${SITE_URL}${p}`), ...shops.map(shopUrl)]
+    await writeFile(path.join(DIST, 'sitemap.xml'), sitemapXml(urls), 'utf8')
+    console.log(`  sitemap.xml      → ${urls.length} urls`)
   } finally {
     await browser.close()
     await server.close()

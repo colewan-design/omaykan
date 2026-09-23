@@ -11,8 +11,10 @@ import {
   type ConversationSummary,
   type ConversationThread,
 } from '@pos/web/commerce/api'
+import { storefrontUrl } from '@pos/shared/index'
 import { messageFor } from '@pos/web/commerce/customer'
 import { useUnreadMessages } from '@pos/web/commerce/messages'
+import { SHOP_ROOT_DOMAIN, mainSiteOrigin } from '@pos/web/commerce/shopDomain'
 
 // Messages with shops.
 //
@@ -64,7 +66,11 @@ const open = computed(() => activeId.value !== '' || draft.value !== null)
 const shopName = computed(() => thread.value?.conversation.store.name ?? draft.value?.name ?? '')
 const shopHref = computed(() => {
   const slug = thread.value?.conversation.store.orgSlug
-  return slug ? `/?shop=${encodeURIComponent(slug)}` : ''
+  if (!slug) return ''
+  return storefrontUrl(slug, {
+    rootDomain: SHOP_ROOT_DOMAIN,
+    origin: mainSiteOrigin() || window.location.origin,
+  })
 })
 
 function when(iso: string | null | undefined): string {

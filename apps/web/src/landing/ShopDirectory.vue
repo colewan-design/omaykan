@@ -1,22 +1,24 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { storefrontUrl } from '@pos/shared/index'
 import { fetchStores, type StoreSummary } from '@pos/web/commerce/api'
 import { DELIVERY_MAX_KM } from '@pos/web/commerce/delivery'
 import { ORG_SLUG } from '@pos/web/commerce/context'
 import { useDeliveryLocation } from '@pos/web/commerce/deliveryLocation'
+import { SHOP_ROOT_DOMAIN, mainSiteOrigin } from '@pos/web/commerce/shopDomain'
 
 /**
  * The shop list — what turns the landing page from one stall into a market.
  *
- * Picking a shop is a client-side swap. It used to be a real navigation,
- * because the catalog was a module-level singleton that loaded once and could
- * not be re-pointed; `reloadStorefrontCatalog` lifted that, and browsing a
- * market is exactly the case where losing the page on every shop you look at
- * is worth avoiding.
+ * A card is a plain `<a href>` to the shop's own address — its subdomain,
+ * `nenas-market-stall.omaykan.com`, or `/shop/<slug>` on a build with no shop
+ * domain. Picking a shop used to be a client-side swap that re-pointed this
+ * page's catalog in place; shops have their own page now, and that page is
+ * where a shop's shelf, hours and contact details actually live, so the
+ * directory hands the visitor over to it rather than imitating it.
  *
- * The card is still a real `<a href>`. That is what keeps middle-click,
- * ctrl-click and "copy link address" working, and it is the only version of
- * this list a crawler ever sees — `onPick` stands aside for all of them.
+ * Nothing intercepts the click, which is what keeps middle-click, ctrl-click
+ * and "copy link address" honest, and gives a crawler a real link per shop.
  */
 
 /**
@@ -37,7 +39,6 @@ const props = withDefaults(
   }>(),
   { query: '', current: '' },
 )
-const emit = defineEmits<{ (e: 'shop', store: StoreSummary): void }>()
 
 const delivery = useDeliveryLocation()
 
@@ -101,25 +102,15 @@ onBeforeUnmount(() => {
 })
 
 /**
- * Keeps whatever path serves the landing page — it is reachable as both `/`
- * and `/landing.html`, and hard-coding either one breaks the other.
+ * The shop's own address: `<slug>.omaykan.com` where a shop domain is
+ * configured, and `/shop/<slug>` on the main site where it is not — which is
+ * also where a slug too old to be a hostname lands.
  */
 function shopUrl(store: StoreSummary): string {
-  return `${window.location.pathname}?shop=${encodeURIComponent(store.orgSlug)}`
-}
-
-/**
- * Hand the choice to the page instead of letting the browser navigate.
- *
- * Every modified click is left alone: a ctrl/cmd click is asking for a new
- * tab, a shift click for a new window, and a middle click never reaches a
- * click handler as button 0. Those all want the real href, and get it.
- */
-function onPick(store: StoreSummary, event: MouseEvent): void {
-  if (event.defaultPrevented) return
-  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-  event.preventDefault()
-  emit('shop', store)
+  return storefrontUrl(store.orgSlug, {
+    rootDomain: SHOP_ROOT_DOMAIN,
+    origin: mainSiteOrigin() || window.location.origin,
+  })
 }
 
 function distanceLabel(store: StoreSummary): string {
@@ -234,7 +225,6 @@ const brokenImages = reactive(new Set<string>())
           :href="shopUrl(store)"
           class="shopcard"
           :class="{ 'shopcard--current': store.orgSlug === currentSlug }"
-          @click="onPick(store, $event)"
         >
           <span class="shopcard__art">
             <img

@@ -3,8 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { discountPercent } from '@pos/shared/index'
 import { retryStorefrontCatalog, useStockedCategories, useStorefrontCatalog } from '@pos/web/commerce/catalog'
 import { ORG_SLUG } from '@pos/web/commerce/context'
-import { applyShop, applyShopBySlug, resetShop } from '@pos/web/commerce/shopSwitch'
-import type { StoreSummary } from '@pos/web/commerce/api'
+import { applyShopBySlug, resetShop } from '@pos/web/commerce/shopSwitch'
 import { SIZES, srcSet } from '@pos/web/ui/responsiveImg'
 import FdHeader from './FdHeader.vue'
 import DeliveryBand from './DeliveryBand.vue'
@@ -123,29 +122,6 @@ function applyUrl() {
       })
     }
   }
-}
-
-/**
- * The visitor picked a shop out of the directory.
- *
- * No navigation: the context is re-pointed, the shelf re-fetched, and the URL
- * rewritten in place. The browsing state is cleared with it — an aisle filter
- * or an open product belongs to the shop it was found in, and carrying either
- * across would show an empty listing or a product this counter does not sell.
- */
-function onShop(store: StoreSummary) {
-  if (store.orgSlug === activeShop.value) return
-
-  applyShop(store)
-  activeShop.value = store.orgSlug
-  shopParam.value = store.orgSlug
-
-  activeProduct.value = ''
-  activeSearch.value = ''
-  listing.value = null
-  header.value?.clear()
-
-  syncUrl()
 }
 
 onMounted(() => window.addEventListener('popstate', applyUrl))
@@ -381,7 +357,7 @@ function clearSearch() {
                While searching it answers the same query — "SMJ Grocery" has
                to be able to return a shop — and hides itself when the term
                matches no shop. -->
-          <ShopDirectory v-if="onFrontPage" :query="activeSearch" :current="activeShop" @shop="onShop" />
+          <ShopDirectory v-if="onFrontPage" :query="activeSearch" :current="activeShop" />
 
           <!-- ── One product ──────────────────────────────────────────── -->
           <template v-if="browsingProduct">

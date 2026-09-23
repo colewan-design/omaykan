@@ -5,8 +5,10 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import BrandLogo from '@pos/core/components/BrandLogo.vue'
 import { useStorefrontCart } from '@pos/web/commerce/cart'
 import { useStockedCategories, useStorefrontCatalog } from '@pos/web/commerce/catalog'
+import { storefrontUrl } from '@pos/shared/index'
 import { fetchStores, type StoreSummary } from '@pos/web/commerce/api'
 import { useDeliveryLocation } from '@pos/web/commerce/deliveryLocation'
+import { SHOP_ROOT_DOMAIN, mainSiteOrigin } from '@pos/web/commerce/shopDomain'
 import { categoryIcon } from '@pos/core/utils/categoryIcons'
 import AddressDialog from './AddressDialog.vue'
 import SignupBanner from './SignupBanner.vue'
@@ -187,8 +189,13 @@ function moveCursor(delta: number) {
 function choose(hint: { kind: 'product' | 'shop'; id: string; label: string }) {
   suggestOpen.value = false
   cursor.value = -1
+  // A shop suggestion goes to that shop's own page, wherever the search was
+  // typed — the same address its card in the directory carries.
   if (hint.kind === 'shop') {
-    window.location.href = `${window.location.pathname}?shop=${encodeURIComponent(hint.id)}`
+    window.location.href = storefrontUrl(hint.id, {
+      rootDomain: SHOP_ROOT_DOMAIN,
+      origin: mainSiteOrigin() || window.location.origin,
+    })
     return
   }
   // On the landing page the product opens in place; anywhere else it is a

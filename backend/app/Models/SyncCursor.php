@@ -17,6 +17,7 @@ class SyncCursor extends Model
         'organization_id',
         'store_id',
         'device_id',
+        'user_id',
         'cursor_name',
         'cursor_value',
         'updated_at',

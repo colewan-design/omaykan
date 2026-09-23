@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      "Omaykan Seller", not "Omaykan". Both apps can sit on one phone — a shop
+      owner who also buys coffee — and two identical labels in the launcher is a
+      merchant tapping the wrong one at the wrong moment.
+    -->
+    <string name="app_name">Omaykan Seller</string>
+
+    <!-- The new-order alert, as the channel appears in Android's settings. -->
+    <string name="channel_new_orders">New orders</string>
+    <string name="channel_new_orders_description">Alerts when an order arrives from your storefront.</string>
+
+    <!--
+      The watcher's own channel, kept separate from the alert above so a
+      merchant can silence the standing notice without silencing the orders.
+    -->
+    <string name="channel_watching">Watching for orders</string>
+    <string name="channel_watching_description">The standing notice shown while this phone is watching for new orders.</string>
+    <string name="watching_title">Watching for orders</string>
+    <!--
+      The body of the standing notice. Deliberately not the channel description
+      above: that sentence explains the channel to somebody reading Android's
+      settings, and on the notification itself it reads as a manual entry rather
+      than a status line. This says what the phone is doing and what to expect.
+    -->
+    <string name="watching_body">You will be alerted when an order arrives, even with the app in the background.</string>
+    <string name="watching_stop">Stop</string>
+</resources>

@@ -1,65 +1,74 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { discountPercent } from '@pos/shared/index'
-import { useStockedCategories, useStorefrontCatalog } from '@pos/web/commerce/catalog'
+import { retryStorefrontCatalog, useStockedCategories, useStorefrontCatalog } from '@pos/web/commerce/catalog'
 import FdHeader from './FdHeader.vue'
+import DeliveryBand from './DeliveryBand.vue'
 import FdHero from './FdHero.vue'
+import CategoryTiles from './CategoryTiles.vue'
+import HowItWorks from './HowItWorks.vue'
 import FdFooter from './FdFooter.vue'
 import ProductRow from './ProductRow.vue'
-import ProductGrid from './ProductGrid.vue'
+import CategoryListing from './CategoryListing.vue'
+import HighlandBanner from './HighlandBanner.vue'
 import ProductDetail from './ProductDetail.vue'
 import PartnerDialog from './PartnerDialog.vue'
 import ShopDirectory from './ShopDirectory.vue'
+import StoriesBand from './StoriesBand.vue'
+import WhyOmaykan from './WhyOmaykan.vue'
+import { ALL_AISLES, emptyListing, readListing, townOf, writeListing, type ListingFilters } from './listing'
 
-// Grocery-marketplace landing, modelled on the FreshDirect reference: a dark
-// green utility bar with the search front and centre, then a stack of
-// horizontally-scrolling product shelves interleaved with editorial blocks.
+// The storefront, in the highland redesign: a forest-green bar, a full-bleed
+// photographic hero, the aisles as picture tiles, then shops and shelves on a
+// cream ground, broken once by a woven-edged band about the people behind the
+// counters.
 //
 // The page has three faces, and the URL says which one is showing:
-//   - nothing picked: the front page — hero, curated shelves, editorial;
-//   - ?category=: that aisle's full product listing, as a grid;
+//   - nothing picked: the front page — hero, tiles, shops, shelves, editorial;
+//   - ?category=: the listing — one aisle, several, or `all` — with its
+//     filters, sort and page alongside it in the URL (see listing.ts);
 //   - ?product=: one product at full size, with a quantity stepper.
-// Everything on all three is real catalog data, filtered in place. The /store
-// entry has been removed, so nothing here navigates away: search, aisle and
-// product all stay on this document. The cart still collects items
-// (localStorage) but has no checkout until the storefront comes back.
-
-/** Rows of the category grid are 6-8 cards wide, so this is 3-4 rows a click. */
-const PAGE_SIZE = 24
+// Everything on all three is real catalog data, filtered in place, so nothing
+// here navigates away: search, aisle and product all stay on this document.
 
 const catalog = useStorefrontCatalog()
 const stockedCategories = useStockedCategories()
 
 const loading = computed(() => catalog.loading)
+const catalogError = computed(() => catalog.error)
+
+function retryCatalog() {
+  retryStorefrontCatalog()
+}
 const products = computed(() => catalog.products.filter((p) => !p.outOfStock))
 
-// Search, aisle and product all live in the URL: arriving from the about page
-// is a real navigation back here (?q= from its search box, ?category= from its
-// nav), a product card is a real link anyone can copy or open in a new tab, and
-// keeping all three there afterwards is what makes Back walk the browsing back
-// out rather than leaving the site.
-function readUrl(): { q: string; category: string; product: string } {
+// Search, listing and product all live in the URL: arriving from the about
+// page is a real navigation back here (?q= from its search box, ?category=
+// from its menu), a product card is a real link anyone can copy or open in a
+// new tab, and keeping all of it there afterwards is what makes Back walk the
+// browsing back out rather than leaving the site.
+function readUrl(): { q: string; product: string; listing: ListingFilters | null } {
   try {
     const params = new URLSearchParams(window.location.search)
     return {
       q: params.get('q')?.trim() ?? '',
-      category: params.get('category')?.trim() ?? '',
       product: params.get('product')?.trim() ?? '',
+      listing: readListing(params),
     }
   } catch {
-    return { q: '', category: '', product: '' }
+    return { q: '', product: '', listing: null }
   }
 }
 
 const initialUrl = readUrl()
 const activeSearch = ref(initialUrl.q)
-const activeCategory = ref(initialUrl.category)
 const activeProduct = ref(initialUrl.product)
-const shownCount = ref(PAGE_SIZE)
+/** Null on the front page; the listing's aisles, filters, sort and page otherwise. */
+const listing = ref<ListingFilters | null>(initialUrl.listing)
 
 function syncUrl() {
   const params = new URLSearchParams()
-  if (activeCategory.value) params.set('category', activeCategory.value)
+  if (listing.value) writeListing(params, listing.value)
   if (activeSearch.value) params.set('q', activeSearch.value)
   if (activeProduct.value) params.set('product', activeProduct.value)
   const query = params.toString()
@@ -69,9 +78,8 @@ function syncUrl() {
 function applyUrl() {
   const next = readUrl()
   activeSearch.value = next.q
-  activeCategory.value = next.category
   activeProduct.value = next.product
-  shownCount.value = PAGE_SIZE
+  listing.value = next.listing
   if (!next.q) header.value?.clear()
 }
 
@@ -84,19 +92,15 @@ const visibleProducts = computed(() => {
   return products.value.filter((p) => p.name.toLowerCase().includes(needle))
 })
 
-/** The picked category, once the catalog is in — null while it is still loading. */
-const activeCategoryInfo = computed(
-  () => stockedCategories.value.find((c) => c.id === activeCategory.value) ?? null,
-)
-
 /**
- * Driven by the raw ids, not by the resolved records: the listing and the
- * detail have to be on screen from the first frame of a ?category= or
+ * Driven by the raw URL state, not by the resolved records: the listing and
+ * the detail have to be on screen from the first frame of a ?category= or
  * ?product= arrival, or the front page would flash its hero and shelves for as
  * long as the catalog takes to load.
  */
 const browsingProduct = computed(() => activeProduct.value !== '')
-const browsingCategory = computed(() => !browsingProduct.value && activeCategory.value !== '')
+const browsingListing = computed(() => !browsingProduct.value && listing.value !== null)
+const onFrontPage = computed(() => !browsingListing.value && !browsingProduct.value)
 
 /**
  * Looked up in the unfiltered catalog, unlike everything else on the page: a
@@ -113,10 +117,18 @@ const activeProductCategory = computed(() => {
   return catalog.categories.find((c) => c.id === categoryId) ?? null
 })
 
-/** On a product, the nav lights that product's own aisle — you are still in it. */
-const navCategory = computed(() =>
-  browsingProduct.value ? activeProductInfo.value?.categoryId ?? '' : activeCategory.value,
-)
+/**
+ * The aisle the header's menu lights: on a product, that product's own aisle —
+ * you are still in it; on the listing, "All products" or the one aisle
+ * showing. Several aisles at once is not one menu item, so it lights none.
+ */
+const navCategory = computed(() => {
+  if (browsingProduct.value) return activeProductInfo.value?.categoryId ?? ''
+  const aisles = listing.value?.categories
+  if (!aisles) return ''
+  if (aisles.length === 0) return ALL_AISLES
+  return aisles.length === 1 ? aisles[0] : ''
+})
 
 /** The rest of the aisle, so the detail is a place to keep shopping from. */
 const relatedProducts = computed(() => {
@@ -125,22 +137,36 @@ const relatedProducts = computed(() => {
   return products.value.filter((p) => p.categoryId === current.categoryId && p.id !== current.id).slice(0, 12)
 })
 
-/** Falls back to the id so an unknown ?category= still names what it looked for. */
-const categoryTitle = computed(
-  () => activeCategoryInfo.value?.name ?? activeCategory.value.replace(/-/g, ' '),
+/**
+ * Aisle names by id, for the shelves and the listing. A product with no
+ * photograph is drawn with its aisle's glyph, and that glyph is keyed on the
+ * aisle's *name* — the ids here are uuids the icon set knows nothing about.
+ */
+const aisleNames = computed(() =>
+  Object.fromEntries(stockedCategories.value.map((category) => [category.id, category.name])),
 )
 
-/** Search narrows within the aisle rather than dropping you out of it. */
-const scopedProducts = computed(() =>
-  browsingCategory.value
-    ? visibleProducts.value.filter((p) => p.categoryId === activeCategory.value)
-    : visibleProducts.value,
+/** The shop's own photo, behind the mark on a product that has none. */
+const merchantImage = computed(() => catalog.shop?.imageUrl ?? '')
+
+/** The town on the shop's sign: every product on the listing comes off its shelf. */
+const shopTown = computed(() => townOf(catalog.shop?.address))
+
+/**
+ * Every shelf on this page is one shop's stock — the catalog is fetched for a
+ * single tenant — so the shop's own name is the truest thing a shelf can be
+ * titled with. The redesign calls this row "Featured Products"; nothing here
+ * features anything, so it keeps the title that is true.
+ */
+const shelfTitle = computed(() =>
+  catalog.shop?.name ? `On the shelves at ${catalog.shop.name}` : 'On the shelves now',
 )
 
-const pagedProducts = computed(() => scopedProducts.value.slice(0, shownCount.value))
-const hasMore = computed(() => scopedProducts.value.length > shownCount.value)
-
-/** Shelves are v-if'd on non-empty, so a thin catalog just shows fewer rows. */
+/**
+ * The first twelve, not the best-selling twelve: nothing here counts orders.
+ * It was titled "Popular near you", which claimed both a ranking and a
+ * locality this list does not have.
+ */
 const popular = computed(() => visibleProducts.value.slice(0, 12))
 
 const deals = computed(() => visibleProducts.value.filter((p) => discountPercent(p) !== null))
@@ -159,15 +185,14 @@ const cheapest = computed(() =>
     .slice(0, 12),
 )
 
-/** Products from the largest category, for the editorial block. */
-const featureCategory = computed(() => {
-  if (catalog.categories.length === 0) return null
-  const counts = catalog.categories.map((c) => ({
-    category: c,
-    items: products.value.filter((p) => p.categoryId === c.id),
-  }))
-  return counts.sort((a, b) => b.items.length - a.items.length)[0] ?? null
-})
+/** What a merchant actually gets — each one is a thing that already ships. */
+const sellerBenefits = [
+  'Your own online storefront',
+  'Product and inventory management',
+  'Order management',
+  'Local customer discovery',
+  'No marketplace commission',
+]
 
 const header = ref<InstanceType<typeof FdHeader> | null>(null)
 
@@ -177,25 +202,64 @@ async function scrollToShop() {
   document.getElementById('shop')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
+/**
+ * The listing opens under its banner and its row of aisles, so arriving there
+ * goes to the top of the page; the #shop anchor would scroll both out of sight.
+ */
+function scrollToTop() {
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+/**
+ * Only when the results have scrolled up out of view: a filter applied with
+ * the grid already on screen should not move the page under the pointer.
+ */
+async function scrollToResults() {
+  await nextTick()
+  const results = document.getElementById('listing-results')
+  if (results && results.getBoundingClientRect().top < 100) {
+    results.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
+
 function onSearch(term: string) {
   activeSearch.value = term
   // Searching is a request for results, so it steps out of a single product.
   activeProduct.value = ''
-  shownCount.value = PAGE_SIZE
+  // Search narrows within the listing; a page number from before it could
+  // point past the end of what is left.
+  if (listing.value) listing.value = { ...listing.value, page: 1 }
   syncUrl()
   void scrollToShop()
 }
 
-/** Clicking the aisle you are already in steps back out to the front page. */
+/**
+ * An aisle from the header's menu or a product's breadcrumb: that aisle alone,
+ * with the filters starting fresh. Picking the aisle you are already in steps
+ * back out to the front page.
+ */
 function onCategory(categoryId: string) {
   const leavingProduct = browsingProduct.value
   activeProduct.value = ''
+  const target = categoryId === ALL_AISLES ? [] : [categoryId]
+  const current = listing.value?.categories
   // Picking the aisle you were already in, from a product, means "back to the
   // listing" rather than "back to the front page".
-  activeCategory.value = !leavingProduct && activeCategory.value === categoryId ? '' : categoryId
-  shownCount.value = PAGE_SIZE
+  const alreadyHere = !leavingProduct
+    && current !== undefined
+    && current.length === target.length
+    && current.every((id, i) => id === target[i])
+  listing.value = alreadyHere ? null : emptyListing(target)
   syncUrl()
-  void scrollToShop()
+  if (listing.value) scrollToTop()
+  else void scrollToShop()
+}
+
+/** The listing's own controls: its aisle tiles, filters, sort and pages. */
+function onListingChange(next: ListingFilters) {
+  listing.value = next
+  syncUrl()
+  void scrollToResults()
 }
 
 function openProduct(productId: string) {
@@ -204,24 +268,17 @@ function openProduct(productId: string) {
   void scrollToShop()
 }
 
-/** The detail's breadcrumb root: out of the product and out of the aisle. */
+/** The detail's breadcrumb root: out of the product and out of the listing. */
 function backToEverything() {
   activeProduct.value = ''
-  activeCategory.value = ''
-  shownCount.value = PAGE_SIZE
+  listing.value = null
   syncUrl()
   void scrollToShop()
 }
 
-function clearCategory() {
-  activeCategory.value = ''
-  shownCount.value = PAGE_SIZE
-  syncUrl()
-}
-
 function clearSearch() {
   activeSearch.value = ''
-  shownCount.value = PAGE_SIZE
+  if (listing.value) listing.value = { ...listing.value, page: 1 }
   header.value?.clear()
   syncUrl()
 }
@@ -234,23 +291,42 @@ function clearSearch() {
       ref="header"
       :active-category="navCategory"
       @search="onSearch"
+      @product="openProduct"
       @category="onCategory"
     />
 
     <main class="fd-main">
 
+      <!-- Full-bleed, above the padded column. The hero sells the service; the
+           listing gets the redesign's strip of highland instead, and on a
+           product the goods are the point, so both stand down. -->
+      <FdHero v-if="onFrontPage" />
+      <HighlandBanner v-else-if="browsingListing" />
+
       <div class="fd-wrap">
 
-        <!-- The hero sells the service; inside an aisle or on a product the
-             goods are the point, so it stands down. -->
-        <FdHero v-if="!browsingCategory && !browsingProduct" />
+        <!-- Directly under the banner, so "what is this?" and "is it near me?"
+             are answered in the same glance. It is also the only delivery
+             control on a phone. -->
+        <DeliveryBand v-if="onFrontPage" />
+
+        <!-- The aisles, straight after the hero as the redesign has them. Not
+             while searching: they are not an answer to the query. -->
+        <CategoryTiles v-if="onFrontPage && !activeSearch" @category="onCategory" />
 
         <!-- The anchor every "shop" link, the search submit and the category
-             nav scroll to. It used to sit on a "Shop by category" block that
-             listed a fixed taxonomy, linked to the same place, and filtered
-             nothing — the block went, the nav took over the job, and the id
-             moved here onto the products people were being sent to. -->
+             menu scroll to. -->
         <div id="shop">
+
+          <!-- ── Shops, then goods ─────────────────────────────────────
+               The merchants come before any shelf: this is a marketplace of
+               counters, and which shop you are buying from is the choice that
+               frames every other one.
+
+               While searching it answers the same query — "SMJ Grocery" has
+               to be able to return a shop — and hides itself when the term
+               matches no shop. -->
+          <ShopDirectory v-if="onFrontPage" :query="activeSearch" />
 
           <!-- ── One product ──────────────────────────────────────────── -->
           <template v-if="browsingProduct">
@@ -266,57 +342,40 @@ function clearSearch() {
 
             <p v-else-if="loading" class="fd-loading">Loading this product…</p>
 
-            <p v-else class="fd-cat__empty">
+            <p v-else class="fd-missing">
               That product isn't on the shelf any more.
               <button type="button" class="fd-linkbtn" @click="backToEverything">Browse everything</button>
             </p>
           </template>
 
-          <!-- ── One aisle ────────────────────────────────────────────── -->
-          <section v-else-if="browsingCategory" class="fd-cat">
-            <nav class="fd-cat__crumbs" aria-label="Breadcrumb">
-              <a href="#shop" @click.prevent="clearCategory">All categories</a>
-              <span aria-hidden="true">›</span>
-              <span class="fd-cat__here">{{ categoryTitle }}</span>
-            </nav>
-
-            <div class="fd-cat__head">
-              <h1 class="fd-cat__title">{{ categoryTitle }}</h1>
-              <p v-if="!loading" class="fd-cat__count">
-                {{ scopedProducts.length }} item{{ scopedProducts.length === 1 ? '' : 's' }}<template
-                  v-if="activeSearch"
-                > matching &ldquo;{{ activeSearch }}&rdquo;</template>
-              </p>
-            </div>
-
-            <p v-if="loading" class="fd-loading">Loading today's catalog…</p>
-
-            <template v-else-if="scopedProducts.length > 0">
-              <ProductGrid :products="pagedProducts" @select="openProduct" />
-
-              <div v-if="hasMore" class="fd-cat__more">
-                <button type="button" class="fd-btn" @click="shownCount += PAGE_SIZE">
-                  Show more
-                </button>
-              </div>
-            </template>
-
-            <p v-else class="fd-cat__empty">
-              <template v-if="activeSearch">
-                Nothing in {{ categoryTitle }} matches &ldquo;{{ activeSearch }}&rdquo;.
-                <button type="button" class="fd-linkbtn" @click="clearSearch">Clear search</button>
-              </template>
-              <template v-else>
-                Nothing in {{ categoryTitle }} today.
-                <button type="button" class="fd-linkbtn" @click="clearCategory">Browse everything</button>
-              </template>
-            </p>
-          </section>
+          <!-- ── The listing ──────────────────────────────────────────── -->
+          <CategoryListing
+            v-else-if="browsingListing && listing"
+            :filters="listing"
+            :products="visibleProducts"
+            :categories="stockedCategories"
+            :loading="loading"
+            :error="catalogError"
+            :search="activeSearch"
+            :place="shopTown"
+            :merchant-image-url="merchantImage"
+            @change="onListingChange"
+            @select="openProduct"
+            @retry="retryCatalog"
+            @clear-search="clearSearch"
+          />
 
           <!-- ── The front page ───────────────────────────────────────── -->
           <template v-else>
 
             <p v-if="loading" class="fd-loading">Loading today's catalog…</p>
+
+            <!-- A catalog that failed to load would otherwise drop every shelf
+                 and leave the front page blank, with nothing said. -->
+            <p v-else-if="catalogError" class="fd-catalog-error">
+              {{ catalogError }}
+              <button type="button" class="fd-linkbtn" @click="retryCatalog">Try again</button>
+            </p>
 
             <!-- Without this the shelves would simply vanish on a no-match search,
                  leaving a blank page with no explanation. -->
@@ -329,38 +388,71 @@ function clearSearch() {
               <button type="button" class="fd-linkbtn" @click="clearSearch">Clear search</button>
             </p>
 
-            <ProductRow title="Popular now" :products="popular" @select="openProduct" />
+            <!-- After the shops, before the first shelf: a first-time visitor
+                 sees that the market is real, then learns how to use it. -->
+            <HowItWorks v-if="!activeSearch" />
 
             <ProductRow
-              title="Fresh deals: this week's best for less"
-              blurb="Marked down by the shops themselves — no commission taken out, so the discount reaches you whole."
-              :products="deals"
+              :title="shelfTitle"
+              :products="popular"
+              :category-names="aisleNames"
+              :merchant-image-url="merchantImage"
               @select="openProduct"
             />
 
-            <!-- ── Editorial ─────────────────────────────────────────── -->
-            <section v-if="featureCategory && featureCategory.items.length > 0" class="fd-editorial">
-              <div class="fd-editorial__body">
-                <div class="fdrow-head">
-                  <h2 class="fd-h2">Meet your local vendors</h2>
-                  <a href="/signup" class="fd-viewall">Become one</a>
-                </div>
-                <p class="fd-editorial__copy">
-                  Every shop here is a real counter somewhere in the city — a carinderia, a sari-sari
-                  store, a market stall. They run their day on Omaykan's point of sale, and
-                  the same catalog they ring up in person is the one you're browsing now. Nothing is
-                  marked up for the privilege.
+            <!-- The redesign's band, right after the first shelf. Not while
+                 searching: it is editorial, and a results page is not the
+                 place for it. -->
+            <StoriesBand v-if="!activeSearch" />
+
+            <WhyOmaykan />
+
+            <ProductRow
+              anchor="deals"
+              title="Marked down at the counter"
+              blurb="The shops set these markdowns themselves, and Omaykan takes no percentage of a sale — so the discount reaches you whole."
+              :products="deals"
+              :category-names="aisleNames"
+              :merchant-image-url="merchantImage"
+              @select="openProduct"
+            />
+
+            <!-- ── Seller acquisition ────────────────────────────────
+                 Asks the question directly and answers what you get. -->
+            <section class="fd-seller">
+              <div class="fd-seller__body">
+                <p class="sf-eyebrow fd-seller__eyebrow">For shop owners</p>
+                <h2 class="fd-seller__title">Own a store in Baguio or La Trinidad?</h2>
+
+                <p class="fd-seller__lead">
+                  Put your products online and start accepting local orders through Omaykan.
                 </p>
-                <a href="/signup" class="fd-btn">List your shop for free</a>
+
+                <p class="fd-seller__terms">
+                  No sales commission. Keep 100% of your product sales.
+                </p>
+
+                <a href="/seller/signup" class="fd-seller__cta">List your store</a>
+                <p class="fd-seller__note">Free while we're in early access.</p>
+
+                <ul class="fd-seller__list">
+                  <li v-for="item in sellerBenefits" :key="item">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+                    <span>{{ item }}</span>
+                  </li>
+                </ul>
               </div>
-              <div class="fd-editorial__art">
-                <img src="/delivery/fruit-basket.webp" alt="Basket of fresh fruit and vegetables" width="900" height="1125" loading="lazy" />
+
+              <div class="fd-seller__art">
+                <img src="/delivery/fruit-basket.webp" alt="" width="900" height="1125" loading="lazy" />
               </div>
             </section>
 
             <ProductRow
               title="Everyday essentials under ₱100"
               :products="cheapest"
+              :category-names="aisleNames"
+              :merchant-image-url="merchantImage"
               @select="openProduct"
             />
 
@@ -368,23 +460,6 @@ function clearSearch() {
 
         </div>
 
-        <!-- ── Shops ─────────────────────────────────────────────────────
-             Only on the shelf view: while browsing one category or one
-             product, the visitor is inside a shop, and a list of other shops
-             underneath it is a way out of what they were doing. -->
-        <ShopDirectory v-if="!browsingCategory && !browsingProduct" />
-
-        <!-- ── Merchant strip ────────────────────────────────────────── -->
-        <section class="fd-merchant">
-          <div>
-            <h2 class="fd-merchant__title">Run a shop? Sell with us.</h2>
-            <p class="fd-merchant__sub">
-              A full point-of-sale, a storefront, and riders — free while we're in early access.
-              You keep 100% of every sale.
-            </p>
-          </div>
-          <a href="/signup" class="fd-merchant__cta">Get started</a>
-        </section>
       </div>
     </main>
 
@@ -399,7 +474,7 @@ function clearSearch() {
 <style scoped>
 .fd-searchnote {
   margin: 0 0 4px;
-  color: #4a5b52;
+  color: var(--sf-muted);
   font-size: 14px;
   font-weight: 600;
 }
@@ -411,152 +486,118 @@ function clearSearch() {
   border: none;
   background: none;
   padding: 0;
-  color: #1a6b3c;
+  color: var(--sf-clay);
   font: inherit;
   text-decoration: underline;
   cursor: pointer;
 }
 
 /* ── Layout ──────────────────────────────────────────────────────── */
-.fd-main { background: #fff; }
-.fd-wrap { padding: 52px var(--fd-gutter) 72px; }
+.fd-main { background: var(--sf-cream); }
+.fd-wrap { padding: 40px var(--fd-gutter) 72px; }
 
-/* The header is sticky and two rows tall (162px measured, 198px once the bar
-   wraps below 760px), so an un-offset scroll parks the heading underneath it. */
-#shop { scroll-margin-top: 178px; }
+/* The header is sticky and one row tall on a desktop (74px), three once it
+   wraps on a phone, so an un-offset scroll parks the heading underneath it. */
+#shop { scroll-margin-top: 96px; }
 
-.fd-h2 {
-  margin: 0;
-  font-size: clamp(1.25rem, 2.4vw, 1.75rem);
-  font-weight: 800;
-  letter-spacing: -0.025em;
-  color: #1a1a1a;
-}
+.fd-loading { margin: 0 0 40px; color: var(--sf-faint); font-size: 15px; }
+.fd-catalog-error { margin: 0 0 40px; color: #b3261e; font-size: 15px; }
+.fd-missing { margin: 0 0 40px; color: var(--sf-muted); font-size: 15px; }
 
-.fdrow-head {
-  display: flex;
-  align-items: baseline;
-  gap: 14px;
-  flex-wrap: wrap;
-  margin-bottom: 18px;
-}
-
-.fd-viewall {
-  font-size: 14px;
-  font-weight: 600;
-  color: #16a34a;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-.fd-viewall:hover { color: #1a6b3c; }
-
-.fd-loading { margin: 0 0 40px; color: #9ca3af; font-size: 15px; }
-
-/* ── Category listing ────────────────────────────────────────────── */
-.fd-cat { margin-bottom: 56px; }
-
-.fd-cat__crumbs {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-  font-size: 13.5px;
-  color: #9ca3af;
-}
-.fd-cat__crumbs a { color: #1a6b3c; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
-.fd-cat__crumbs a:hover { color: #16a34a; }
-.fd-cat__here { color: #4b5563; font-weight: 600; text-transform: capitalize; }
-
-.fd-cat__head {
-  display: flex;
-  align-items: baseline;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-bottom: 26px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid #e7eae8;
-}
-
-.fd-cat__title {
-  margin: 0;
-  font-size: clamp(1.6rem, 3.4vw, 2.25rem);
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  color: #1a1a1a;
-  text-transform: capitalize;
-}
-
-.fd-cat__count { margin: 0; font-size: 14px; color: #6b7280; }
-
-.fd-cat__more { display: flex; justify-content: center; margin-top: 40px; }
-
-.fd-cat__empty { margin: 0; color: #6b7280; font-size: 15px; }
-
-/* ── Editorial ───────────────────────────────────────────────────── */
-.fd-editorial {
+/* ── Seller acquisition ──────────────────────────────────────────── */
+.fd-seller {
   display: grid;
   grid-template-columns: 1.15fr 0.85fr;
   gap: 44px;
   align-items: center;
   margin-bottom: 56px;
-  padding: 36px;
-  border-radius: 14px;
-  background: #f5f9f6;
+  padding: 40px;
+  border-radius: 10px;
+  background: var(--sf-sand);
 }
-.fd-editorial__copy {
+
+.fd-seller__eyebrow { color: var(--sf-clay); }
+
+.fd-seller__title {
+  margin: 0 0 12px;
+  font-family: var(--sf-serif);
+  font-size: clamp(1.5rem, 2.3vw, 2rem);
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--sf-ink);
+  text-wrap: balance;
+}
+
+.fd-seller__lead {
+  margin: 0 0 12px;
+  max-width: 46ch;
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: var(--sf-muted);
+}
+
+/* The one line a shop owner is deciding on. */
+.fd-seller__terms {
   margin: 0 0 22px;
-  font-size: 15px;
-  line-height: 1.7;
-  color: #4b5563;
+  font-size: 15.5px;
+  font-weight: 800;
+  line-height: 1.5;
+  color: var(--sf-forest);
 }
-.fd-editorial__art { display: flex; justify-content: center; }
-.fd-editorial__art img { width: 100%; max-width: 300px; height: auto; }
 
-.fd-btn {
+.fd-seller__cta {
   display: inline-block;
-  padding: 12px 24px;
-  border: none;
-  border-radius: 999px;
-  background: #1a1a1a;
+  padding: 13px 30px;
+  border-radius: 6px;
+  background: var(--sf-clay);
   color: #fff;
-  font: 700 14.5px/1.2 inherit;
-  cursor: pointer;
+  font-size: 15px;
+  font-weight: 700;
 }
-.fd-btn:hover { background: #1a6b3c; }
+.fd-seller__cta:hover { background: var(--sf-clay-deep); }
+.fd-seller__cta:focus-visible { outline: 2px solid var(--sf-forest); outline-offset: 3px; }
 
-/* ── Merchant strip ──────────────────────────────────────────────── */
-.fd-merchant {
+.fd-seller__note {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--sf-muted);
+}
+
+.fd-seller__list {
+  margin: 24px 0 0;
+  padding: 22px 0 0;
+  border-top: 1px solid var(--sf-sand-deep);
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+.fd-seller__list li {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 28px;
-  flex-wrap: wrap;
-  padding: 34px 36px;
-  border-radius: 14px;
-  background: #1a6b3c;
-  color: #fff;
+  gap: 10px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--sf-ink);
 }
-.fd-merchant__title { margin: 0 0 6px; font-size: 1.6rem; font-weight: 800; letter-spacing: -0.03em; }
-.fd-merchant__sub { margin: 0; max-width: 560px; font-size: 14.5px; line-height: 1.6; color: rgba(255,255,255,0.85); }
-.fd-merchant__cta {
-  flex-shrink: 0;
-  padding: 13px 30px;
-  border-radius: 999px;
-  background: #bbf451;
-  color: #06240f;
-  font-size: 15px;
-  font-weight: 800;
-}
-.fd-merchant__cta:hover { background: #fff; }
+.fd-seller__list svg { flex-shrink: 0; color: var(--sf-forest); }
+
+.fd-seller__art { display: flex; justify-content: center; }
+.fd-seller__art img { width: 100%; max-width: 300px; height: auto; }
 
 /* ── Responsive ──────────────────────────────────────────────────── */
 @media (max-width: 1080px) {
-  .fd-editorial { grid-template-columns: 1fr; gap: 28px; }
+  /* The art goes under the pitch rather than beside it; the checklist keeps
+     its own column so it does not become one long ladder on a tablet. */
+  .fd-seller { grid-template-columns: 1fr; gap: 28px; }
+  .fd-seller__list { grid-template-columns: 1fr 1fr; column-gap: 24px; }
+}
+@media (max-width: 980px) {
+  #shop { scroll-margin-top: 180px; }
 }
 @media (max-width: 760px) {
-  .fd-wrap { padding: 32px var(--fd-gutter) 56px; }
-  .fd-editorial { padding: 24px; }
-  .fd-merchant { padding: 26px 22px; }
-  #shop { scroll-margin-top: 214px; }
+  .fd-wrap { padding: 28px var(--fd-gutter) 56px; }
+  .fd-seller { padding: 24px; }
+  .fd-seller__list { grid-template-columns: 1fr; }
+  .fd-seller__cta { display: block; text-align: center; }
 }
 </style>

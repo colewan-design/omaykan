@@ -84,13 +84,6 @@ class DatabaseSeeder extends Seeder
             ],
         );
 
-        // Sets the bcrypt hash and the discovery lookup key together; assigning
-        // either column directly lets the two drift apart.
-        if ($store->public_store_code === null) {
-            $store->setPairingCode('123456');
-            $store->save();
-        }
-
         $admin = User::query()->firstOrCreate([
             'email' => 'admin@example.com',
         ], [
@@ -188,11 +181,32 @@ class DatabaseSeeder extends Seeder
         );
 
         // DemoSellerSeeder fills this shop out to its full shelf and adds a
-        // seller for each of the other business modes. It is deliberately NOT
-        // called from here: the tests seed through this class and assert
-        // against exactly the one category and one product above, so chaining
-        // it in turns a fixture into 550 products. Run it by name instead:
+        // seller for each of the other business modes.
         //
-        //   php artisan db:seed --class=DemoSellerSeeder
+        // It is chained only on `local`, never on `testing`: the tests seed
+        // through this class and assert against exactly the one category and
+        // one product above, so chaining it unconditionally turns a fixture
+        // into 550 products. Production is excluded for the obvious reason —
+        // a live install must not grow four demo shops.
+        //
+        // The gate exists because the two-step version kept costing a rebuilt
+        // local database its catalog: `db:seed` alone leaves a one-product
+        // shop, the storefront then looks broken rather than empty, and the
+        // second command is the one nobody remembers. Both seeders are
+        // firstOrCreate throughout, so this stays safe to re-run.
+        if (app()->environment('local')) {
+            $this->call(DemoSellerSeeder::class);
+
+            // Same gate, same reason, plus one of its own: RiderSeeder's
+            // approved account has a password in this repository, and a rider
+            // token reads live customer addresses and phone numbers.
+            $this->call(RiderSeeder::class);
+
+            // Shelves without a till: DemoSellerSeeder gives every demo shop a
+            // catalog, and until this ran none of them had ever sold anything,
+            // so the seller dashboard opened on ₱0.00 and an empty chart. Runs
+            // last because it sells what the seeders above put on the shelf.
+            $this->call(DemoOrderSeeder::class);
+        }
     }
 }

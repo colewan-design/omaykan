@@ -2,23 +2,26 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\ActsForAStore;
 use App\Http\Controllers\Controller;
 use App\Models\CashMovement;
-use App\Models\Device;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\Shift;
 use App\Models\StoreMembership;
 use App\Models\User;
+use App\Services\StoreContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class ShiftController extends Controller
 {
+    use ActsForAStore;
+
     public function current(Request $request)
     {
-        $device = $this->deviceFromRequest($request);
-        $shift = $this->currentShiftForDevice($device);
+        $context = $this->storeContext($request);
+        $shift = $this->currentShiftForStore($context);
 
         return response()->json([
             'shift' => $shift ? $this->serializeShift($shift) : null,
@@ -27,11 +30,11 @@ class ShiftController extends Controller
 
     public function history(Request $request)
     {
-        $device = $this->deviceFromRequest($request);
+        $context = $this->storeContext($request);
 
         $shifts = Shift::query()
-            ->where('organization_id', $device->organization_id)
-            ->where('store_id', $device->store_id)
+            ->where('organization_id', $context->organizationId())
+            ->where('store_id', $context->storeId())
             ->whereNotNull('closed_at')
             ->latest('closed_at')
             ->limit(50)
@@ -44,22 +47,25 @@ class ShiftController extends Controller
 
     public function open(Request $request)
     {
-        $device = $this->deviceFromRequest($request);
+        $context = $this->writableStoreContext($request);
         $validated = $request->validate([
             'openingCashCents' => ['required', 'integer', 'min:0'],
             'userId' => ['nullable', 'uuid'],
         ]);
 
-        if ($this->currentShiftForDevice($device)) {
+        if ($this->currentShiftForStore($context)) {
             abort(422, 'An active shift already exists for this store.');
         }
 
-        $userId = $this->validatedUserId($device, $validated['userId'] ?? null);
+        $userId = $this->validatedUserId($context, $validated['userId'] ?? null);
 
         $shift = Shift::query()->create([
-            'organization_id' => $device->organization_id,
-            'store_id' => $device->store_id,
-            'device_id' => $device->id,
+            'organization_id' => $context->organizationId(),
+            'store_id' => $context->storeId(),
+            // Null now, always: nothing pairs any more, so there is no terminal
+            // to name. Who did it is `opened_by_user_id`, and that is no longer
+            // a guess the client supplies.
+            'device_id' => null,
             'opened_by_user_id' => $userId,
             'opening_cash_cents' => $validated['openingCashCents'],
             'opened_at' => now(),
@@ -72,8 +78,8 @@ class ShiftController extends Controller
 
     public function addMovement(Request $request)
     {
-        $device = $this->deviceFromRequest($request);
-        $shift = $this->currentShiftForDevice($device);
+        $context = $this->storeContext($request);
+        $shift = $this->currentShiftForStore($context);
         abort_unless($shift, 422, 'No active shift is open for this store.');
 
         $validated = $request->validate([
@@ -83,11 +89,11 @@ class ShiftController extends Controller
             'userId' => ['nullable', 'uuid'],
         ]);
 
-        $userId = $this->validatedUserId($device, $validated['userId'] ?? null);
+        $userId = $this->validatedUserId($context, $validated['userId'] ?? null);
 
         CashMovement::query()->create([
-            'organization_id' => $device->organization_id,
-            'store_id' => $device->store_id,
+            'organization_id' => $context->organizationId(),
+            'store_id' => $context->storeId(),
             'shift_id' => $shift->id,
             'user_id' => $userId,
             'movement_type' => $validated['movementType'],
@@ -102,8 +108,8 @@ class ShiftController extends Controller
 
     public function close(Request $request)
     {
-        $device = $this->deviceFromRequest($request);
-        $shift = $this->currentShiftForDevice($device);
+        $context = $this->storeContext($request);
+        $shift = $this->currentShiftForStore($context);
         abort_unless($shift, 422, 'No active shift is open for this store.');
 
         $validated = $request->validate([
@@ -111,7 +117,7 @@ class ShiftController extends Controller
             'userId' => ['nullable', 'uuid'],
         ]);
 
-        $userId = $this->validatedUserId($device, $validated['userId'] ?? null);
+        $userId = $this->validatedUserId($context, $validated['userId'] ?? null);
 
         DB::transaction(function () use ($shift, $validated, $userId): void {
             $freshShift = $shift->fresh('cashMovements');
@@ -228,20 +234,31 @@ class ShiftController extends Controller
         return $this->ordersForShift($shift)->count();
     }
 
-    private function currentShiftForDevice(Device $device): ?Shift
+    private function currentShiftForStore(StoreContext $context): ?Shift
     {
         return Shift::query()
-            ->where('organization_id', $device->organization_id)
-            ->where('store_id', $device->store_id)
+            ->where('organization_id', $context->organizationId())
+            ->where('store_id', $context->storeId())
             ->whereNull('closed_at')
             ->latest('opened_at')
             ->first();
     }
 
-    private function validatedUserId(Device $device, ?string $userId): ?string
+    /**
+     * Who this shift action is recorded against.
+     *
+     * A till used to have to be told, because a paired device had no person
+     * behind it and the column would otherwise be null on every cash movement
+     * in the shop. The caller is a person now, so the default is simply them —
+     * and an explicit `userId` still wins, for a manager opening the drawer on
+     * behalf of whoever is about to stand at it. That name is still checked
+     * against the shop's membership, so it can only ever be someone who works
+     * there.
+     */
+    private function validatedUserId(StoreContext $context, ?string $userId): ?string
     {
         if (! $userId) {
-            return null;
+            return $context->user->id;
         }
 
         abort_unless(
@@ -251,24 +268,12 @@ class ShiftController extends Controller
         );
 
         $hasMembership = StoreMembership::query()
-            ->where('store_id', $device->store_id)
+            ->where('store_id', $context->storeId())
             ->where('user_id', $userId)
             ->exists();
 
         abort_unless($hasMembership, 403, 'Selected user does not belong to this store.');
 
         return $userId;
-    }
-
-    private function deviceFromRequest(Request $request): Device
-    {
-        $device = $request->user();
-        abort_unless($device instanceof Device, 403, 'Authenticated device required.');
-
-        $device->forceFill([
-            'last_seen_at' => now(),
-        ])->save();
-
-        return $device;
     }
 }

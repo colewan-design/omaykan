@@ -1,898 +1,352 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { ArrowRight, Ban, CreditCard, Printer, ReceiptText, Search, Wallet, X } from '@lucide/vue'
+import {
+  Ban, Banknote, BarChart3, Bike, CheckCircle2, ChevronLeft, ChevronRight, Clock3,
+  CreditCard, Ellipsis, FileDown, PackageCheck, Printer, ReceiptText, Search,
+  ShoppingBag, Tags, Utensils, WalletCards, X, type LucideIcon,
+} from '@lucide/vue'
 import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
-import ChartCard from '@pos/core/components/ChartCard.vue'
-import MetricCard from '@pos/core/components/MetricCard.vue'
 import RangeSelector, { type Range } from '@pos/core/components/RangeSelector.vue'
 import { useAuthStore } from '@pos/core/stores/auth'
 import { usePosStore } from '@pos/core/stores/pos'
 import { printReceipt } from '@pos/core/utils/receipt'
-import {
-  businessModeLabel,
-  formatCompactDate,
-  formatCurrency,
-  type BusinessMode,
-  type OrderSummary,
-  type PaymentMethod,
-} from '@pos/shared/index'
+import { businessModeLabel, formatCurrency, type OrderStatus, type OrderSummary, type PaymentMethod } from '@pos/shared/index'
 
+type StatusFilter = 'all' | OrderStatus | 'pending'
+type ModeFilter = 'all' | 'delivery' | 'pickup' | 'dine_in' | 'takeaway'
+type DisplayStatus = 'preparing' | 'pending' | 'ready' | 'completed' | 'voided'
+
+const PAGE_SIZE = 6
 const store = usePosStore()
 const auth = useAuthStore()
-
-onMounted(() => {
-  if (!store.isReady) {
-    void store.initialize()
-  }
-})
-
-const paymentFilterOptions: { value: 'all' | PaymentMethod; label: string }[] = [
-  { value: 'all',     label: 'All payments' },
-  { value: 'cash',    label: 'Cash' },
-  { value: 'card',    label: 'Card' },
-  { value: 'ewallet', label: 'E-wallet' },
-]
-
-const modeFilterOptions: { value: 'all' | BusinessMode; label: string }[] = [
-  { value: 'all',           label: 'All modes' },
-  { value: 'coffee-shop',   label: 'Coffee shop' },
-  { value: 'grocery',       label: 'Grocery store' },
-  { value: 'restaurant',    label: 'Restaurant' },
-  { value: 'nail-salon',    label: 'Nail salon' },
-]
-
 const range = ref<Range>('week')
 const searchQuery = ref('')
+const statusFilter = ref<StatusFilter>('all')
 const paymentFilter = ref<'all' | PaymentMethod>('all')
-const modeFilter = ref<'all' | BusinessMode>('all')
-const selectedOrderId = ref<string | null>(null)
+const modeFilter = ref<ModeFilter>('all')
+const currentPage = ref(1)
+const menuOrderId = ref<string | null>(null)
+const detailOrderId = ref<string | null>(null)
+const isVoiding = ref(false)
 const now = new Date()
 
-interface Bounds {
-  start: Date
-  end: Date
-}
+onMounted(() => { if (!store.isReady) void store.initialize() })
 
-function startOfDay(value: Date) {
-  return new Date(value.getFullYear(), value.getMonth(), value.getDate())
-}
+const statusFilterOptions: { value: StatusFilter; label: string }[] = [
+  { value: 'all', label: 'All statuses' }, { value: 'pending', label: 'Pending' },
+  { value: 'preparing', label: 'Preparing' }, { value: 'ready', label: 'Ready' },
+  { value: 'served', label: 'Completed' },
+]
+const paymentFilterOptions: { value: 'all' | PaymentMethod; label: string }[] = [
+  { value: 'all', label: 'All payments' }, { value: 'cash', label: 'Cash' },
+  { value: 'ewallet', label: 'GCash / e-wallet' }, { value: 'card', label: 'Card' },
+]
+const modeFilterOptions: { value: ModeFilter; label: string }[] = [
+  { value: 'all', label: 'All modes' }, { value: 'delivery', label: 'Delivery' },
+  { value: 'pickup', label: 'Pickup' }, { value: 'dine_in', label: 'Dine-in' },
+  { value: 'takeaway', label: 'POS / takeaway' },
+]
 
+interface Bounds { start: Date; end: Date }
+function startOfDay(value: Date) { return new Date(value.getFullYear(), value.getMonth(), value.getDate()) }
 function getMonday(value: Date) {
   const day = value.getDay()
-  const diff = day === 0 ? -6 : 1 - day
-  return new Date(startOfDay(value).getTime() + diff * 86400000)
+  return new Date(startOfDay(value).getTime() + (day === 0 ? -6 : 1 - day) * 86400000)
 }
-
 function getBounds(value: Range): Bounds {
   const today = startOfDay(now)
-
-  switch (value) {
-    case 'today':
-      return { start: today, end: new Date(today.getTime() + 86400000) }
-    case 'week': {
-      const start = getMonday(now)
-      return { start, end: new Date(start.getTime() + 7 * 86400000) }
-    }
-    case 'month':
-      return {
-        start: new Date(today.getFullYear(), today.getMonth(), 1),
-        end: new Date(today.getFullYear(), today.getMonth() + 1, 1),
-      }
-    case 'all':
-      return { start: new Date(0), end: new Date(8640000000000000) }
+  if (value === 'today') return { start: today, end: new Date(today.getTime() + 86400000) }
+  if (value === 'week') {
+    const start = getMonday(now)
+    return { start, end: new Date(start.getTime() + 7 * 86400000) }
   }
+  if (value === 'month') return { start: new Date(today.getFullYear(), today.getMonth(), 1), end: new Date(today.getFullYear(), today.getMonth() + 1, 1) }
+  return { start: new Date(0), end: new Date(8640000000000000) }
 }
-
-function inBounds(order: OrderSummary, bounds: Bounds) {
+function previousBounds(value: Range, current: Bounds): Bounds | null {
+  if (value === 'all') return null
+  const duration = current.end.getTime() - current.start.getTime()
+  return { start: new Date(current.start.getTime() - duration), end: new Date(current.end.getTime() - duration) }
+}
+function inBounds(order: OrderSummary, value: Bounds) {
   const createdAt = new Date(order.createdAt)
-  return createdAt >= bounds.start && createdAt < bounds.end
+  return createdAt >= value.start && createdAt < value.end
 }
-
-function paymentLabel(method: PaymentMethod) {
-  switch (method) {
-    case 'cash':
-      return 'Cash'
-    case 'card':
-      return 'Card'
-    case 'ewallet':
-      return 'E-wallet'
-  }
+function paymentLabel(method: PaymentMethod) { return method === 'cash' ? 'Cash' : method === 'card' ? 'Card' : 'GCash' }
+function orderMode(order: OrderSummary): Exclude<ModeFilter, 'all'> {
+  if (order.fulfillmentMethod === 'delivery') return 'delivery'
+  if (order.fulfillmentMethod === 'pickup') return 'pickup'
+  return order.orderType
 }
-
-function orderTypeLabel(type: OrderSummary['orderType']) {
-  return type === 'dine_in' ? 'Dine in' : 'Takeaway'
+function modeLabel(order: OrderSummary) {
+  const mode = orderMode(order)
+  return mode === 'delivery' ? 'Delivery' : mode === 'pickup' ? 'Pickup' : mode === 'dine_in' ? 'Dine-in' : 'POS'
 }
-
-function userNameFor(userId: string | null | undefined): string | null {
-  if (!userId) return null
-  return auth.users.find((user) => user.id === userId)?.fullName ?? null
+function modeIcon(mode: Exclude<ModeFilter, 'all'>): LucideIcon {
+  return mode === 'delivery' ? Bike : mode === 'pickup' ? ShoppingBag : Utensils
 }
-
-function createdByLabel(order: OrderSummary) {
-  return userNameFor(order.createdByUserId) ?? null
+function displayStatus(order: OrderSummary): DisplayStatus {
+  if (order.voidedAt) return 'voided'
+  if (order.paymentStatus === 'unpaid') return 'pending'
+  return order.status === 'served' ? 'completed' : order.status
 }
-
+function statusLabel(order: OrderSummary) {
+  const status = displayStatus(order)
+  return status.charAt(0).toUpperCase() + status.slice(1)
+}
+function statusIcon(status: DisplayStatus): LucideIcon {
+  return status === 'completed' ? CheckCircle2 : status === 'ready' ? PackageCheck : status === 'voided' ? Ban : Clock3
+}
+function paymentIcon(method: PaymentMethod): LucideIcon {
+  return method === 'cash' ? Banknote : method === 'card' ? CreditCard : WalletCards
+}
 function formatFullDate(value: string) {
-  return new Intl.DateTimeFormat('en-PH', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(new Date(value))
+  return new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value))
 }
-
+function formatRangeDate(value: Date) {
+  return new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }).format(value)
+}
+function escapeCsv(value: string | number) { return `"${String(value).replace(/"/g, '""')}"` }
+function handleExport() {
+  const header = ['Order #', 'Customer', 'Mode', 'Payment', 'Total', 'Status', 'Time']
+  const rows = filteredOrders.value.map((order) => [order.ticketNumber, order.customerName, modeLabel(order), paymentLabel(order.paymentMethod), (order.totalCents / 100).toFixed(2), statusLabel(order), formatFullDate(order.createdAt)])
+  const csv = [header, ...rows].map((row) => row.map(escapeCsv).join(',')).join('\n')
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `orders-${range.value}.csv`
+  link.click()
+  URL.revokeObjectURL(url)
+}
 function handlePrintReceipt(order: OrderSummary) {
-  printReceipt(order, {
-    name: store.settings.businessName,
-    imageUrl: store.settings.businessImageUrl,
-  })
+  menuOrderId.value = null
+  printReceipt(order, { name: store.settings.businessName, imageUrl: store.settings.businessImageUrl })
 }
-
-const isVoiding = ref(false)
-
 async function handleVoidOrder(order: OrderSummary) {
   if (!auth.isOwner || order.voidedAt || isVoiding.value) return
-
-  const reason = window.prompt(
-    `Void ticket ${order.ticketNumber}? This restores inventory and removes it from revenue. This can't be undone.\n\nOptional reason:`,
-  )
+  const reason = window.prompt(`Void ticket ${order.ticketNumber}? This restores inventory and removes it from revenue. This can't be undone.\n\nOptional reason:`)
   if (reason === null) return
-
   isVoiding.value = true
   try {
     await store.voidOrder(order.id, { userId: auth.currentUser?.id ?? null, reason: reason || null })
-  } finally {
-    isVoiding.value = false
-  }
+    menuOrderId.value = null
+  } catch (error) {
+    window.alert(error instanceof Error && error.message ? error.message : 'This sale could not be voided. Try again.')
+  } finally { isVoiding.value = false }
 }
+function openDetails(order: OrderSummary) { detailOrderId.value = order.id; menuOrderId.value = null }
 
+const allOrders = computed(() => {
+  const merged = new Map<string, OrderSummary>()
+  for (const order of store.orders) merged.set(order.id, order)
+  for (const order of store.onlineOrders) merged.set(order.id, order)
+  return [...merged.values()]
+})
 const bounds = computed(() => getBounds(range.value))
-const rangeOrders = computed(() => store.orders.filter((order) => inBounds(order, bounds.value)))
-
+const periodOrders = computed(() => allOrders.value.filter((order) => inBounds(order, bounds.value)))
+const previousPeriodOrders = computed(() => {
+  const previous = previousBounds(range.value, bounds.value)
+  return previous ? allOrders.value.filter((order) => inBounds(order, previous)) : []
+})
+function matchesStatus(order: OrderSummary) {
+  if (statusFilter.value === 'all') return true
+  if (statusFilter.value === 'pending') return order.paymentStatus === 'unpaid'
+  return order.status === statusFilter.value && order.paymentStatus !== 'unpaid'
+}
 const filteredOrders = computed(() => {
   const needle = searchQuery.value.trim().toLowerCase()
-
-  return rangeOrders.value
-    .filter((order) => {
-      if (paymentFilter.value !== 'all' && order.paymentMethod !== paymentFilter.value) {
-        return false
-      }
-
-      if (modeFilter.value !== 'all' && order.businessMode !== modeFilter.value) {
-        return false
-      }
-
-      if (!needle) {
-        return true
-      }
-
-      return (
-        order.ticketNumber.toLowerCase().includes(needle)
-        || order.customerName.toLowerCase().includes(needle)
-        || order.paymentMethod.toLowerCase().includes(needle)
-        || order.items.some((item) => item.name.toLowerCase().includes(needle))
-      )
-    })
-    .slice()
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  return periodOrders.value.filter((order) => {
+    if (!matchesStatus(order)) return false
+    if (paymentFilter.value !== 'all' && order.paymentMethod !== paymentFilter.value) return false
+    if (modeFilter.value !== 'all' && orderMode(order) !== modeFilter.value) return false
+    if (!needle) return true
+    return [order.ticketNumber, order.customerName, paymentLabel(order.paymentMethod), modeLabel(order), ...order.items.map((item) => item.name)].some((value) => value.toLowerCase().includes(needle))
+  }).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 })
+const pageCount = computed(() => Math.max(1, Math.ceil(filteredOrders.value.length / PAGE_SIZE)))
+const paginatedOrders = computed(() => filteredOrders.value.slice((currentPage.value - 1) * PAGE_SIZE, currentPage.value * PAGE_SIZE))
+const pageStart = computed(() => filteredOrders.value.length ? (currentPage.value - 1) * PAGE_SIZE + 1 : 0)
+const pageEnd = computed(() => Math.min(currentPage.value * PAGE_SIZE, filteredOrders.value.length))
+const visiblePages = computed(() => {
+  if (pageCount.value <= 5) return Array.from({ length: pageCount.value }, (_, index) => index + 1)
+  const start = Math.min(Math.max(1, currentPage.value - 2), pageCount.value - 4)
+  return Array.from({ length: 5 }, (_, index) => start + index)
+})
+watch([range, searchQuery, statusFilter, paymentFilter, modeFilter], () => { currentPage.value = 1; menuOrderId.value = null })
+watch(pageCount, (count) => { if (currentPage.value > count) currentPage.value = count })
 
-const selectedOrder = computed(() =>
-  filteredOrders.value.find((order) => order.id === selectedOrderId.value) ?? filteredOrders.value[0] ?? null,
-)
-
-watch(
-  filteredOrders,
-  (orders) => {
-    if (!orders.length) {
-      selectedOrderId.value = null
-      return
-    }
-
-    if (!orders.some((order) => order.id === selectedOrderId.value)) {
-      selectedOrderId.value = orders[0].id
-    }
-  },
-  { immediate: true },
-)
-
-// Voided orders stay visible in the list/search below for record-keeping,
-// but drop out of every revenue rollup on this page.
-const activeOrders = computed(() => filteredOrders.value.filter((order) => !order.voidedAt))
-
+const activeOrders = computed(() => periodOrders.value.filter((order) => !order.voidedAt))
+const previousActiveOrders = computed(() => previousPeriodOrders.value.filter((order) => !order.voidedAt))
 const grossSales = computed(() => activeOrders.value.reduce((sum, order) => sum + order.totalCents, 0))
-const taxCollected = computed(() => activeOrders.value.reduce((sum, order) => sum + order.taxCents, 0))
-const averageTicket = computed(() =>
-  activeOrders.value.length > 0 ? Math.round(grossSales.value / activeOrders.value.length) : 0,
-)
-const itemCount = computed(() =>
-  activeOrders.value.reduce(
-    (sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + item.quantity, 0),
-    0,
-  ),
-)
-
+const previousGrossSales = computed(() => previousActiveOrders.value.reduce((sum, order) => sum + order.totalCents, 0))
+const averageOrder = computed(() => activeOrders.value.length ? Math.round(grossSales.value / activeOrders.value.length) : 0)
+const previousAverageOrder = computed(() => previousActiveOrders.value.length ? Math.round(previousGrossSales.value / previousActiveOrders.value.length) : 0)
+const pendingOrders = computed(() => activeOrders.value.filter((order) => order.paymentStatus === 'unpaid' || order.status !== 'served').length)
+function percentDelta(current: number, previous: number) {
+  if (range.value === 'all' || previous === 0) return null
+  const value = Math.round(((current - previous) / previous) * 100)
+  return { value: Math.abs(value), positive: value >= 0 }
+}
+const grossDelta = computed(() => percentDelta(grossSales.value, previousGrossSales.value))
+const ordersDelta = computed(() => percentDelta(activeOrders.value.length, previousActiveOrders.value.length))
+const averageDelta = computed(() => percentDelta(averageOrder.value, previousAverageOrder.value))
+const comparisonLabel = computed(() => {
+  if (range.value === 'today') return 'vs. previous day'
+  if (range.value === 'week') return 'vs. previous week'
+  if (range.value === 'month') return 'vs. previous month'
+  return 'Across all orders'
+})
+const rangeCaption = computed(() => {
+  if (range.value === 'all') return 'All order history'
+  const end = new Date(bounds.value.end.getTime() - 86400000)
+  return range.value === 'today' ? formatRangeDate(bounds.value.start) : `${formatRangeDate(bounds.value.start)} - ${formatRangeDate(end)}`
+})
 const paymentTotals = computed(() => {
   const total = grossSales.value || 1
-  const methods: PaymentMethod[] = ['cash', 'card', 'ewallet']
-
-  return methods.map((method) => {
+  return (['cash', 'ewallet', 'card'] as PaymentMethod[]).map((method) => {
     const orders = activeOrders.value.filter((order) => order.paymentMethod === method)
     const amount = orders.reduce((sum, order) => sum + order.totalCents, 0)
-
-    return {
-      method,
-      label: paymentLabel(method),
-      count: orders.length,
-      amount,
-      percentage: Math.round((amount / total) * 100),
-    }
+    return { method, label: paymentLabel(method), amount, percentage: Math.round((amount / total) * 100) }
   })
 })
-
-const modeTotals = computed(() => {
-  const modes: BusinessMode[] = ['coffee-shop', 'grocery', 'restaurant', 'nail-salon']
-
-  return modes
-    .map((mode) => {
-      const orders = activeOrders.value.filter((order) => order.businessMode === mode)
-      return {
-        mode,
-        label: businessModeLabel(mode),
-        count: orders.length,
-        amount: orders.reduce((sum, order) => sum + order.totalCents, 0),
-      }
-    })
-    .filter((entry) => entry.count > 0)
-    .sort((a, b) => b.amount - a.amount)
+const orderTypeTotals = computed(() => {
+  const definitions: { mode: Exclude<ModeFilter, 'all'>; label: string }[] = [
+    { mode: 'delivery', label: 'Delivery' }, { mode: 'pickup', label: 'Pickup' },
+    { mode: 'dine_in', label: 'Dine-in' }, { mode: 'takeaway', label: 'POS' },
+  ]
+  const total = activeOrders.value.length || 1
+  return definitions.map((definition) => {
+    const count = activeOrders.value.filter((order) => orderMode(order) === definition.mode).length
+    return { ...definition, count, percentage: Math.round((count / total) * 100) }
+  }).filter((entry) => entry.count > 0)
 })
-
-const rangeCaption = computed(() => {
-  if (range.value === 'all') {
-    return 'All completed orders'
-  }
-
-  const formatter = new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
-  if (range.value === 'today') {
-    return formatter.format(now)
-  }
-
-  const endForCaption = new Date(bounds.value.end.getTime() - 86400000)
-  return `${formatter.format(bounds.value.start)} - ${formatter.format(endForCaption)}`
+const deliveryQueue = computed(() => {
+  const online = periodOrders.value.filter((order) => order.channel === 'online' && !order.voidedAt)
+  return [
+    { label: 'Preparing', hint: 'Being prepared', count: online.filter((order) => order.status === 'preparing').length, tone: 'blue' },
+    { label: 'Awaiting rider', hint: 'Ready for pickup', count: online.filter((order) => order.fulfillmentMethod === 'delivery' && (order.deliveryStage ?? 'pending') === 'pending').length, tone: 'amber' },
+    { label: 'Pickup ready', hint: 'For customer', count: online.filter((order) => order.fulfillmentMethod === 'pickup' && order.status === 'ready').length, tone: 'green' },
+  ]
 })
+const selectedOrder = computed(() => allOrders.value.find((order) => order.id === detailOrderId.value) ?? null)
 </script>
 
 <template>
-  <div class="orders-page">
-    <section class="orders-header">
-      <div>
-        <h1 class="orders-title">Orders</h1>
-        <p class="orders-copy">Review tickets, inspect line items, and reprint receipts from one searchable history.</p>
-      </div>
-      <div class="orders-toolbar">
-        <div class="orders-range">
-          <span class="orders-range__text">{{ rangeCaption }}</span>
-          <RangeSelector v-model="range" />
-        </div>
-      </div>
+  <div class="orders-page" @click="menuOrderId = null">
+    <section class="orders-hero">
+      <div><h1>Orders</h1><p>Review tickets, inspect line items, and reprint receipts from one searchable history.</p></div>
+      <div class="orders-range"><span>{{ rangeCaption }}</span><RangeSelector v-model="range" /></div>
     </section>
 
-    <section class="orders-kpis">
-      <MetricCard label="Gross sales" :value="formatCurrency(grossSales)" />
-      <MetricCard label="Completed orders" :value="String(activeOrders.length)" />
-      <MetricCard label="Average ticket" :value="formatCurrency(averageTicket)" />
-      <MetricCard label="Items sold" :value="String(itemCount)" />
-    </section>
-
-    <section class="orders-grid">
-      <ChartCard title="Payment Split" summary="Order volume and revenue by payment method.">
-        <div v-if="filteredOrders.length === 0" class="empty-state">
-          Completed orders appear here after checkout.
-        </div>
-        <div v-else class="orders-payment-list">
-          <div v-for="entry in paymentTotals" :key="entry.method" class="orders-payment-row">
-            <div class="orders-payment-row__head">
-              <span class="orders-payment-row__label">
-                <Wallet v-if="entry.method === 'cash'" :size="15" />
-                <CreditCard v-else :size="15" />
-                {{ entry.label }}
-              </span>
-              <strong>{{ formatCurrency(entry.amount) }}</strong>
-            </div>
-            <div class="orders-payment-row__track">
-              <div class="orders-payment-row__fill" :style="{ width: `${entry.percentage}%` }" />
-            </div>
-            <p>{{ entry.count }} orders, {{ entry.percentage }}% of revenue</p>
-          </div>
-        </div>
-      </ChartCard>
-
-      <ChartCard title="Business Modes" summary="Orders grouped by the active business mode when each ticket was completed.">
-        <div v-if="modeTotals.length === 0" class="empty-state">
-          Mode totals appear once orders match the filters.
-        </div>
-        <div v-else class="orders-mode-list">
-          <div v-for="entry in modeTotals" :key="entry.mode" class="orders-mode-row">
-            <div>
-              <strong>{{ entry.label }}</strong>
-              <p>{{ entry.count }} orders</p>
-            </div>
-            <span>{{ formatCurrency(entry.amount) }}</span>
-          </div>
-        </div>
-      </ChartCard>
-    </section>
-
-    <section class="orders-workspace">
-      <article class="orders-list-card">
-        <div class="orders-list-card__head">
-          <div>
-            <h2>Order History</h2>
-            <p>{{ filteredOrders.length }} of {{ rangeOrders.length }} orders in this range</p>
-          </div>
-          <span class="orders-tax">Tax {{ formatCurrency(taxCollected) }}</span>
-        </div>
-
-        <div class="orders-filters">
-          <label class="orders-search">
-            <Search :size="16" />
-            <input v-model="searchQuery" type="search" placeholder="Search ticket, customer, item, or payment" />
-            <button v-if="searchQuery" class="icon-button icon-button--sm" type="button" aria-label="Clear search" @click="searchQuery = ''">
-              <X :size="14" />
-            </button>
-          </label>
-          <AutocompleteSelect
-            v-model="paymentFilter"
-            class="orders-select"
-            label="Filter by payment method"
-            :options="paymentFilterOptions"
-          />
-          <AutocompleteSelect
-            v-model="modeFilter"
-            class="orders-select"
-            label="Filter by business mode"
-            :options="modeFilterOptions"
-          />
-        </div>
-
-        <div v-if="filteredOrders.length === 0" class="orders-empty">
-          No orders match the current filters.
-        </div>
-
-        <div v-else class="orders-list">
-          <button
-            v-for="order in filteredOrders"
-            :key="order.id"
-            class="orders-row"
-            :class="{ 'orders-row--active': selectedOrder?.id === order.id, 'orders-row--voided': order.voidedAt }"
-            type="button"
-            @click="selectedOrderId = order.id"
-          >
-            <span class="orders-row__icon">
-              <ReceiptText :size="17" />
-            </span>
-            <span class="orders-row__body">
-              <strong>Ticket {{ order.ticketNumber }}<span v-if="order.voidedAt" class="orders-voided-tag">Voided</span></strong>
-              <span>{{ order.customerName }} / {{ formatCompactDate(order.createdAt) }} / {{ paymentLabel(order.paymentMethod) }} / {{ orderTypeLabel(order.orderType) }}</span>
-            </span>
-            <span class="orders-row__amount">{{ formatCurrency(order.totalCents) }}</span>
-            <ArrowRight class="orders-row__arrow" :size="16" />
-          </button>
-        </div>
+    <section class="orders-kpis" aria-label="Order summary">
+      <article class="orders-kpi">
+        <span class="orders-kpi__icon"><BarChart3 :size="26" /></span>
+        <div><p>Gross sales</p><div class="orders-kpi__value"><strong>{{ formatCurrency(grossSales) }}</strong><span v-if="grossDelta" :class="{ 'is-down': !grossDelta.positive }">{{ grossDelta.positive ? '↑' : '↓' }} {{ grossDelta.value }}%</span></div><small>{{ comparisonLabel }}</small></div>
       </article>
-
-      <aside v-if="filteredOrders.length > 0" class="orders-detail">
-        <template v-if="selectedOrder">
-          <div class="orders-detail__head">
-            <div>
-              <p class="orders-detail__eyebrow">Selected ticket</p>
-              <h2>Ticket {{ selectedOrder.ticketNumber }}</h2>
-              <span>{{ formatFullDate(selectedOrder.createdAt) }}</span>
-            </div>
-            <div class="orders-detail__actions">
-              <button
-                v-if="auth.isOwner && !selectedOrder.voidedAt"
-                class="icon-button"
-                type="button"
-                :disabled="isVoiding"
-                :aria-label="`Void ticket ${selectedOrder.ticketNumber}`"
-                @click="handleVoidOrder(selectedOrder)"
-              >
-                <Ban :size="18" />
-              </button>
-              <button
-                class="icon-button"
-                type="button"
-                :aria-label="`Print receipt for ticket ${selectedOrder.ticketNumber}`"
-                @click="handlePrintReceipt(selectedOrder)"
-              >
-                <Printer :size="18" />
-              </button>
-            </div>
-          </div>
-
-          <div class="orders-detail__chips">
-            <span v-if="selectedOrder.voidedAt" class="orders-detail__chip--voided">Voided</span>
-            <span>{{ selectedOrder.customerName }}</span>
-            <span>{{ businessModeLabel(selectedOrder.businessMode) }}</span>
-            <span>{{ orderTypeLabel(selectedOrder.orderType) }}</span>
-            <span>{{ paymentLabel(selectedOrder.paymentMethod) }}</span>
-            <span v-if="createdByLabel(selectedOrder)">By {{ createdByLabel(selectedOrder) }}</span>
-          </div>
-          <p v-if="selectedOrder.voidedAt" class="orders-detail__void-note">
-            Voided {{ formatFullDate(selectedOrder.voidedAt) }}<template v-if="userNameFor(selectedOrder.voidedByUserId)"> by {{ userNameFor(selectedOrder.voidedByUserId) }}</template><template v-if="selectedOrder.voidReason">: {{ selectedOrder.voidReason }}</template>
-          </p>
-          <p v-if="selectedOrder.paymentConfirmedAt" class="orders-detail__paid-note">
-            Payment confirmed {{ formatFullDate(selectedOrder.paymentConfirmedAt) }}<template v-if="userNameFor(selectedOrder.paymentConfirmedByUserId)"> by {{ userNameFor(selectedOrder.paymentConfirmedByUserId) }}</template>
-          </p>
-
-          <div class="orders-lines">
-            <div v-for="item in selectedOrder.items" :key="`${selectedOrder.id}-${item.productId}`" class="orders-line">
-              <div>
-                <strong>{{ item.name }}</strong>
-                <span>{{ item.quantity }} x {{ formatCurrency(item.unitPriceCents) }}</span>
-              </div>
-              <strong>{{ formatCurrency(item.lineTotalCents) }}</strong>
-            </div>
-          </div>
-
-          <div class="orders-totals">
-            <div>
-              <span>Subtotal</span>
-              <strong>{{ formatCurrency(selectedOrder.subtotalCents) }}</strong>
-            </div>
-            <div>
-              <span>Tax</span>
-              <strong>{{ formatCurrency(selectedOrder.taxCents) }}</strong>
-            </div>
-            <div class="orders-totals__grand">
-              <span>Total</span>
-              <strong>{{ formatCurrency(selectedOrder.totalCents) }}</strong>
-            </div>
-            <div v-if="selectedOrder.paymentMethod === 'cash'">
-              <span>Tendered</span>
-              <strong>{{ formatCurrency(selectedOrder.tenderedCents) }}</strong>
-            </div>
-            <div v-if="selectedOrder.paymentMethod === 'cash'">
-              <span>Change</span>
-              <strong>{{ formatCurrency(selectedOrder.changeCents) }}</strong>
-            </div>
-          </div>
-        </template>
-
-        <div v-else class="orders-empty orders-empty--detail">
-          Select an order to view receipt details.
-        </div>
-      </aside>
+      <article class="orders-kpi">
+        <span class="orders-kpi__icon"><ReceiptText :size="26" /></span>
+        <div><p>Orders</p><div class="orders-kpi__value"><strong>{{ activeOrders.length }}</strong><span v-if="ordersDelta" :class="{ 'is-down': !ordersDelta.positive }">{{ ordersDelta.positive ? '↑' : '↓' }} {{ ordersDelta.value }}%</span></div><small>{{ comparisonLabel }}</small></div>
+      </article>
+      <article class="orders-kpi">
+        <span class="orders-kpi__icon"><Tags :size="26" /></span>
+        <div><p>Avg. order value</p><div class="orders-kpi__value"><strong>{{ formatCurrency(averageOrder) }}</strong><span v-if="averageDelta" :class="{ 'is-down': !averageDelta.positive }">{{ averageDelta.positive ? '↑' : '↓' }} {{ averageDelta.value }}%</span></div><small>{{ comparisonLabel }}</small></div>
+      </article>
+      <article class="orders-kpi">
+        <span class="orders-kpi__icon"><Clock3 :size="26" /></span>
+        <div><p>Pending orders</p><div class="orders-kpi__value"><strong>{{ pendingOrders }}</strong><span class="orders-kpi__muted">—</span></div><small>Needs attention</small></div>
+      </article>
     </section>
+
+    <section class="orders-history">
+      <header class="orders-history__head">
+        <div><h2>Order History</h2><p>{{ periodOrders.length }} orders • {{ rangeCaption }}</p></div>
+        <button class="orders-export" type="button" @click="handleExport"><FileDown :size="18" />Export</button>
+      </header>
+      <div class="orders-filters">
+        <label class="orders-search"><Search :size="18" /><input v-model="searchQuery" type="search" placeholder="Search order #, customer, item, or payment..." /><button v-if="searchQuery" type="button" aria-label="Clear search" @click="searchQuery = ''"><X :size="15" /></button></label>
+        <AutocompleteSelect v-model="statusFilter" class="orders-select" label="Filter by status" :options="statusFilterOptions" />
+        <AutocompleteSelect v-model="paymentFilter" class="orders-select" label="Filter by payment" :options="paymentFilterOptions" />
+        <AutocompleteSelect v-model="modeFilter" class="orders-select" label="Filter by mode" :options="modeFilterOptions" />
+      </div>
+
+      <div class="orders-table-wrap"><div class="orders-table" role="table" aria-label="Order history">
+        <div class="orders-table__header" role="row"><span role="columnheader">Order #</span><span role="columnheader">Customer</span><span role="columnheader">Mode</span><span role="columnheader">Payment</span><span role="columnheader">Total</span><span role="columnheader">Status</span><span role="columnheader">Time</span><span role="columnheader" class="sr-only">Actions</span></div>
+        <div v-for="order in paginatedOrders" :key="order.id" class="orders-table__row" :class="{ 'is-voided': order.voidedAt }" role="row" tabindex="0" @click="openDetails(order)" @keydown.enter="openDetails(order)">
+          <strong role="cell" data-label="Order #">#{{ order.ticketNumber }}</strong>
+          <span role="cell" data-label="Customer">{{ order.customerName }}</span>
+          <span role="cell" data-label="Mode" class="order-mode" :class="`order-mode--${orderMode(order)}`"><component :is="modeIcon(orderMode(order))" :size="16" />{{ modeLabel(order) }}</span>
+          <span role="cell" data-label="Payment" class="order-payment"><component :is="paymentIcon(order.paymentMethod)" :size="16" />{{ paymentLabel(order.paymentMethod) }}</span>
+          <strong role="cell" data-label="Total">{{ formatCurrency(order.totalCents) }}</strong>
+          <span role="cell" data-label="Status" class="order-status" :class="`order-status--${displayStatus(order)}`"><component :is="statusIcon(displayStatus(order))" :size="14" />{{ statusLabel(order) }}</span>
+          <time role="cell" data-label="Time" :datetime="order.createdAt">{{ formatFullDate(order.createdAt) }}</time>
+          <span class="order-actions" role="cell" @click.stop>
+            <button class="order-actions__trigger" type="button" :aria-label="`Actions for order ${order.ticketNumber}`" :aria-expanded="menuOrderId === order.id" @click="menuOrderId = menuOrderId === order.id ? null : order.id"><Ellipsis :size="19" /></button>
+            <span v-if="menuOrderId === order.id" class="order-actions__menu">
+              <button type="button" @click="openDetails(order)"><ReceiptText :size="15" />View details</button>
+              <button type="button" @click="handlePrintReceipt(order)"><Printer :size="15" />Print receipt</button>
+              <button v-if="auth.isOwner && !order.voidedAt" class="is-danger" type="button" :disabled="isVoiding" @click="handleVoidOrder(order)"><Ban :size="15" />Void order</button>
+            </span>
+          </span>
+        </div>
+        <div v-if="!paginatedOrders.length" class="orders-empty"><Search :size="24" /><strong>No orders found</strong><span>Try changing your search or filters.</span></div>
+      </div></div>
+
+      <footer class="orders-pagination">
+        <span>Showing {{ pageStart }}–{{ pageEnd }} of {{ filteredOrders.length }} orders</span>
+        <nav v-if="filteredOrders.length" aria-label="Order pages">
+          <button type="button" aria-label="Previous page" :disabled="currentPage === 1" @click="currentPage--"><ChevronLeft :size="17" /></button>
+          <button v-for="page in visiblePages" :key="page" type="button" :class="{ 'is-active': currentPage === page }" :aria-current="currentPage === page ? 'page' : undefined" @click="currentPage = page">{{ page }}</button>
+          <span v-if="visiblePages.at(-1)! < pageCount">…</span>
+          <button v-if="visiblePages.at(-1)! < pageCount" type="button" :class="{ 'is-active': currentPage === pageCount }" @click="currentPage = pageCount">{{ pageCount }}</button>
+          <button type="button" aria-label="Next page" :disabled="currentPage === pageCount" @click="currentPage++"><ChevronRight :size="17" /></button>
+        </nav>
+      </footer>
+    </section>
+
+    <section class="orders-insights">
+      <article class="insight-card delivery-summary">
+        <header><h2>Delivery Queue</h2><RouterLink to="/messages">View all <ChevronRight :size="15" /></RouterLink></header>
+        <div class="delivery-summary__items"><div v-for="item in deliveryQueue" :key="item.label" class="delivery-summary__item"><div><span :class="`queue-dot queue-dot--${item.tone}`" /><strong>{{ item.count }}</strong></div><p>{{ item.label }}</p><small>{{ item.hint }}</small></div></div>
+      </article>
+      <article class="insight-card">
+        <header><h2>Payment Breakdown</h2><span>{{ range === 'all' ? 'All time' : range === 'today' ? 'Today' : `This ${range}` }}</span></header>
+        <div class="breakdown-list"><div v-for="entry in paymentTotals" :key="entry.method" class="breakdown-row"><span class="breakdown-row__label"><component :is="paymentIcon(entry.method)" :size="18" />{{ entry.label }}</span><span class="breakdown-row__metric"><strong>{{ formatCurrency(entry.amount) }}</strong><small>{{ entry.percentage }}%</small></span><span class="breakdown-row__track"><i :style="{ width: `${entry.percentage}%` }" /></span></div></div>
+      </article>
+      <article class="insight-card">
+        <header><h2>Order Type</h2><span>{{ range === 'all' ? 'All time' : range === 'today' ? 'Today' : `This ${range}` }}</span></header>
+        <div class="breakdown-list"><div v-for="entry in orderTypeTotals" :key="entry.mode" class="type-row"><span class="type-row__label"><component :is="modeIcon(entry.mode)" :size="18" />{{ entry.label }}</span><strong>{{ entry.count }}</strong><small>{{ entry.percentage }}%</small><span class="type-row__track"><i :style="{ width: `${entry.percentage}%` }" /></span></div><p v-if="!orderTypeTotals.length" class="insight-empty">Order types appear here once orders match the range.</p></div>
+      </article>
+    </section>
+
+    <div v-if="selectedOrder" class="order-drawer-backdrop" @click.self="detailOrderId = null">
+      <aside class="order-drawer" aria-labelledby="order-drawer-title">
+        <header class="order-drawer__head"><div><p>Order details</p><h2 id="order-drawer-title">#{{ selectedOrder.ticketNumber }}</h2></div><button type="button" aria-label="Close order details" @click="detailOrderId = null"><X :size="19" /></button></header>
+        <div class="order-drawer__meta"><div><span>Customer</span><strong>{{ selectedOrder.customerName }}</strong></div><div><span>Placed</span><strong>{{ formatFullDate(selectedOrder.createdAt) }}</strong></div><div><span>Mode</span><strong>{{ modeLabel(selectedOrder) }}</strong></div><div><span>Payment</span><strong>{{ paymentLabel(selectedOrder.paymentMethod) }}</strong></div><div><span>Business</span><strong>{{ businessModeLabel(selectedOrder.businessMode) }}</strong></div><div><span>Status</span><strong>{{ statusLabel(selectedOrder) }}</strong></div></div>
+        <div class="order-drawer__lines"><div v-for="item in selectedOrder.items" :key="item.productId"><span><strong>{{ item.name }}</strong><small>{{ item.quantity }} × {{ formatCurrency(item.unitPriceCents) }}</small></span><strong>{{ formatCurrency(item.lineTotalCents) }}</strong></div></div>
+        <div class="order-drawer__totals"><div><span>Subtotal</span><strong>{{ formatCurrency(selectedOrder.subtotalCents) }}</strong></div><div v-if="selectedOrder.discountCents"><span>Discount</span><strong>−{{ formatCurrency(selectedOrder.discountCents) }}</strong></div><div><span>Tax</span><strong>{{ formatCurrency(selectedOrder.taxCents) }}</strong></div><div class="is-grand"><span>Total</span><strong>{{ formatCurrency(selectedOrder.totalCents) }}</strong></div></div>
+        <footer><button type="button" @click="handlePrintReceipt(selectedOrder)"><Printer :size="17" />Print receipt</button><button v-if="auth.isOwner && !selectedOrder.voidedAt" class="is-danger" type="button" :disabled="isVoiding" @click="handleVoidOrder(selectedOrder)"><Ban :size="17" />Void order</button></footer>
+      </aside>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.orders-page {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-5);
-  padding: var(--space-4) 0 var(--space-8);
-}
-
-.orders-header,
-.orders-grid,
-.orders-workspace {
-  display: grid;
-  gap: var(--space-4);
-}
-
-.orders-header {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-}
-
-.orders-title {
-  margin: 0;
-  font: var(--type-title1);
-}
-
-.orders-copy {
-  max-width: 68ch;
-  margin: var(--space-2) 0 0;
-  color: var(--text-secondary);
-}
-
-.orders-toolbar,
-.orders-range,
-.orders-list-card__head,
-.orders-payment-row__head,
-.orders-mode-row,
-.orders-detail__head,
-.orders-line,
-.orders-totals div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.orders-range {
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.orders-range__text,
-.orders-list-card__head p,
-.orders-payment-row p,
-.orders-mode-row p,
-.orders-detail__head span,
-.orders-line span,
-.orders-totals span {
-  margin: 0;
-  color: var(--text-secondary);
-  font: var(--type-caption);
-}
-
-.orders-kpis {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-4);
-}
-
-.orders-grid {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-}
-
-.orders-payment-list,
-.orders-mode-list,
-.orders-list,
-.orders-lines,
-.orders-totals {
-  display: grid;
-  gap: var(--space-3);
-}
-
-.orders-payment-row {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.orders-payment-row__label {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--text-primary);
-  font: var(--type-subhead);
-  font-weight: 600;
-}
-
-.orders-payment-row__track {
-  height: 8px;
-  overflow: hidden;
-  border-radius: var(--radius-pill);
-  background: var(--fill);
-}
-
-.orders-payment-row__fill {
-  height: 100%;
-  min-width: 4px;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--accent), var(--success));
-}
-
-.orders-mode-row {
-  padding: var(--space-3) 0;
-  border-bottom: 0.5px solid var(--separator);
-}
-
-.orders-mode-row:last-child {
-  border-bottom: none;
-}
-
-.orders-mode-row strong,
-.orders-mode-row span,
-.orders-list-card__head h2,
-.orders-detail__head h2,
-.orders-line strong,
-.orders-totals strong {
-  margin: 0;
-  color: var(--text-primary);
-}
-
-.orders-workspace {
-  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.75fr);
-  align-items: start;
-}
-
-.orders-list-card,
-.orders-detail {
-  display: grid;
-  gap: var(--space-4);
-  padding: var(--space-5);
-  border: 0.5px solid var(--separator);
-  border-radius: var(--radius-xl);
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-sm);
-}
-
-.orders-list-card__head h2,
-.orders-detail__head h2 {
-  font: var(--type-headline);
-}
-
-.orders-tax {
-  flex: none;
-  color: var(--text-secondary);
-  font: var(--type-caption);
-}
-
-.orders-filters {
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto auto;
-  gap: var(--space-2);
-}
-
-.orders-search {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 44px;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-md);
-  background: var(--fill);
-  color: var(--text-tertiary);
-}
-
-.orders-search input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--text-primary);
-  font: var(--type-subhead);
-}
-
-.orders-select {
-  width: 100%;
-  min-width: 142px;
-}
-
-.orders-list {
-  max-height: 620px;
-  overflow: auto;
-  padding-right: var(--space-1);
-}
-
-.orders-row {
-  width: 100%;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  border: 0.5px solid transparent;
-  border-radius: var(--radius-lg);
-  background: transparent;
-  color: var(--text-primary);
-  text-align: left;
-  transition:
-    background var(--dur-fast) var(--ease-out),
-    border-color var(--dur-fast) var(--ease-out);
-}
-
-.orders-row:hover,
-.orders-row--active {
-  border-color: var(--separator);
-  background: var(--fill);
-}
-
-.orders-row--voided {
-  opacity: 0.6;
-}
-
-.orders-voided-tag {
-  display: inline-block;
-  margin-left: var(--space-2);
-  padding: 1px var(--space-2);
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--danger) 15%, transparent);
-  color: var(--danger);
-  font: var(--type-caption);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  vertical-align: middle;
-}
-
-.orders-row__icon {
-  width: 38px;
-  height: 38px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  color: var(--accent);
-}
-
-.orders-row__body {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.orders-row__body strong,
-.orders-row__body span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.orders-row__body strong {
-  font: var(--type-subhead);
-  font-weight: 600;
-}
-
-.orders-row__body span {
-  color: var(--text-secondary);
-  font: var(--type-caption);
-}
-
-.orders-row__amount {
-  font: var(--type-subhead);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.orders-row__arrow {
-  color: var(--text-tertiary);
-}
-
-.orders-detail {
-  position: sticky;
-  top: 20px;
-}
-
-.orders-detail__eyebrow {
-  margin: 0 0 var(--space-1);
-  color: var(--text-secondary);
-  font: var(--type-caption);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.orders-detail__chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.orders-detail__chips span {
-  min-height: 30px;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-pill);
-  background: var(--fill);
-  color: var(--text-secondary);
-  font: var(--type-caption);
-  font-weight: 600;
-}
-
-.orders-detail__actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.orders-detail__chips .orders-detail__chip--voided {
-  background: color-mix(in srgb, var(--danger) 15%, transparent);
-  color: var(--danger);
-}
-
-.orders-detail__void-note {
-  margin: calc(var(--space-2) * -1) 0 0;
-  color: var(--danger);
-  font: var(--type-caption);
-}
-
-.orders-detail__paid-note {
-  margin: calc(var(--space-2) * -1) 0 0;
-  color: var(--success);
-  font: var(--type-caption);
-}
-
-.orders-lines {
-  padding: var(--space-3) 0;
-  border-top: 0.5px solid var(--separator);
-  border-bottom: 0.5px solid var(--separator);
-}
-
-.orders-line div {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.orders-line strong:first-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.orders-totals__grand {
-  padding-top: var(--space-3);
-  border-top: 0.5px solid var(--separator);
-}
-
-.orders-totals__grand strong {
-  color: var(--accent);
-  font: var(--type-title2);
-}
-
-.orders-empty {
-  padding: var(--space-6);
-  border-radius: var(--radius-lg);
-  background: var(--fill);
-  color: var(--text-secondary);
-  text-align: center;
-}
-
-.orders-empty--detail {
-  align-self: stretch;
-  display: grid;
-  place-items: center;
-  min-height: 260px;
-}
-
-@media (max-width: 1180px) {
-  .orders-kpis {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .orders-grid,
-  .orders-workspace {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .orders-detail {
-    position: static;
-  }
-}
-
-@media (max-width: 760px) {
-  .orders-header {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .orders-copy {
-    display: none;
-  }
-
-  .orders-range {
-    justify-content: flex-start;
-  }
-
-  .orders-kpis {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .orders-filters {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .orders-search {
-    grid-column: 1 / -1;
-  }
-
-  .orders-select {
-    width: 100%;
-  }
-
-  .orders-row {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-  }
-
-  .orders-row__arrow {
-    display: none;
-  }
-}
+.orders-page{--orders-green:#08783f;--orders-surface:rgba(255,255,255,.88);--orders-border:rgba(68,83,104,.12);display:grid;gap:16px;padding:10px 0 26px}.orders-hero{display:flex;align-items:end;justify-content:space-between;gap:24px}.orders-hero h1,.orders-hero p,.orders-history h2,.orders-history p,.insight-card h2,.delivery-summary p,.delivery-summary small{margin:0}.orders-hero h1{font-size:29px;line-height:36px;letter-spacing:-.025em}.orders-hero p{color:var(--text-secondary);font-size:15px}.orders-range{display:flex;align-items:center;justify-content:flex-end;gap:14px}.orders-range>span{color:var(--text-secondary);font-size:12px;white-space:nowrap}
+.orders-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.orders-kpi{min-height:104px;display:flex;align-items:center;gap:18px;padding:18px 20px;border:1px solid rgba(255,255,255,.72);border-radius:14px;background:var(--orders-surface);box-shadow:0 6px 22px rgba(71,87,111,.04)}.orders-kpi__icon{width:56px;height:56px;display:grid;flex:none;place-items:center;border-radius:14px;background:#e8f5ee;color:var(--orders-green)}.orders-kpi>div{min-width:0}.orders-kpi p{margin:0 0 2px;color:var(--text-secondary);font-size:12px}.orders-kpi small{color:var(--text-secondary);font-size:12px}.orders-kpi__value{display:flex;align-items:baseline;gap:14px;white-space:nowrap}.orders-kpi__value strong{font-size:23px;line-height:29px;letter-spacing:-.025em}.orders-kpi__value span{color:var(--orders-green);font-size:13px;font-weight:700}.orders-kpi__value span.is-down{color:var(--danger)}.orders-kpi__value .orders-kpi__muted{color:var(--text-tertiary);font-weight:500}
+.orders-history,.insight-card{border:1px solid rgba(255,255,255,.78);background:var(--orders-surface);box-shadow:0 7px 24px rgba(63,80,103,.045)}.orders-history{padding:16px 18px 12px;border-radius:16px}.orders-history__head,.insight-card>header{display:flex;align-items:center;justify-content:space-between;gap:16px}.orders-history__head h2,.insight-card h2{font-size:17px;line-height:23px;letter-spacing:-.012em}.orders-history__head p{color:var(--text-secondary);font-size:12px}.orders-export{display:inline-flex;align-items:center;gap:8px;min-height:42px;padding:0 16px;border:1px solid var(--orders-border);border-radius:10px;background:#fff;color:var(--text-primary);font-size:13px;font-weight:600}.orders-export:hover{border-color:color-mix(in srgb,var(--orders-green) 35%,transparent);color:var(--orders-green)}
+.orders-filters{display:grid;grid-template-columns:minmax(300px,1fr) 180px 194px 190px;gap:10px;margin-top:14px}.orders-search{min-height:40px;display:flex;align-items:center;gap:10px;padding:0 12px;border:1px solid var(--orders-border);border-radius:10px;background:rgba(245,247,249,.92);color:var(--text-secondary)}.orders-search input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--text-primary);font-size:13px}.orders-search button{width:28px;height:28px;display:grid;flex:none;place-items:center;border:0;border-radius:8px;background:transparent;color:var(--text-tertiary)}.orders-select{min-width:0;width:100%}.orders-select :deep(.acselect__trigger){height:40px;min-height:40px;border:1px solid var(--orders-border);border-radius:10px;background:rgba(255,255,255,.9);font-size:13px}
+.orders-table-wrap{margin-top:12px;overflow:visible}.orders-table{min-width:940px;overflow:visible;border:1px solid var(--orders-border);border-radius:10px;background:rgba(255,255,255,.72)}.orders-table__header,.orders-table__row{display:grid;grid-template-columns:125px minmax(160px,1.25fr) 158px 145px 135px 170px minmax(210px,1fr) 42px;align-items:center}.orders-table__header{min-height:35px;padding:0 10px;border-radius:9px 9px 0 0;background:linear-gradient(180deg,rgba(243,245,247,.92),rgba(237,239,242,.84));color:#45506a;font-size:11px;font-weight:600}.orders-table__row{position:relative;width:100%;min-height:37px;padding:0 10px;border:0;border-top:1px solid var(--orders-border);background:transparent;color:var(--text-primary);text-align:left;font-size:12px}.orders-table__row:hover{background:rgba(8,120,63,.035)}.orders-table__row.is-voided{opacity:.55}.orders-table__row>span,.orders-table__row>strong,.orders-table__row>time{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:10px}.orders-table__row>strong{font-weight:700}.orders-table__row>time{color:var(--text-secondary)}
+.order-mode,.order-status,.order-payment{display:inline-flex;align-items:center;justify-self:start;gap:6px}.order-mode{width:max-content;padding:3px 9px 3px 7px!important;border-radius:999px;font-weight:500}.order-mode--delivery{background:#e7f4ec;color:#0b7642}.order-mode--pickup{background:#fff0df;color:#d97805}.order-mode--dine_in{background:#f0eafd;color:#6443cb}.order-mode--takeaway{background:#eaf0f8;color:#3d608c}.order-payment svg{color:#3f536c}.order-status{width:max-content;padding:3px 9px 3px 7px!important;border-radius:999px;font-weight:600}.order-status--preparing{background:#e8f2fd;color:#2476c9}.order-status--pending{background:#fff5d9;color:#d68a00}.order-status--ready,.order-status--completed{background:#e4f3eb;color:#087843}.order-status--voided{background:#fde8e7;color:#b93b33}
+.order-actions{position:relative;overflow:visible!important;padding-right:0!important;justify-self:end}.order-actions__trigger{width:32px;height:32px;display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:#324158}.order-actions__trigger:hover{background:rgba(8,120,63,.08)}.order-actions__menu{position:absolute;z-index:20;top:calc(100% - 2px);right:0;width:168px;padding:6px;border:1px solid var(--orders-border);border-radius:11px;background:#fff;box-shadow:0 12px 30px rgba(42,55,72,.14)}.order-actions__menu button{width:100%;min-height:34px;display:flex;align-items:center;gap:8px;padding:0 9px;border:0;border-radius:7px;background:transparent;color:var(--text-primary);font-size:12px;text-align:left}.order-actions__menu button:hover{background:#f3f5f6}.order-actions__menu button.is-danger{color:var(--danger)}
+.orders-empty{min-height:220px;display:grid;place-items:center;align-content:center;gap:8px;color:var(--text-tertiary);font-size:13px}.orders-empty strong{color:var(--text-primary)}.orders-pagination{min-height:50px;display:flex;align-items:end;justify-content:space-between;gap:20px;color:var(--text-secondary);font-size:12px}.orders-pagination nav{display:flex;align-items:center;gap:7px}.orders-pagination nav button{min-width:34px;height:34px;display:grid;place-items:center;padding:0 9px;border:1px solid var(--orders-border);border-radius:9px;background:#fff;color:var(--text-primary);font-size:12px}.orders-pagination nav button:hover:not(:disabled){border-color:var(--orders-green);color:var(--orders-green)}.orders-pagination nav button.is-active{border-color:var(--orders-green);background:var(--orders-green);color:#fff}.orders-pagination nav button:disabled{opacity:.38;cursor:default}
+.orders-insights{display:grid;grid-template-columns:1.05fr 1.05fr 1.1fr;gap:14px}.insight-card{min-width:0;padding:16px 18px 18px;border-radius:16px}.insight-card>header>span,.insight-card>header a{display:inline-flex;align-items:center;gap:3px;color:var(--text-secondary);font-size:11px;text-decoration:none}.insight-card>header a{color:var(--orders-green);font-weight:600}.delivery-summary__items{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:14px}.delivery-summary__item{min-height:94px;padding:14px 12px;border-radius:11px;background:linear-gradient(145deg,rgba(247,249,251,.96),rgba(241,244,247,.84))}.delivery-summary__item>div{display:flex;align-items:center;gap:10px}.delivery-summary__item strong{font-size:20px;line-height:24px}.delivery-summary__item p{margin-top:7px;font-size:12px;font-weight:600}.delivery-summary__item small{color:var(--text-secondary);font-size:10px}.queue-dot{width:13px;height:13px;border-radius:999px}.queue-dot--blue{background:#2483e7}.queue-dot--amber{background:#ffb000}.queue-dot--green{background:var(--orders-green)}
+.breakdown-list{display:grid;gap:11px;margin-top:14px}.breakdown-row{display:grid;grid-template-columns:105px minmax(0,1fr);align-items:center;gap:2px 12px}.breakdown-row__label,.type-row__label{display:flex;align-items:center;gap:9px;font-size:12px}.breakdown-row__label svg,.type-row__label svg{color:var(--orders-green)}.breakdown-row__metric{display:grid;grid-template-columns:1fr 40px;align-items:center;gap:10px;text-align:right}.breakdown-row__metric strong{font-size:12px}.breakdown-row__metric small,.type-row small{color:var(--text-secondary);font-size:11px}.breakdown-row__track{grid-column:2;height:5px;margin-right:52px;border-radius:999px;background:#e5e8ea;overflow:hidden}.breakdown-row__track i,.type-row__track i{display:block;height:100%;min-width:3px;border-radius:inherit;background:var(--orders-green)}.type-row{display:grid;grid-template-columns:125px 28px 38px minmax(70px,1fr);align-items:center;gap:10px}.type-row>strong{font-size:12px;font-weight:500}.type-row__track{height:10px;border-radius:999px;background:#e4e7e9;overflow:hidden}.type-row:nth-child(2) .type-row__track i{opacity:.72}.type-row:nth-child(3) .type-row__track i,.type-row:nth-child(4) .type-row__track i{opacity:.52}.insight-empty{margin:20px 0;color:var(--text-secondary);font-size:12px}
+.order-drawer-backdrop{position:fixed;inset:0;z-index:80;display:grid;justify-items:end;background:rgba(15,23,42,.24);backdrop-filter:blur(2px)}.order-drawer{width:min(440px,94vw);height:100%;display:flex;flex-direction:column;gap:22px;padding:24px;overflow-y:auto;background:var(--bg-elevated);box-shadow:-16px 0 46px rgba(30,41,59,.15)}.order-drawer__head{display:flex;align-items:center;justify-content:space-between}.order-drawer__head p{margin:0;color:var(--text-secondary);font-size:12px}.order-drawer__head h2{margin:2px 0 0;font-size:25px}.order-drawer__head button{width:38px;height:38px;display:grid;place-items:center;border:1px solid var(--separator);border-radius:10px;background:transparent;color:var(--text-primary)}.order-drawer__meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:16px;border-radius:14px;background:var(--fill)}.order-drawer__meta div{display:grid;gap:3px}.order-drawer__meta span{color:var(--text-secondary);font-size:11px}.order-drawer__meta strong{font-size:13px}.order-drawer__lines{display:grid;gap:14px;padding:18px 0;border-block:1px solid var(--separator)}.order-drawer__lines>div,.order-drawer__totals>div{display:flex;align-items:center;justify-content:space-between;gap:16px}.order-drawer__lines span{display:grid;gap:2px}.order-drawer__lines small{color:var(--text-secondary)}.order-drawer__totals{display:grid;gap:12px}.order-drawer__totals span{color:var(--text-secondary)}.order-drawer__totals .is-grand{margin-top:4px;padding-top:16px;border-top:1px solid var(--separator);color:var(--text-primary);font-size:18px}.order-drawer footer{display:flex;gap:10px;margin-top:auto}.order-drawer footer button{min-height:42px;display:inline-flex;flex:1;align-items:center;justify-content:center;gap:8px;border:1px solid var(--separator);border-radius:10px;background:transparent;color:var(--text-primary);font-size:13px;font-weight:600}.order-drawer footer button:first-child{border-color:var(--orders-green);background:var(--orders-green);color:#fff}.order-drawer footer button.is-danger{color:var(--danger)}
+@media(max-width:1380px){.orders-filters{grid-template-columns:minmax(260px,1fr) repeat(3,minmax(145px,.34fr))}.orders-table-wrap{overflow-x:auto;padding-bottom:2px}.orders-table{overflow:hidden}.orders-kpi{gap:13px;padding-inline:15px}.orders-kpi__icon{width:48px;height:48px}.orders-kpi__value strong{font-size:20px}}
+@media(max-width:1080px){.orders-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.orders-insights{grid-template-columns:repeat(2,minmax(0,1fr))}.delivery-summary{grid-column:1/-1}}
+@media(max-width:760px){.orders-page{gap:14px;padding-top:2px}.orders-hero{align-items:start;flex-direction:column;gap:14px}.orders-hero h1{font-size:25px}.orders-hero p{font-size:13px}.orders-range{width:100%;align-items:start;flex-direction:column;gap:7px}.orders-range :deep(.range-selector){width:100%;display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}.orders-range :deep(.range-btn){padding-inline:8px;font-size:12px}.orders-kpis{gap:10px}.orders-kpi{min-height:96px;gap:10px;padding:13px}.orders-kpi__icon{width:38px;height:38px;border-radius:11px}.orders-kpi__icon :deep(svg){width:20px;height:20px}.orders-kpi__value{gap:5px;flex-wrap:wrap}.orders-kpi__value strong{font-size:17px;line-height:21px}.orders-kpi__value span{font-size:10px}.orders-kpi p,.orders-kpi small{font-size:10px}.orders-history{padding:14px 12px 10px}.orders-history__head{align-items:start}.orders-export{min-height:38px;padding-inline:12px}.orders-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.orders-search{grid-column:1/-1}.orders-filters .orders-select:last-child{grid-column:1/-1}.orders-table-wrap{overflow:visible}.orders-table{min-width:0;border:0;background:transparent;display:grid;gap:8px}.orders-table__header{display:none}.orders-table__row{min-height:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr)) 32px;gap:11px 14px;padding:14px;border:1px solid var(--orders-border);border-radius:12px;background:rgba(255,255,255,.72)}.orders-table__row>span,.orders-table__row>strong,.orders-table__row>time{display:grid;gap:3px;padding-right:0;white-space:normal}.orders-table__row>[data-label]::before{content:attr(data-label);color:var(--text-tertiary);font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.04em}.orders-table__row>strong:first-child{grid-column:1;grid-row:1}.orders-table__row>span:nth-child(2){grid-column:2;grid-row:1}.orders-table__row>.order-mode,.orders-table__row>.order-status{display:inline-flex;align-self:end}.orders-table__row>.order-actions{grid-column:3;grid-row:1}.order-actions__menu{top:100%}.orders-pagination{align-items:start;flex-direction:column}.orders-pagination nav{width:100%;overflow-x:auto;padding-bottom:4px}.orders-insights{grid-template-columns:minmax(0,1fr)}.delivery-summary{grid-column:auto}}
+@media(max-width:430px){.orders-kpis{grid-template-columns:minmax(0,1fr)}.orders-kpi{min-height:82px}.delivery-summary__items{grid-template-columns:minmax(0,1fr)}.delivery-summary__item{min-height:78px}.orders-filters{grid-template-columns:minmax(0,1fr)}.orders-search,.orders-filters .orders-select:last-child{grid-column:auto}.order-drawer__meta{grid-template-columns:minmax(0,1fr)}.order-drawer footer{flex-direction:column}}
+:global([data-theme='dark']) .orders-page,:global([data-color-theme='nocturne']) .orders-page,:global([data-color-theme='reserve']) .orders-page,:global([data-color-theme='harbor']) .orders-page,:global([data-color-theme='mono']) .orders-page{--orders-surface:color-mix(in srgb,var(--bg-surface) 94%,transparent);--orders-border:var(--separator)}
+:global([data-theme='dark']) .orders-kpi,:global([data-theme='dark']) .orders-history,:global([data-theme='dark']) .insight-card{border-color:var(--separator)}:global([data-theme='dark']) .orders-export,:global([data-theme='dark']) .orders-table,:global([data-theme='dark']) .orders-pagination nav button,:global([data-theme='dark']) .order-actions__menu{background:var(--bg-elevated)}
+.orders-page{gap:15px;padding:2px 0 0}.orders-table__row{cursor:pointer}
 </style>

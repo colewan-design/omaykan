@@ -765,7 +765,6 @@ The current `apps/web` client is now wired to the Laravel backend through Vite e
 VITE_API_BASE_URL=http://127.0.0.1:8000
 VITE_POS_ORGANIZATION_SLUG=demo-coffee
 VITE_POS_STORE_CODE=main
-VITE_POS_PAIRING_CODE=123456
 VITE_POS_DEVICE_NAME=Front Counter
 VITE_POS_APP_VERSION=0.1.0
 ```
@@ -773,5 +772,5 @@ VITE_POS_APP_VERSION=0.1.0
 Notes:
 
 - The repository still keeps local cache and local auth in IndexedDB so the app remains usable offline.
-- Turning on `Online sync` in Settings triggers device pairing, catalog bootstrap, and outbox sync.
+- Turning on `Online sync` in Settings makes staff sign-in reach the API; the token it mints is what catalog bootstrap and outbox sync then run on.
 - Orders, products, and categories are queued locally first, then pushed to Laravel when sync is enabled.

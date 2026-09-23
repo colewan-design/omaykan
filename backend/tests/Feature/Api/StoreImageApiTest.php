@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\Store;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Support\Facades\Storage;
+use Tests\Concerns\SignsInStaff;
 use Tests\TestCase;
 
 /**
@@ -17,7 +18,7 @@ use Tests\TestCase;
  */
 class StoreImageApiTest extends TestCase
 {
-    use DatabaseMigrations;
+    use SignsInStaff, DatabaseMigrations;
 
     /** A real 1x1 PNG — small enough to inline, real enough for getimagesize(). */
     private const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
@@ -27,21 +28,9 @@ class StoreImageApiTest extends TestCase
         return "data:{$mime};base64,".self::PNG;
     }
 
-    private function deviceToken(): string
-    {
-        return $this->postJson('/api/device-sessions', [
-            'organizationSlug' => 'demo-coffee',
-            'storeCode' => 'main',
-            'pairingCode' => '123456',
-            'deviceName' => 'Counter 1',
-            'platform' => 'web',
-            'appVersion' => '0.1.0',
-        ])->assertOk()->json('token');
-    }
-
     private function putImage(?string $image, ?string $token = null)
     {
-        return $this->withHeader('Authorization', 'Bearer '.($token ?? $this->deviceToken()))
+        return $this->withHeader('Authorization', 'Bearer '.($token ?? $this->staffToken()))
             ->putJson('/api/seller/store-image', ['image' => $image]);
     }
 
@@ -109,7 +98,7 @@ class StoreImageApiTest extends TestCase
         $this->seed();
         $this->giveTheShelfAPhoto();
 
-        $token = $this->deviceToken();
+        $token = $this->staffToken();
         $this->putImage($this->pngDataUrl(), $token)->assertOk();
         $path = Store::query()->firstOrFail()->image_path;
 
@@ -125,7 +114,7 @@ class StoreImageApiTest extends TestCase
         Storage::fake('local');
         $this->seed();
 
-        $token = $this->deviceToken();
+        $token = $this->staffToken();
         $this->putImage($this->pngDataUrl(), $token)->assertOk();
         $first = Store::query()->firstOrFail()->image_path;
 

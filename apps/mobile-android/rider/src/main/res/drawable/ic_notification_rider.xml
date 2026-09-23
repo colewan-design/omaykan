@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The status-bar icon for location sharing.
+
+  A map pin, drawn as a flat white silhouette on transparency, because that is
+  all Android keeps: from API 21 the small icon is masked to its alpha channel
+  and tinted by the system, so any colour put here is thrown away.
+
+  A pin rather than a bike on purpose. The notification is about the phone
+  reading a position, not about the delivery, and the icon a rider glances at on
+  a lock screen should say the same thing the words under it say.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,2 C8.13,2 5,5.13 5,9 C5,14.25 12,22 12,22 C12,22 19,14.25 19,9 C19,5.13 15.87,2 12,2 Z M12,11.5 A2.5,2.5 0 1,1 12,6.5 A2.5,2.5 0 0,1 12,11.5 Z" />
+</vector>

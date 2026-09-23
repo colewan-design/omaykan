@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      The forest ground the splash is drawn on (SplashScreen.kt), so the window
+      the platform paints before Compose's first frame is the same colour as
+      the frame that replaces it. The dark answer is in values-night.
+    -->
+    <color name="window_background">#1E3A2B</color>
+    <!-- The forest the launcher mark sits on. Same as ForestLight in Color.kt. -->
+    <color name="ic_launcher_background">#1E3A2B</color>
+</resources>

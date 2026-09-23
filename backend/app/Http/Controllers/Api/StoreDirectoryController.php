@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Category;
 use App\Models\Product;
 use App\Models\Store;
 use Illuminate\Http\JsonResponse;
@@ -12,21 +13,27 @@ use Illuminate\Support\Collection;
 /**
  * The public list of shops a customer can order from.
  *
- * Until now the storefront could only be reached by knowing a store code:
- * StoreCodeController resolves one code to one store, which is the flow for a
- * shopper holding a receipt or a tarpaulin. It gives a first-time visitor
- * nothing to browse, so the landing page was pinned to a single tenant at
- * build time. This is the other half — "which shops are there?" — and it is
- * what lets the landing page be a market rather than one stall.
+ * The storefront used to be reachable only by typing the code a shop handed
+ * out, which is a fine flow for a shopper holding a receipt or looking at a
+ * tarpaulin and nothing at all for a first-time visitor — the landing page was
+ * pinned to a single tenant at build time because of it. This is the other
+ * half, "which shops are there?", and since the codes were retired it is the
+ * whole of how a customer finds a shop.
  *
  * Deliberately not enumerable in the way store codes are: this returns only
  * what a shop already publishes to its own customers (name, address, pin), and
- * never the pairing code, so there is nothing here worth harvesting.
+ * and no credential of any kind, so there is nothing here worth harvesting.
  */
 class StoreDirectoryController extends Controller
 {
     /** Sorting is only meaningful within a sane radius; beyond it, order by name. */
     private const MAX_DISTANCE_KM = 60.0;
+
+    /** Enough to say what kind of shop this is; more turns the card into a list. */
+    private const TOP_CATEGORIES = 3;
+
+    /** How long a shop counts as newly opened on Omaykan. */
+    private const NEW_SHOP_DAYS = 30;
 
     private const EARTH_RADIUS_KM = 6371.0;
 
@@ -49,7 +56,14 @@ class StoreDirectoryController extends Controller
         $lat = isset($validated['lat']) ? (float) $validated['lat'] : null;
         $lng = isset($validated['lng']) ? (float) $validated['lng'] : null;
 
-        $stores = $this->query($term)->get();
+        // Filtered through the verdict as well as the query's `tradable` scope:
+        // the scope covers suspension, this covers a lapsed subscription once
+        // billing is enforced. Same answer the shop's own page gives, so a card
+        // in this list never leads to a closed storefront.
+        $stores = $this->query($term)
+            ->get()
+            ->filter(fn (Store $store) => $store->organization?->accessVerdict()->allowsStorefront() ?? false)
+            ->values();
         $shelves = $this->sellableShelves($stores);
 
         $rows = $stores
@@ -79,6 +93,23 @@ class StoreDirectoryController extends Controller
                     'lat' => $store->lat === null ? null : (float) $store->lat,
                     'lng' => $store->lng === null ? null : (float) $store->lng,
                     'productCount' => $count,
+                    // What the shop actually sells, in its own words — the
+                    // aisles it has stocked, busiest first. A shopper choosing
+                    // between counters is choosing on this more than on the
+                    // shop's name.
+                    'categories' => $shelf['categories'] ?? [],
+                    // Computed here rather than shipping created_at: when a
+                    // shop stops being new is a business rule, and it should
+                    // not be duplicated into every client that draws a badge.
+                    'isNew' => $store->created_at !== null
+                        && $store->created_at->gt(now()->subDays(self::NEW_SHOP_DAYS)),
+                    // Listed with a badge rather than hidden: a regular who
+                    // cannot find their shop assumes it has gone, and one who
+                    // sees "back at 4:00 PM" comes back at four.
+                    'orderingPaused' => $store->isOrderingPaused(),
+                    'orderingResumesAt' => $store->isOrderingPaused()
+                        ? $store->ordering_resumes_at?->toIso8601String()
+                        : null,
                     'distanceKm' => $this->distanceKm($store, $lat, $lng),
                 ];
             })
@@ -94,16 +125,14 @@ class StoreDirectoryController extends Controller
     private function query(string $term)
     {
         return Store::query()
-            ->with('organization')
+            ->with('organization.subscription')
             ->where('status', 'active')
-            // Only modes that can put something in a cart — the same gate
-            // StoreCodeController applies when resolving a code, so a salon
-            // does not appear in a list of places to order from.
-            ->whereIn('business_mode', StoreCodeController::ONLINE_MODES)
-            ->whereHas('organization', function ($query) {
-                $query->where('status', 'active')
-                    ->where(fn ($inner) => $inner->where('suspended', false)->orWhereNull('suspended'));
-            })
+            // Only modes that can put something in a cart, so a salon does not
+            // appear in a list of places to order from.
+            ->whereIn('business_mode', Store::ONLINE_MODES)
+            // The SQL half of "may this shop trade". The subscription half is
+            // dates and a config flag, and is applied to the results in index.
+            ->whereHas('organization', fn ($query) => $query->tradable())
             ->when($term !== '', function ($query) use ($term) {
                 // lower() + LIKE rather than ILIKE: the test suite runs on
                 // SQLite as well as PostgreSQL, and ILIKE exists only on one
@@ -145,7 +174,7 @@ class StoreDirectoryController extends Controller
      * fallback rather than the source.
      *
      * @param  Collection<int, Store>  $stores
-     * @return array<string, array<string, array{count: int, imageUrl: ?string}>>
+     * @return array<string, array<string, array{count: int, imageUrl: ?string, categories: array<int, string>}>>
      */
     private function sellableShelves(Collection $stores): array
     {
@@ -167,11 +196,59 @@ class StoreDirectoryController extends Controller
                 ->map(fn ($row) => [
                     'count' => (int) $row->aggregate,
                     'imageUrl' => $row->shelf_photo,
+                    'categories' => [],
                 ])
                 ->all();
+
+            foreach ($this->topCategories($group->pluck('organization_id')->unique()->all(), (string) $mode) as $orgId => $names) {
+                if (isset($shelves[$mode][$orgId])) {
+                    $shelves[$mode][$orgId]['categories'] = $names;
+                }
+            }
         }
 
         return $shelves;
+    }
+
+    /**
+     * The busiest few aisles per organization, as names.
+     *
+     * Two queries for the whole directory rather than two per shop: one to
+     * count products per (organization, category), one to name the categories
+     * that survived the cut.
+     *
+     * @param  array<int, string>  $organizationIds
+     * @return array<string, array<int, string>>
+     */
+    private function topCategories(array $organizationIds, string $mode): array
+    {
+        if ($organizationIds === []) {
+            return [];
+        }
+
+        $counts = Product::query()
+            ->whereIn('organization_id', $organizationIds)
+            ->where('is_active', true)
+            ->whereJsonContains('business_modes', $mode)
+            ->whereNotNull('category_id')
+            ->groupBy('organization_id', 'category_id')
+            ->selectRaw('organization_id, category_id, count(*) as aggregate')
+            ->get();
+
+        $names = Category::query()
+            ->whereIn('id', $counts->pluck('category_id')->unique()->all())
+            ->pluck('name', 'id');
+
+        return $counts
+            ->groupBy('organization_id')
+            ->map(fn (Collection $rows) => $rows
+                ->sortByDesc('aggregate')
+                ->map(fn ($row) => $names[$row->category_id] ?? null)
+                ->filter()
+                ->take(self::TOP_CATEGORIES)
+                ->values()
+                ->all())
+            ->all();
     }
 
     /**
@@ -206,10 +283,17 @@ class StoreDirectoryController extends Controller
      * @param  Collection<int, array<string, mixed>>  $rows
      * @return array<int, array<string, mixed>>
      */
+    /**
+     * Open shops first, then by distance when there is a location, then by
+     * name. A paused shop stays in the list (see index) but is not what a
+     * hungry person should see first.
+     */
     private function sort(Collection $rows, bool $hasLocation): array
     {
         if (! $hasLocation) {
-            return $rows->values()->all();
+            // Stable: the query already ordered by name, and that order holds
+            // within the open and the paused halves.
+            return $rows->sortBy(fn (array $row): int => $row['orderingPaused'] ? 1 : 0)->values()->all();
         }
 
         return $rows
@@ -217,7 +301,7 @@ class StoreDirectoryController extends Controller
                 $distance = $row['distanceKm'];
                 $measurable = $distance !== null && $distance <= self::MAX_DISTANCE_KM;
 
-                return [$measurable ? 0 : 1, $measurable ? $distance : 0, $row['name']];
+                return [$row['orderingPaused'] ? 1 : 0, $measurable ? 0 : 1, $measurable ? $distance : 0, $row['name']];
             })
             ->values()
             ->all();

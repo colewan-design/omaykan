@@ -33,6 +33,14 @@ function paymentMethodLabel(order: OrderSummary): string {
 export function buildReceiptHtml(order: OrderSummary, business: ReceiptBusinessInfo): string {
   const businessName = escapeHtml(business.name || businessModeLabel(order.businessMode))
 
+  // Itemised, as a receipt must be: what came off, of what kind, and why.
+  const discountRow = order.discountCents
+    ? `<div class="receipt-row">
+      <span>${escapeHtml(order.discount?.percent != null ? `Discount (${order.discount.percent}%)` : 'Discount')}${order.discount?.reason ? ` · ${escapeHtml(order.discount.reason)}` : ''}</span>
+      <span>−${escapeHtml(formatCurrency(order.discountCents))}</span>
+    </div>`
+    : ''
+
   const itemRows = order.items
     .map((item) => `
       <div class="receipt-item">
@@ -118,6 +126,7 @@ export function buildReceiptHtml(order: OrderSummary, business: ReceiptBusinessI
     <span>Subtotal</span>
     <span>${escapeHtml(formatCurrency(order.subtotalCents))}</span>
   </div>
+  ${discountRow}
   <div class="receipt-row">
     <span>Tax</span>
     <span>${escapeHtml(formatCurrency(order.taxCents))}</span>

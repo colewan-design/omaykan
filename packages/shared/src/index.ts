@@ -104,7 +104,20 @@ export interface Product {
   taxRate: number
   kind: ProductKind
   imageUrl?: string
+  /**
+   * Further photographs of the same product, after `imageUrl`. The detail
+   * page's gallery is `[imageUrl, ...photoUrls]`; everywhere else — cards,
+   * order lines, the shop directory — still reads `imageUrl` alone and needs
+   * to know nothing about galleries.
+   */
+  photoUrls?: string[]
+  /** The name on the pack, which is rarely the name the merchant typed. */
+  brand?: string
+  /** "Can", "Sachet", "Bottle" — free text, as the merchant filed it. */
+  packagingType?: string
   unitLabel?: string
+  /** What it is, in the shop's own words. Shown on the storefront's product page. */
+  description?: string
   outOfStock?: boolean
   stockQty?: number
   lowStockThreshold?: number
@@ -117,6 +130,12 @@ export interface Customer {
   phone?: string
   email?: string
   notes?: string
+  /**
+   * When they agreed to be enrolled in points. Null or absent: they earn
+   * nothing. Keeping a named person's number for a points scheme is personal
+   * data under the Data Privacy Act, so the till asks first.
+   */
+  loyaltyConsentAt?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -173,6 +192,188 @@ export interface OrderItemSummary {
   quantity: number
   unitPriceCents: number
   lineTotalCents: number
+  /**
+   * The product's VAT rate at the moment of sale, as a fraction (0.12). Kept
+   * on the line because the order's tax was computed from it, and a later
+   * change to the product must not change what this receipt says. Absent on
+   * orders recorded before it was kept.
+   */
+  taxRate?: number
+}
+
+/**
+ * A discount the cashier gives, before it is priced. Exactly one of
+ * `percent` and `amountCents`.
+ *
+ * `manual` is the only kind the till offers today. The table it lands in
+ * (`order_discounts`) already has room for `promo` and `loyalty`, and for the
+ * statutory senior-citizen and PWD discounts once their VAT treatment is
+ * confirmed — see documentation/merchant-features.md §7.
+ */
+export interface OrderDiscountInput {
+  /**
+   * `manual` is the cashier's own discretion, and counts against their role's
+   * limit. `promo` is a code the server checked (PromoCodeController::check):
+   * its amount is the server's, and it is not the cashier's discretion.
+   */
+  kind: 'manual' | 'promo' | 'loyalty'
+  /** 0–100. */
+  percent?: number
+  amountCents?: number
+  /** Points spent, for `loyalty`. Their worth is the server's (LoyaltyController::check). */
+  points?: number
+  /** Why, in the cashier's words — "regular", "damaged box". The code itself, for a promo. */
+  reason?: string | null
+  /** Which code, for `promo`. */
+  promoCodeId?: string | null
+}
+
+/** A discount as it was actually applied: always in centavos. */
+export interface AppliedDiscount {
+  kind: 'manual' | 'promo' | 'loyalty'
+  amountCents: number
+  points?: number
+  /** Set when the cashier asked for a percentage; null for a flat amount. */
+  percent: number | null
+  reason: string | null
+  appliedByUserId?: string | null
+  promoCodeId?: string | null
+}
+
+export interface PricedOrder {
+  subtotalCents: number
+  discountCents: number
+  taxCents: number
+  totalCents: number
+  discount: AppliedDiscount | null
+}
+
+/**
+ * A rider one shop keeps on file.
+ *
+ * `onPlatform` is the distinction that matters everywhere this is shown. False
+ * means a name and a number: assigning them records who is carrying the order
+ * and the shop rings them, which is how deliveries worked before there was a
+ * rider app and is still how most of them work. True means a real account —
+ * the order lands in that person's app, they can hand it back to the board,
+ * and their position feeds the live map.
+ */
+/**
+ * Customer messages, as the shop's inbox sees them. One conversation per
+ * customer per shop; a message can name an order. See the backend's
+ * SellerConversationController.
+ */
+export interface ConversationMessage {
+  id: number
+  from: 'customer' | 'store'
+  body: string
+  order: { id: string; ticketNumber: string } | null
+  createdAt: string
+  /** First name of the member of staff who wrote a store message. */
+  authorName: string | null
+}
+
+export interface ConversationSummary {
+  id: string
+  /** The customer's name only — their email and phone are theirs to give. */
+  customer: { name: string }
+  lastMessage: ConversationMessage | null
+  lastMessageAt: string | null
+  unreadCount: number
+}
+
+/** One of the customer's recent orders at this shop, beside the thread. */
+export interface ConversationOrderRef {
+  id: string
+  ticketNumber: string
+  status: string | null
+  deliveryStage: string | null
+  fulfillmentMethod: string | null
+  totalCents: number
+  createdAt: string | null
+}
+
+export interface ConversationThread {
+  conversation: ConversationSummary
+  messages: ConversationMessage[]
+  recentOrders: ConversationOrderRef[]
+}
+
+export interface SavedRider {
+  id: string
+  riderId: string | null
+  name: string
+  phone: string | null
+  note: string | null
+  onPlatform: boolean
+  timesUsed: number
+  lastUsedAt: string | null
+  /** The account's status, or null for an off-platform rider. */
+  status: string | null
+  /** Whether that account is reporting a position right now. */
+  online: boolean
+}
+
+/** A rider who has delivered for this shop but is not on its list yet. */
+export interface RecentRider {
+  riderId: string
+  name: string
+  phone: string | null
+  onPlatform: true
+  status: string
+  online: boolean
+}
+
+/** What the assign-a-rider picker is built from. */
+export interface SavedRiderDirectory {
+  saved: SavedRider[]
+  recent: RecentRider[]
+}
+
+/**
+ * A rider's last reported position, exactly as the API serves it.
+ *
+ * `stale` and `ageSeconds` are computed server-side rather than from the
+ * client's clock: a phone with the wrong time would otherwise declare a live
+ * rider missing, or a missing one live.
+ */
+/** What a shop or a customer is told about the rider carrying an order. */
+export interface RiderVehicleProfile {
+  id: string
+  name: string
+  /** Server-relative, or null for a rider who has not uploaded one. */
+  photoUrl: string | null
+  vehicle: {
+    type: string
+    make: string | null
+    model: string | null
+    color: string | null
+    /** "red Honda Click" — colour first, because it reads furthest. */
+    label: string
+    plateNumber: string
+  }
+  rating: {
+    /** Null, not zero, for a rider nobody has rated yet. */
+    average: number | null
+    count: number
+  }
+}
+
+export interface RiderPosition {
+  lat: number
+  lng: number
+  headingDeg: number | null
+  speedKph: number | null
+  accuracyM: number | null
+  at: string
+  ageSeconds: number
+  stale: boolean
+}
+
+/** Where a delivery starts and where it ends. */
+export interface OrderRoute {
+  pickup: { name: string | null; address: string | null; lat: number | null; lng: number | null }
+  dropoff: { address: string | null; lat: number | null; lng: number | null }
 }
 
 export interface OrderSummary {
@@ -187,6 +388,9 @@ export interface OrderSummary {
   status: OrderStatus
   paymentMethod: PaymentMethod
   subtotalCents: number
+  /** Off the subtotal, before tax. Absent (0) on orders from before discounts. */
+  discountCents?: number
+  discount?: AppliedDiscount | null
   taxCents: number
   totalCents: number
   tenderedCents: number
@@ -207,6 +411,25 @@ export interface OrderSummary {
   deliveryStage?: DeliveryStage | null
   riderName?: string | null
   riderPhone?: string | null
+  /**
+   * Set only when the rider is a platform account rather than a name the shop
+   * typed in. It is what separates "our nephew on a tricycle", who has no app
+   * and no map, from a rider whose position the dashboard can draw.
+   */
+  riderId?: string | null
+  /** The rider's last known fix. Null when nobody is reporting one. */
+  riderPosition?: RiderPosition | null
+  /**
+   * A face, a bike and a score, for the person at the counter.
+   *
+   * Ungated for the shop, unlike the customer's copy: the shop is a party to
+   * this delivery for its whole life, and counter staff handing over a bag need
+   * to know which of the three people waiting is the one with this order. Null
+   * for a rider typed in at the till — no account, nothing to describe.
+   */
+  riderProfile?: RiderVehicleProfile | null
+  /** The two fixed ends of the trip, for the delivery map. */
+  route?: OrderRoute | null
   /** Quoted by the API from the drop-off distance; 0 for pickup. */
   deliveryFeeCents?: number
   // Absent/null on every non-voided order. A void reverses the whole order —
@@ -253,11 +476,11 @@ export interface AppSettings {
   businessMode: BusinessMode
   businessName: string
   businessImageUrl: string
-  // Customer-facing code for the shared storefront app to find this store.
-  // Only populated for self-serve signups (apps/web/src/onboarding) — blank
-  // on single-tenant deployments that never went through that flow.
-  pairingCode: string
-  syncMode: 'local-only' | 'online-sync'
+  // The shop's own handle in its storefront link, `/?shop=<slug>`. This
+  // replaced `pairingCode`, the code a customer used to type to find the shop
+  // — which was also the secret a till paired with, and is gone with pairing.
+  // Blank on single-tenant deployments that never went through signup.
+  storefrontSlug: string
   appearance: Appearance
   theme: Theme
   accentTotalAnimation: boolean
@@ -273,6 +496,27 @@ export interface RoleDefinition {
   // saved roles means false. Granting the 'admin' role, or granting this
   // flag itself, stays owner-only regardless of who holds it.
   canManageStaff?: boolean
+  /**
+   * The largest discount this role may give on its own, as a percentage of the
+   * order's subtotal. Absent falls back to DEFAULT_DISCOUNT_LIMITS. Admin is
+   * always 100. See RolePermissions::maxDiscountPercent on the server, which
+   * holds the same defaults.
+   */
+  maxDiscountPercent?: number
+}
+
+/** What each built-in role may discount when the shop has not said. Mirrors the backend. */
+export const DEFAULT_DISCOUNT_LIMITS: Record<string, number> = {
+  admin: 100,
+  manager: 100,
+  cashier: 0,
+  guest: 0,
+}
+
+export function maxDiscountPercentFor(role: RoleDefinition | null | undefined): number {
+  if (!role) return 0
+  if (role.id === 'admin') return 100
+  return role.maxDiscountPercent ?? DEFAULT_DISCOUNT_LIMITS[role.id] ?? 0
 }
 
 /**
@@ -324,10 +568,12 @@ export interface CatalogSnapshot {
 
 export type CreateProductInput = Omit<Product, 'id'>
 export type CreateCategoryInput = { name: string }
-export type CreateCustomerInput = Pick<Customer, 'name' | 'phone' | 'email' | 'notes'>
+export type CreateCustomerInput = Pick<Customer, 'name' | 'phone' | 'email' | 'notes' | 'loyaltyConsentAt'>
 export type CreateSupplierInput = Pick<Supplier, 'name' | 'contact' | 'categoryIds' | 'leadTimeDays' | 'orderWindow'>
 
 export interface CreateOrderInput {
+  /** Set when retrying a sale the server may already have recorded. */
+  id?: string
   businessMode: BusinessMode
   customerId?: string | null
   customerName?: string | null
@@ -336,6 +582,8 @@ export interface CreateOrderInput {
   paymentMethod: PaymentMethod
   tenderedCents: number
   items: OrderItemSummary[]
+  /** Priced by priceOrder, exactly as the cart showed it. */
+  discount?: OrderDiscountInput | null
 }
 
 export const guestCustomerName = 'Guest'
@@ -350,8 +598,7 @@ export const defaultSettings: AppSettings = {
   businessMode: 'coffee-shop',
   businessName: '',
   businessImageUrl: '',
-  pairingCode: '',
-  syncMode: 'local-only',
+  storefrontSlug: '',
   appearance: 'system',
   theme: 'default',
   accentTotalAnimation: true,
@@ -1032,6 +1279,73 @@ export function formatCompactDate(value: string): string {
   }).format(new Date(value))
 }
 
+/**
+ * Price an order: the one calculation the cart shows, the till records and the
+ * receipt prints, so the three can never disagree.
+ *
+ * VAT is charged per line at that line's own rate (a zero-rated vegetable next
+ * to a 12% soft drink). An order-level discount comes off before tax, so VAT
+ * is on what the customer actually pays for: it is shared across the lines in
+ * proportion to their value — whole centavos, floored, the remainder on the
+ * largest line — and each line is taxed on what is left of it.
+ *
+ * The backend applies the same split when it checks a synced order
+ * (SyncController); change one and change both.
+ */
+export function priceOrder(
+  lines: Array<{ lineTotalCents: number; taxRate: number }>,
+  discount?: OrderDiscountInput | null,
+): PricedOrder {
+  const subtotalCents = lines.reduce((sum, line) => sum + line.lineTotalCents, 0)
+
+  let discountCents = 0
+  if (discount && subtotalCents > 0) {
+    const requested = discount.percent != null
+      ? Math.round((subtotalCents * Math.min(100, Math.max(0, discount.percent))) / 100)
+      : Math.round(discount.amountCents ?? 0)
+    discountCents = Math.min(subtotalCents, Math.max(0, requested))
+  }
+
+  const shares = lines.map((line) =>
+    subtotalCents > 0 ? Math.floor((discountCents * line.lineTotalCents) / subtotalCents) : 0,
+  )
+  const remainder = discountCents - shares.reduce((sum, share) => sum + share, 0)
+  if (remainder > 0 && lines.length > 0) {
+    let largest = 0
+    lines.forEach((line, index) => {
+      if (line.lineTotalCents > lines[largest].lineTotalCents) largest = index
+    })
+    shares[largest] += remainder
+  }
+
+  const taxCents = lines.reduce(
+    (sum, line, index) => sum + calculateTax(line.lineTotalCents - shares[index], line.taxRate),
+    0,
+  )
+
+  return {
+    subtotalCents,
+    discountCents,
+    taxCents,
+    totalCents: subtotalCents - discountCents + taxCents,
+    discount: discount && discountCents > 0
+      ? {
+          kind: discount.kind,
+          amountCents: discountCents,
+          percent: discount.percent ?? null,
+          reason: discount.reason?.trim() || null,
+          ...(discount.promoCodeId ? { promoCodeId: discount.promoCodeId } : {}),
+          ...(discount.points ? { points: discount.points } : {}),
+        }
+      : null,
+  }
+}
+
+/** A discount as a percentage of the subtotal it came off — what role limits are checked against. */
+export function discountPercentOf(discountCents: number, subtotalCents: number): number {
+  return subtotalCents > 0 ? (discountCents / subtotalCents) * 100 : 0
+}
+
 export function calculateTax(amountCents: number, rate: number): number {
   return Math.round(amountCents * rate)
 }
@@ -1064,4 +1378,96 @@ export function categoryTagVar(categoryId: string): string {
     hash = (hash * 31 + categoryId.charCodeAt(i)) >>> 0
   }
   return `var(${categoryTagVars[hash % categoryTagVars.length]})`
+}
+
+// -- A shop's own page ---------------------------------------------------------
+//
+// The link a seller hands out. With a shop domain configured it is the shop's
+// own subdomain, `https://<slug>.omaykan.com`; without one (a laptop, a preview
+// build) it is `/shop/<slug>` on whatever origin is serving. Built and read
+// here, in one place, because the till's Settings and Dashboard write it and
+// the storefront's shop entry parses it back — and a link the two disagreed
+// about would be a link that opens nothing.
+
+export const STOREFRONT_PATH_PREFIX = '/shop/'
+
+/**
+ * Labels that are the platform's, never a shop's. Signup refuses these as
+ * slugs too (SignupController::RESERVED_SLUGS) — keep the two lists together.
+ */
+export const RESERVED_SHOP_SUBDOMAINS: readonly string[] = [
+  'www', 'api', 'app', 'admin', 'mail', 'smtp', 'imap', 'pop', 'ftp', 'cdn',
+  'static', 'assets', 'shop', 'shops', 'store', 'stores', 'rider', 'riders',
+  'seller', 'sellers', 'help', 'support', 'status', 'blog', 'docs', 'dev',
+  'staging', 'test', 'demo', 'platform', 'dashboard', 'account', 'cart',
+  'checkout', 'reverb', 'ws', 'omaykan',
+]
+
+/** A slug that can stand as one DNS label: lowercase, digits, inner hyphens, ≤ 63. */
+export function isShopSubdomainLabel(label: string): boolean {
+  return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label) && !RESERVED_SHOP_SUBDOMAINS.includes(label)
+}
+
+export function storefrontPath(slug: string): string {
+  return `${STOREFRONT_PATH_PREFIX}${encodeURIComponent(slug)}`
+}
+
+/**
+ * The full link to a shop's page.
+ *
+ * `rootDomain` is the bare domain shops hang off (`omaykan.com`), blank for
+ * none. A slug that cannot be a hostname — an old one with an underscore, say —
+ * falls back to the path form on `origin` rather than producing a dead link.
+ */
+export function storefrontUrl(slug: string, options: { rootDomain?: string; origin: string }): string {
+  const root = (options.rootDomain ?? '').trim().toLowerCase()
+  if (root !== '' && isShopSubdomainLabel(slug)) return `https://${slug}.${root}`
+  return `${options.origin.replace(/\/+$/, '')}${storefrontPath(slug)}`
+}
+
+// -- A shop's own checkout -----------------------------------------------------
+//
+// `/shop/<slug>/checkout`, always on the main site and never on the shop's
+// subdomain: sign-in, Google sign-in and the customer's saved addresses all
+// live on the main origin, so that is where an order has to be placed from.
+// The shop's name is in the path so the page can dress itself as that shop
+// before anything has loaded, and so a link to it can't open another shop's.
+
+export const STORE_CHECKOUT_SUFFIX = '/checkout'
+
+export function storeCheckoutPath(slug: string): string {
+  return `${storefrontPath(slug)}${STORE_CHECKOUT_SUFFIX}`
+}
+
+/** The slug in a `/shop/<slug>/checkout` path, or '' for any other path. */
+export function slugFromStoreCheckoutPath(pathname: string): string {
+  const trimmed = pathname.replace(/\/$/, '')
+  if (!trimmed.endsWith(STORE_CHECKOUT_SUFFIX)) return ''
+  return slugFromStorefrontPath(trimmed.slice(0, -STORE_CHECKOUT_SUFFIX.length))
+}
+
+/** The slug a shop subdomain names, or '' for the root, `www`, or any other host. */
+export function slugFromShopHost(hostname: string, rootDomain: string): string {
+  const host = hostname.trim().toLowerCase().replace(/\.$/, '')
+  const root = rootDomain.trim().toLowerCase()
+  if (root === '' || !host.endsWith(`.${root}`)) return ''
+  const label = host.slice(0, -(root.length + 1))
+  return isShopSubdomainLabel(label) ? label : ''
+}
+
+/**
+ * The slug in a `/shop/<slug>` path, or '' for any other path.
+ *
+ * A trailing slash is tolerated — it is what a link pasted into a chat app
+ * often grows — but anything deeper is not a shop page.
+ */
+export function slugFromStorefrontPath(pathname: string): string {
+  if (!pathname.startsWith(STOREFRONT_PATH_PREFIX)) return ''
+  const rest = pathname.slice(STOREFRONT_PATH_PREFIX.length).replace(/\/$/, '')
+  if (rest === '' || rest.includes('/')) return ''
+  try {
+    return decodeURIComponent(rest)
+  } catch {
+    return ''
+  }
 }

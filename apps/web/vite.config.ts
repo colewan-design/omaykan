@@ -1,10 +1,31 @@
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig, loadEnv, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import path from 'node:path'
+import type { ServerResponse } from 'node:http'
 
 // Serves app.html and landing.html from cleaner public routes in dev and preview.
-function entryRouteAliases(): Plugin {
-  const rewrite = (req: { url?: string }) => {
+function entryRouteAliases(shopRootDomain: string): Plugin {
+  // The signup form is the *seller* one — it asks for a business name and a
+  // business type — so it lives at /seller/signup. /signup redirects there
+  // rather than 404ing: it is the URL the seller Android app opens, and
+  // every link that went out before the move. Production does the same in
+  // nginx; this keeps dev and preview honest about it.
+  const redirect = (req: { url?: string }, res: ServerResponse) => {
+    if (req.url !== '/signup' && !req.url?.startsWith('/signup?')) return false
+    res.writeHead(301, { Location: req.url.replace('/signup', '/seller/signup') })
+    res.end()
+    return true
+  }
+
+  const rewrite = (req: { url?: string; headers: { host?: string } }) => {
+    // A shop subdomain (`nenas.localhost` with VITE_SHOP_ROOT_DOMAIN=localhost)
+    // opens that shop at its root, as nginx does in production.
+    const host = (req.headers.host ?? '').split(':')[0]!.toLowerCase()
+    if (shopRootDomain !== '' && host.endsWith(`.${shopRootDomain}`) && (req.url === '/' || req.url?.startsWith('/?'))) {
+      req.url = req.url.replace('/', '/shop.html')
+      return
+    }
+
     if (req.url === '/landing' || req.url?.startsWith('/landing?')) {
       req.url = req.url.replace('/landing', '/landing.html')
       return
@@ -25,13 +46,33 @@ function entryRouteAliases(): Plugin {
       return
     }
 
-    if (req.url === '/signup' || req.url?.startsWith('/signup?')) {
-      req.url = req.url.replace('/signup', '/signup.html')
+    if (req.url === '/seller/signup' || req.url?.startsWith('/seller/signup?')) {
+      req.url = req.url.replace('/seller/signup', '/signup.html')
       return
     }
 
     if (req.url === '/account' || req.url?.startsWith('/account?')) {
       req.url = req.url.replace('/account', '/account.html')
+      return
+    }
+
+    if (req.url === '/cart' || req.url?.startsWith('/cart?')) {
+      req.url = req.url.replace('/cart', '/cart.html')
+      return
+    }
+
+    // A shop's own checkout, /shop/<slug>/checkout — before the shop page
+    // rule below, which would otherwise take it. checkout/main.ts reads the
+    // slug off the path, as shop/main.ts does.
+    if (/^\/shop\/[^/?]+\/checkout\/?(\?|$)/.test(req.url ?? '')) {
+      req.url = '/checkout.html'
+      return
+    }
+
+    // A shop's own page, /shop/<slug>. The slug is read back off the path by
+    // shop/main.ts, so only the file served changes here, not the URL.
+    if (req.url?.startsWith('/shop/')) {
+      req.url = '/shop.html'
       return
     }
 
@@ -52,13 +93,15 @@ function entryRouteAliases(): Plugin {
   return {
     name: 'entry-route-aliases',
     configureServer(server) {
-      server.middlewares.use((req, _res, next) => {
+      server.middlewares.use((req, res, next) => {
+        if (redirect(req, res)) return
         rewrite(req)
         next()
       })
     },
     configurePreviewServer(server) {
-      server.middlewares.use((req, _res, next) => {
+      server.middlewares.use((req, res, next) => {
+        if (redirect(req, res)) return
         rewrite(req)
         next()
       })
@@ -101,30 +144,65 @@ function requireTenant(): Plugin {
   }
 }
 
+/**
+ * Same-origin `/api` in dev, the way production serves it.
+ *
+ * Production puts nginx in front of both halves, so a page can call
+ * `fetch('/api/...')` and reach Laravel — and twelve of them do, across
+ * onboarding, platform-admin and support-inbox. A dev server has no such
+ * front: `/api/staff/sign-in` on :5173 is a route Vite knows nothing about, so
+ * it answers 404, and the seller signup page's sign-in tab reports "That
+ * sign-in did not work" for what is really a missing proxy. The staff app at
+ * /app was unaffected and hid the problem — it builds absolute URLs from
+ * VITE_API_BASE instead.
+ *
+ * Proxying makes the two topologies agree rather than asking every caller to
+ * remember which style it is using. Dev-server only: nothing here is in the
+ * bundle, and a built deployment still relies on its own nginx.
+ */
+function apiProxy(apiBase: string) {
+  return {
+    '/api': { target: apiBase, changeOrigin: true },
+  }
+}
+
 // https://vite.dev/config/
-export default defineConfig({
-  plugins: [vue(), entryRouteAliases(), requireTenant()],
-  resolve: {
-    alias: {
-      '@pos/core': path.resolve(__dirname, '../../packages/core/src'),
-      '@pos/shared': path.resolve(__dirname, '../../packages/shared/src'),
-      '@pos/data': path.resolve(__dirname, '../../packages/data/src'),
-      '@pos/web': path.resolve(__dirname, 'src'),
-    },
-  },
-  build: {
-    rollupOptions: {
-      input: {
-        main: path.resolve(__dirname, 'index.html'),
-        app: path.resolve(__dirname, 'app.html'),
-        landing: path.resolve(__dirname, 'landing.html'),
-        about: path.resolve(__dirname, 'about.html'),
-        signup: path.resolve(__dirname, 'signup.html'),
-        account: path.resolve(__dirname, 'account.html'),
-        rider: path.resolve(__dirname, 'rider.html'),
-        platformAdmin: path.resolve(__dirname, 'platform-admin.html'),
-        supportInbox: path.resolve(__dirname, 'support-inbox.html'),
+export default defineConfig(({ mode }) => {
+  // Third argument '' loads every key, not just the VITE_ ones — this is the
+  // config file, not the bundle, so there is nothing to leak into.
+  const env = loadEnv(mode, __dirname, '')
+  const apiBase = env.VITE_API_BASE?.trim() || 'http://127.0.0.1:8000'
+
+  return {
+    plugins: [vue(), entryRouteAliases((env.VITE_SHOP_ROOT_DOMAIN ?? '').trim().toLowerCase()), requireTenant()],
+    server: { proxy: apiProxy(apiBase) },
+    // `vite preview` serves the built bundle with no nginx either.
+    preview: { proxy: apiProxy(apiBase) },
+    resolve: {
+      alias: {
+        '@pos/core': path.resolve(__dirname, '../../packages/core/src'),
+        '@pos/shared': path.resolve(__dirname, '../../packages/shared/src'),
+        '@pos/data': path.resolve(__dirname, '../../packages/data/src'),
+        '@pos/web': path.resolve(__dirname, 'src'),
       },
     },
-  },
+    build: {
+      rollupOptions: {
+        input: {
+          main: path.resolve(__dirname, 'index.html'),
+          app: path.resolve(__dirname, 'app.html'),
+          landing: path.resolve(__dirname, 'landing.html'),
+          about: path.resolve(__dirname, 'about.html'),
+          signup: path.resolve(__dirname, 'signup.html'),
+          account: path.resolve(__dirname, 'account.html'),
+          cart: path.resolve(__dirname, 'cart.html'),
+          shop: path.resolve(__dirname, 'shop.html'),
+          checkout: path.resolve(__dirname, 'checkout.html'),
+          rider: path.resolve(__dirname, 'rider.html'),
+          platformAdmin: path.resolve(__dirname, 'platform-admin.html'),
+          supportInbox: path.resolve(__dirname, 'support-inbox.html'),
+        },
+      },
+    },
+  }
 })

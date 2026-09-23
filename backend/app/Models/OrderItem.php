@@ -21,6 +21,7 @@ class OrderItem extends Model
         'quantity',
         'unit_price_cents',
         'line_total_cents',
+        'tax_rate',
     ];
 
     protected function casts(): array

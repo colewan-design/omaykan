@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { formatCurrency, paymentMethodOptions } from '@pos/shared/index'
 import AutocompleteSelect from '@pos/core/components/AutocompleteSelect.vue'
 import NumericKeypad from '@pos/core/components/NumericKeypad.vue'
@@ -13,7 +13,8 @@ const { dragOffset, isDragging, isClosing, onPointerDown, onPointerMove, onPoint
   onDismiss: () => emit('close'),
 })
 
-// Prevents a double-tap from firing two orders. Reset on unmount (dialog close).
+// Prevents a double-tap from firing two orders. Reset on unmount (dialog close),
+// and when the sale is refused, so the cashier can fix it and try again.
 const confirming = ref(false)
 const panelRef = ref<HTMLElement | null>(null)
 const creatingCustomer = ref(false)
@@ -57,6 +58,10 @@ const confirmLabel = computed(() => {
     if (store.tenderedCents < store.totalCents) return 'Insufficient amount'
   }
   return 'Confirm payment'
+})
+
+watch(() => store.checkoutError, (message) => {
+  if (message) confirming.value = false
 })
 
 function resetCustomerDraft() {
@@ -322,6 +327,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
             </div>
           </div>
 
+          <p v-if="store.checkoutError" class="payment-sheet__error" role="alert">{{ store.checkoutError }}</p>
+
           <!-- Confirm button -->
           <button
             class="primary-button checkout-button"
@@ -340,6 +347,12 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
 <style scoped>
 .payment-sheet {
   max-width: 700px;
+}
+
+.payment-sheet__error {
+  margin: 0 0 var(--space-2);
+  color: var(--danger-600, #b42318);
+  font: var(--type-caption);
 }
 
 @media (max-width: 720px) {

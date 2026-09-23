@@ -2,84 +2,100 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Events\OrderPlaced;
-use App\Events\OrderStatusChanged;
+use App\Http\Controllers\Concerns\ActsForAStore;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
-use App\Models\Device;
-use App\Models\InventoryAdjustment;
 use App\Models\InventoryLevel;
-use App\Models\Order;
-use App\Models\OrderItem;
-use App\Models\Payment;
+use App\Models\PosCustomer;
 use App\Models\Product;
 use App\Models\ProductStoreOverride;
 use App\Models\SyncCursor;
 use App\Models\SyncEvent;
+use App\Services\ImageRejected;
+use App\Services\ImageStore;
+use App\Services\RegisterSales;
+use App\Services\StoreContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class SyncController extends Controller
 {
+    use ActsForAStore;
+
+    /** A product description is a paragraph or two, not a spec sheet. */
+    private const DESCRIPTION_MAX = 2000;
+
     public function bootstrap(Request $request)
     {
-        $device = $this->deviceFromRequest($request);
+        $context = $this->storeContext($request);
 
         $categories = Category::query()
-            ->where('organization_id', $device->organization_id)
+            ->where('organization_id', $context->organizationId())
             ->whereNull('deleted_at')
             ->orderBy('sort_order')
             ->get();
 
         $products = Product::query()
-            ->where('organization_id', $device->organization_id)
+            ->where('organization_id', $context->organizationId())
             ->whereNull('deleted_at')
             ->with('category')
             ->orderBy('name')
             ->get();
 
         $overrides = ProductStoreOverride::query()
-            ->where('organization_id', $device->organization_id)
-            ->where('store_id', $device->store_id)
+            ->where('organization_id', $context->organizationId())
+            ->where('store_id', $context->storeId())
             ->whereNull('deleted_at')
             ->get();
 
         $inventoryLevels = InventoryLevel::query()
-            ->where('organization_id', $device->organization_id)
-            ->where('store_id', $device->store_id)
+            ->where('organization_id', $context->organizationId())
+            ->where('store_id', $context->storeId())
             ->whereNull('deleted_at')
+            ->get();
+
+        // Named counter customers, shared by every till in the organization.
+        $customers = PosCustomer::query()
+            ->where('organization_id', $context->organizationId())
+            ->orderBy('name')
             ->get();
 
         $cursor = now()->toIso8601String();
 
         SyncCursor::query()->updateOrCreate(
             [
-                'device_id' => $device->id,
+                'store_id' => $context->storeId(),
+                'user_id' => $context->user->id,
                 'cursor_name' => 'catalog',
             ],
             [
-                'organization_id' => $device->organization_id,
-                'store_id' => $device->store_id,
+                'organization_id' => $context->organizationId(),
                 'cursor_value' => $cursor,
                 'updated_at' => now(),
             ],
         );
 
         return response()->json([
-            'organization' => $device->organization()->first(['id', 'name', 'slug']),
-            'store' => $device->store()->first(['id', 'name', 'code', 'timezone', 'currency_code']),
-            'device' => [
-                'id' => $device->id,
-                'name' => $device->device_name,
-                'platform' => $device->platform,
-                'appVersion' => $device->app_version,
+            'organization' => $context->store->organization()->first(['id', 'name', 'slug']),
+            'store' => $context->store->only(['id', 'name', 'code', 'timezone', 'currency_code']),
+            // Was the paired device. A session is a person now, and the client
+            // wants the same thing from it: something to put in the title bar
+            // and a role to decide what to show.
+            'user' => [
+                'id' => $context->user->id,
+                'fullName' => $context->user->name,
+                'username' => $context->user->username,
+                'email' => $context->user->email,
+                'avatarUrl' => $context->user->avatar_url,
+                'roleId' => $context->role,
             ],
             'catalog' => [
                 'categories' => $categories,
                 'products' => $products,
                 'overrides' => $overrides,
                 'inventoryLevels' => $inventoryLevels,
+                'customers' => $customers->map(fn (PosCustomer $customer) => $this->presentCustomer($customer))->values(),
             ],
             'cursor' => $cursor,
         ]);
@@ -87,7 +103,9 @@ class SyncController extends Controller
 
     public function push(Request $request)
     {
-        $device = $this->deviceFromRequest($request);
+        $context = $this->writableStoreContext($request);
+
+        $sessionKey = $this->sessionKey($request);
 
         $validated = $request->validate([
             'organizationId' => ['required', 'uuid'],
@@ -102,26 +120,34 @@ class SyncController extends Controller
         ]);
 
         abort_unless(
-            $validated['organizationId'] === $device->organization_id && $validated['storeId'] === $device->store_id,
+            $validated['organizationId'] === $context->organizationId() && $validated['storeId'] === $context->storeId(),
             403,
-            'Device scope mismatch.',
+            'Session scope mismatch.',
         );
 
         $results = [];
 
         foreach ($validated['events'] as $eventData) {
-            $idempotencyKey = "{$device->id}:{$eventData['id']}";
+            // Was the device id — what kept one till's replayed outbox from
+            // colliding with another's. The token is the equivalent: one
+            // signed-in client, one outbox, and re-pushing the same event from
+            // the same client is still the no-op it has to be.
+            $idempotencyKey = "{$sessionKey}:{$eventData['id']}";
 
             $syncEvent = SyncEvent::query()->firstOrCreate(
                 ['idempotency_key' => $idempotencyKey],
                 [
-                    'organization_id' => $device->organization_id,
-                    'store_id' => $device->store_id,
-                    'device_id' => $device->id,
+                    'organization_id' => $context->organizationId(),
+                    'store_id' => $context->storeId(),
+                    'user_id' => $context->user->id,
                     'entity_type' => $eventData['entityType'],
                     'entity_id' => $eventData['entityId'],
                     'operation' => $eventData['operation'],
-                    'payload' => $eventData['payload'],
+                    // The audit copy, with any inline photo left out: a till
+                    // syncs a picked photo as base64, and the file it becomes
+                    // is the record of it. Re-applying reads the request, never
+                    // this column, so nothing depends on the bytes being here.
+                    'payload' => $this->withoutInlineImages($eventData['payload']),
                     'idempotency_key' => $idempotencyKey,
                     'received_at' => now(),
                 ],
@@ -135,13 +161,43 @@ class SyncController extends Controller
                 continue;
             }
 
+            // Checked per event, never per batch: one push carries a sale, its
+            // stock movement and perhaps a price change together, and refusing
+            // the whole thing over the price change would lose the sale.
+            //
+            // `rejected` rather than `failed`. A failed event stays in the
+            // till's outbox and is sent again on every flush, which is right
+            // for a database hiccup and an infinite loop for a permission. A
+            // rejected one is dropped by the client, and the catalog pull that
+            // follows puts the server's version back on the device.
+            $refusal = $this->refusalFor($context, $eventData['entityType'], $eventData['payload']);
+
+            if ($refusal !== null) {
+                $syncEvent->forceFill([
+                    'failed_at' => now(),
+                    'error_message' => $refusal,
+                ])->save();
+
+                $results[] = [
+                    'eventId' => $eventData['id'],
+                    'status' => 'rejected',
+                    'message' => $refusal,
+                ];
+                continue;
+            }
+
             try {
-                DB::transaction(function () use ($device, $eventData): void {
+                DB::transaction(function () use ($context, $eventData): void {
                     match ($eventData['entityType']) {
-                        'order' => $this->applyOrderEvent($device, $eventData['payload']),
-                        'category' => $this->applyCategoryEvent($device, $eventData['entityId'], $eventData['payload']),
-                        'product' => $this->applyProductEvent($device, $eventData['entityId'], $eventData['payload']),
-                        'inventory_adjustment' => $this->applyInventoryAdjustmentEvent($device, $eventData['entityId'], $eventData['payload']),
+                        // Sales are no longer synced: the till records each one
+                        // through /api/register/orders before completing it.
+                        // Failed, not rejected, so a sale an old till still has
+                        // queued stays on it rather than being thrown away.
+                        'order' => throw new \InvalidArgumentException('Sales are recorded through /api/register/orders. Update this till.'),
+                        'category' => $this->applyCategoryEvent($context, $eventData['entityId'], $eventData['payload']),
+                        'product' => $this->applyProductEvent($context, $eventData['entityId'], $eventData['payload']),
+                        'inventory_adjustment' => $this->applyInventoryAdjustmentEvent($context, $eventData['entityId'], $eventData['payload']),
+                        'customer' => $this->applyCustomerEvent($context, $eventData['entityId'], $eventData['payload']),
                         'app_event' => null,
                         default => throw new \InvalidArgumentException("Unsupported entity type [{$eventData['entityType']}]."),
                     };
@@ -178,40 +234,46 @@ class SyncController extends Controller
 
     public function pull(Request $request)
     {
-        $device = $this->deviceFromRequest($request);
+        $context = $this->storeContext($request);
         $cursor = Carbon::parse($request->query('cursor', '1970-01-01T00:00:00Z'));
         $nextCursor = now()->toIso8601String();
 
         $categories = Category::query()
-            ->where('organization_id', $device->organization_id)
+            ->where('organization_id', $context->organizationId())
             ->where('updated_at', '>', $cursor)
             ->get();
 
         $products = Product::query()
-            ->where('organization_id', $device->organization_id)
+            ->where('organization_id', $context->organizationId())
             ->where('updated_at', '>', $cursor)
             ->get();
 
         $overrides = ProductStoreOverride::query()
-            ->where('organization_id', $device->organization_id)
-            ->where('store_id', $device->store_id)
+            ->where('organization_id', $context->organizationId())
+            ->where('store_id', $context->storeId())
             ->where('updated_at', '>', $cursor)
             ->get();
 
         $inventoryLevels = InventoryLevel::query()
-            ->where('organization_id', $device->organization_id)
-            ->where('store_id', $device->store_id)
+            ->where('organization_id', $context->organizationId())
+            ->where('store_id', $context->storeId())
+            ->where('updated_at', '>', $cursor)
+            ->get();
+
+        // Deleted ones too, so another till can drop them.
+        $customers = PosCustomer::withTrashed()
+            ->where('organization_id', $context->organizationId())
             ->where('updated_at', '>', $cursor)
             ->get();
 
         SyncCursor::query()->updateOrCreate(
             [
-                'device_id' => $device->id,
+                'store_id' => $context->storeId(),
+                'user_id' => $context->user->id,
                 'cursor_name' => 'catalog',
             ],
             [
-                'organization_id' => $device->organization_id,
-                'store_id' => $device->store_id,
+                'organization_id' => $context->organizationId(),
                 'cursor_value' => $nextCursor,
                 'updated_at' => now(),
             ],
@@ -224,150 +286,180 @@ class SyncController extends Controller
                 'products' => $products,
                 'overrides' => $overrides,
                 'inventoryLevels' => $inventoryLevels,
+                'customers' => $customers->map(fn (PosCustomer $customer) => $this->presentCustomer($customer))->values(),
             ],
         ]);
     }
 
-    private function applyOrderEvent(Device $device, array $payload): void
+    /**
+     * A named counter customer, made or changed at a till.
+     *
+     * The id is the till's own, so a customer made offline keeps it. One that
+     * belongs to another organization is refused outright — a till cannot
+     * rename somebody else's customer by guessing an id. Consent to points is
+     * recorded only when the key is sent, so an older till's edit does not
+     * withdraw it.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function applyCustomerEvent(StoreContext $context, string $entityId, array $payload): void
     {
-        $orderData = $payload['order'] ?? null;
-        $items = $payload['items'] ?? [];
-        $payments = $payload['payments'] ?? [];
+        $existing = PosCustomer::withTrashed()->whereKey($entityId)->first();
 
-        if (! is_array($orderData) || ! isset($orderData['id'], $orderData['ticketNumber'])) {
-            throw new \InvalidArgumentException('Order payload is missing required fields.');
+        if ($existing !== null && $existing->organization_id !== $context->organizationId()) {
+            throw new \InvalidArgumentException('That customer belongs to another shop.');
         }
 
-        $existing = Order::query()->whereKey($orderData['id'])->first();
-        $previousStatus = $existing?->order_status;
+        $customer = $existing ?? new PosCustomer(['id' => $entityId, 'organization_id' => $context->organizationId()]);
 
-        $order = Order::query()->updateOrCreate(
-            ['id' => $orderData['id']],
-            [
-                'organization_id' => $device->organization_id,
-                'store_id' => $device->store_id,
-                'device_id' => $device->id,
-                'user_id' => $orderData['userId'] ?? null,
-                'ticket_number' => $orderData['ticketNumber'],
-                'order_status' => $orderData['orderStatus'] ?? 'completed',
-                'order_type' => $orderData['orderType'] ?? 'takeaway',
-                'payment_status' => $orderData['paymentStatus'] ?? 'paid',
-                'subtotal_cents' => $orderData['subtotalCents'] ?? 0,
-                'tax_cents' => $orderData['taxCents'] ?? 0,
-                'total_cents' => $orderData['totalCents'] ?? 0,
-                'business_date' => $orderData['businessDate'] ?? now()->toDateString(),
-                'completed_at' => $orderData['completedAt'] ?? now(),
-            ],
-        );
+        $text = fn (string $key, int $max) => array_key_exists($key, $payload)
+            ? (is_string($payload[$key]) && trim($payload[$key]) !== '' ? mb_substr(trim($payload[$key]), 0, $max) : null)
+            : $customer->{$key};
 
-        $order->items()->delete();
-        InventoryAdjustment::query()
-            ->where('organization_id', $device->organization_id)
-            ->where('store_id', $device->store_id)
-            ->where('order_id', $order->id)
-            ->delete();
+        $customer->fill([
+            'name' => $text('name', 255) ?? $customer->name ?? 'Customer',
+            'phone' => $text('phone', 40),
+            'email' => $text('email', 190),
+            'notes' => $text('notes', 2000),
+        ]);
 
-        foreach ($items as $item) {
-            $orderItem = OrderItem::query()->create([
-                'id' => $item['id'] ?? (string) str()->uuid(),
-                'organization_id' => $device->organization_id,
-                'store_id' => $device->store_id,
-                'order_id' => $order->id,
-                'product_id' => $item['productId'] ?? null,
-                'product_name' => $item['productName'] ?? $item['name'] ?? 'Unknown product',
-                'quantity' => $item['quantity'] ?? 1,
-                'unit_price_cents' => $item['unitPriceCents'] ?? 0,
-                'line_total_cents' => $item['lineTotalCents'] ?? 0,
-            ]);
-
-            $product = ! empty($item['productId'])
-                ? Product::query()->find($item['productId'])
-                : null;
-
-            if ($product?->track_inventory) {
-                $quantity = -1 * (float) ($item['quantity'] ?? 1);
-                $this->recordInventoryAdjustment(
-                    $device,
-                    $item['inventoryAdjustmentId'] ?? (string) str()->uuid(),
-                    $item['productId'],
-                    $quantity,
-                    'sale',
-                    "order:{$order->ticket_number}",
-                    $order->id,
-                    $orderItem->created_at ?? now(),
-                );
-            }
+        if (array_key_exists('loyaltyConsentAt', $payload)) {
+            $customer->loyalty_consent_at = $payload['loyaltyConsentAt'] ? Carbon::parse($payload['loyaltyConsentAt']) : null;
         }
 
-        $order->payments()->delete();
-        foreach ($payments as $payment) {
-            Payment::query()->create([
-                'id' => $payment['id'] ?? (string) str()->uuid(),
-                'organization_id' => $device->organization_id,
-                'store_id' => $device->store_id,
-                'order_id' => $order->id,
-                'payment_method' => $payment['paymentMethod'] ?? 'cash',
-                'amount_cents' => $payment['amountCents'] ?? ($orderData['totalCents'] ?? 0),
-                'tendered_cents' => $payment['tenderedCents'] ?? null,
-                'change_cents' => $payment['changeCents'] ?? null,
-            ]);
-        }
-
-        // Broadcast after the write, but only once the surrounding transaction
-        // commits — otherwise a listener can race ahead and query a row that is
-        // not visible yet, or hear about an order the rollback removed.
-        DB::afterCommit(function () use ($order, $existing, $previousStatus): void {
-            if ($existing === null) {
-                OrderPlaced::dispatch($order);
-
-                return;
-            }
-
-            if ($previousStatus !== $order->order_status) {
-                OrderStatusChanged::dispatch($order, $previousStatus);
-            }
-        });
+        $customer->deleted_at = ! empty($payload['deletedAt']) ? Carbon::parse($payload['deletedAt']) : null;
+        $customer->save();
     }
 
-    private function applyCategoryEvent(Device $device, string $entityId, array $payload): void
+    /** @return array<string, mixed> */
+    private function presentCustomer(PosCustomer $customer): array
+    {
+        return [
+            'id' => $customer->id,
+            'name' => $customer->name,
+            'phone' => $customer->phone,
+            'email' => $customer->email,
+            'notes' => $customer->notes,
+            'loyaltyConsentAt' => $customer->loyalty_consent_at?->toIso8601String(),
+            'createdAt' => $customer->created_at?->toIso8601String(),
+            'updatedAt' => $customer->updated_at?->toIso8601String(),
+            'deletedAt' => $customer->deleted_at?->toIso8601String(),
+        ];
+    }
+
+    /**
+     * Why this person may not make this change, or null when they may.
+     *
+     * The till hides the Products and Inventory pages from roles without them,
+     * and the seller app hides the product form's Save from cashiers. Both are
+     * courtesies; this is the control. A cashier's token used to be able to
+     * reprice the whole catalog.
+     *
+     * A stock movement that belongs to an order is not a catalog change. The
+     * register records a sale's stock as a `sale` adjustment, and a void puts
+     * it back as a `manual_correction` carrying the voided order's id — both
+     * part of ringing up, which every role at the register does. What needs
+     * the Inventory page is a movement with no order behind it: a restock, a
+     * count, a correction.
+     */
+    private function refusalFor(StoreContext $context, string $entityType, array $payload): ?string
+    {
+        $belongsToAnOrder = ($payload['adjustmentType'] ?? null) === 'sale' || ! empty($payload['orderId']);
+
+        $page = match ($entityType) {
+            'product', 'category' => 'products',
+            'inventory_adjustment' => $belongsToAnOrder ? null : 'inventory',
+            default => null,
+        };
+
+        if ($page === null || $context->can($page)) {
+            return null;
+        }
+
+        return $page === 'products'
+            ? 'Your role cannot change products. Ask a manager to make this change.'
+            : 'Your role cannot adjust stock. Ask a manager to make this change.';
+    }
+
+    private function applyCategoryEvent(StoreContext $context, string $entityId, array $payload): void
     {
         Category::query()->updateOrCreate(
             ['id' => $entityId],
             [
-                'organization_id' => $device->organization_id,
+                'organization_id' => $context->organizationId(),
                 'name' => $payload['name'] ?? 'Unnamed category',
                 'sort_order' => $payload['sortOrder'] ?? 0,
-                'created_by_device_id' => $device->id,
+                // Nothing pairs any more, so there is no terminal to credit.
+                // The column stays for the rows that have one.
+                'created_by_device_id' => null,
                 'deleted_at' => ! empty($payload['deletedAt']) ? Carbon::parse($payload['deletedAt']) : null,
             ],
         );
     }
 
-    private function applyProductEvent(Device $device, string $entityId, array $payload): void
+    private function applyProductEvent(StoreContext $context, string $entityId, array $payload): void
     {
+        // Read first: an update that simply omits a field must not blank it.
+        // Older tills push a payload with no gallery, no brand and no
+        // packaging in it at all, and their next price change should not strip
+        // the photographs off a product someone else set up.
+        $existing = Product::query()->whereKey($entityId)->first();
+        $payload = $this->withStoredImages($payload);
+
         $product = Product::query()->updateOrCreate(
             ['id' => $entityId],
             [
-                'organization_id' => $device->organization_id,
-                'business_modes' => $this->businessModesFor($device, $entityId, $payload),
+                'organization_id' => $context->organizationId(),
+                'business_modes' => $this->businessModesFor($context, $entityId, $payload),
                 'category_id' => $payload['categoryId'] ?? null,
                 'sku' => $payload['sku'] ?? null,
                 'barcode' => $payload['barcode'] ?? null,
                 'name' => $payload['name'] ?? 'Unnamed product',
                 'product_type' => $payload['productType'] ?? 'standard',
-                'tax_rate' => $payload['taxRate'] ?? 12,
+                // Stored as a percentage; the till sends a fraction. See
+                // percentTaxRate. Absent on a new product is the standard 12%.
+                'tax_rate' => array_key_exists('taxRate', $payload)
+                    ? RegisterSales::percentTaxRate($payload['taxRate'])
+                    : ($existing?->tax_rate ?? 12),
                 'price_cents' => $payload['priceCents'] ?? 0,
                 'track_inventory' => $payload['trackInventory'] ?? true,
                 'is_active' => $payload['isActive'] ?? true,
-                'created_by_device_id' => $device->id,
+                // How a product looks on a storefront, which until now got no
+                // further than the till it was typed into. None of these were
+                // written here: a merchant who photographed a product, marked
+                // it down, or labelled it "per kg" saw all three on their own
+                // screen and none of them online, silently, because the row
+                // saved and synced exactly as expected. The gallery this
+                // release adds would have gone the same way.
+                'image_url' => $this->keptField($payload, 'imageUrl', $existing?->image_url),
+                'photo_urls' => $this->keptGallery($payload, $existing?->photo_urls),
+                'brand' => $this->keptField($payload, 'brand', $existing?->brand),
+                'packaging_type' => $this->keptField($payload, 'packagingType', $existing?->packaging_type),
+                'unit_label' => $this->keptField($payload, 'unitLabel', $existing?->unit_label),
+                // What the product is, in the shop's words — shown on the
+                // storefront's product page. Capped rather than refused: a
+                // paste of a supplier's whole spec sheet is not worth losing
+                // the rest of the product over.
+                'description' => ($description = $this->keptField($payload, 'description', $existing?->description)) === null
+                    ? null
+                    : mb_substr($description, 0, self::DESCRIPTION_MAX),
+                'compare_at_price_cents' => array_key_exists('compareAtPriceCents', $payload)
+                    ? $payload['compareAtPriceCents']
+                    : $existing?->compare_at_price_cents,
+                'low_stock_threshold' => array_key_exists('lowStockThreshold', $payload)
+                    ? $payload['lowStockThreshold']
+                    : $existing?->low_stock_threshold,
+                // Nothing pairs any more, so there is no terminal to credit.
+                // The column stays for the rows that have one.
+                'created_by_device_id' => null,
                 'deleted_at' => ! empty($payload['deletedAt']) ? Carbon::parse($payload['deletedAt']) : null,
             ],
         );
 
         if ($product->track_inventory) {
             $inventory = InventoryLevel::query()->firstOrNew([
-                'organization_id' => $device->organization_id,
-                'store_id' => $device->store_id,
+                'organization_id' => $context->organizationId(),
+                'store_id' => $context->storeId(),
                 'product_id' => $product->id,
             ]);
 
@@ -382,12 +474,123 @@ class SyncController extends Controller
                     : null;
             }
 
-            $inventory->organization_id = $device->organization_id;
-            $inventory->store_id = $device->store_id;
+            $inventory->organization_id = $context->organizationId();
+            $inventory->store_id = $context->storeId();
             $inventory->updated_at = now();
             $inventory->deleted_at = null;
             $inventory->save();
         }
+    }
+
+    /**
+     * A presentation field the client may simply not have sent.
+     *
+     * An absent key is "no opinion" and keeps what is stored; a present one
+     * wins, including an explicit empty string, which is a merchant clearing
+     * the field and is stored as null rather than as "".
+     */
+    /**
+     * Pull any photo sent inline as a data URL out into a file, and put its
+     * URL in the payload instead.
+     *
+     * The till reads a picked photo with FileReader.readAsDataURL and syncs
+     * exactly that, so until this ran every photographed product carried tens
+     * of kilobytes of base64 in its row and in every catalog response. Doing
+     * it here, on arrival, means an offline till needs no change at all.
+     *
+     * A photo that is not really an image, or is too large, is dropped rather
+     * than failing the product: a price change must not be lost because the
+     * picture beside it was bad. A rejected primary photo leaves the key out,
+     * so keptField keeps whatever the product already had.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function withStoredImages(array $payload): array
+    {
+        $images = app(ImageStore::class);
+
+        $store = function (string $dataUrl) use ($images): ?string {
+            try {
+                return ProductImageController::urlFor($images->store($dataUrl, ProductImageController::DIRECTORY));
+            } catch (ImageRejected) {
+                return null;
+            }
+        };
+
+        if (ImageStore::isDataUrl($payload['imageUrl'] ?? null)) {
+            $url = $store($payload['imageUrl']);
+
+            if ($url === null) {
+                unset($payload['imageUrl']);
+            } else {
+                $payload['imageUrl'] = $url;
+            }
+        }
+
+        if (is_array($payload['photoUrls'] ?? null)) {
+            $payload['photoUrls'] = array_values(array_filter(array_map(
+                fn ($photo) => ImageStore::isDataUrl($photo) ? $store($photo) : $photo,
+                $payload['photoUrls'],
+            ), fn ($photo) => $photo !== null));
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function withoutInlineImages(array $payload): array
+    {
+        array_walk_recursive($payload, function (&$value): void {
+            if (ImageStore::isDataUrl($value)) {
+                $value = '[inline image]';
+            }
+        });
+
+        return $payload;
+    }
+
+    private function keptField(array $payload, string $key, ?string $stored): ?string
+    {
+        if (! array_key_exists($key, $payload)) {
+            return $stored;
+        }
+
+        $value = is_string($payload[$key]) ? trim($payload[$key]) : null;
+
+        return $value === '' ? null : $value;
+    }
+
+    /**
+     * The extra photographs, after the primary one in image_url.
+     *
+     * Strings only, blanks dropped, and the merchant's order kept — this is
+     * the whole of what the gallery's ordering means. An absent key keeps
+     * whatever is stored, so a till that predates galleries cannot strip one.
+     *
+     * @param  array<string, mixed>  $payload
+     * @param  array<int, string>|null  $stored
+     * @return array<int, string>|null
+     */
+    private function keptGallery(array $payload, ?array $stored): ?array
+    {
+        if (! array_key_exists('photoUrls', $payload)) {
+            return $stored;
+        }
+
+        if (! is_array($payload['photoUrls'])) {
+            return null;
+        }
+
+        $urls = array_values(array_filter(
+            array_map(fn ($url) => is_string($url) ? trim($url) : '', $payload['photoUrls']),
+            fn (string $url) => $url !== '',
+        ));
+
+        return $urls === [] ? null : $urls;
     }
 
     /**
@@ -409,7 +612,7 @@ class SyncController extends Controller
      * @param  array<string, mixed>  $payload
      * @return array<int, string>
      */
-    private function businessModesFor(Device $device, string $entityId, array $payload): array
+    private function businessModesFor(StoreContext $context, string $entityId, array $payload): array
     {
         $sent = $payload['businessModes'] ?? null;
         if (is_array($sent) && $sent !== []) {
@@ -421,12 +624,12 @@ class SyncController extends Controller
             return $existing;
         }
 
-        $storeMode = $device->store?->business_mode;
+        $storeMode = $context->store->business_mode;
 
         return $storeMode === null ? [] : [$storeMode];
     }
 
-    private function applyInventoryAdjustmentEvent(Device $device, string $entityId, array $payload): void
+    private function applyInventoryAdjustmentEvent(StoreContext $context, string $entityId, array $payload): void
     {
         if (empty($payload['productId']) || ! array_key_exists('quantityDelta', $payload)) {
             throw new \InvalidArgumentException('Inventory adjustment payload is missing required fields.');
@@ -437,8 +640,15 @@ class SyncController extends Controller
             return;
         }
 
-        $this->recordInventoryAdjustment(
-            $device,
+        // A sale's stock is recorded with the sale itself (RegisterSales). The
+        // till used to send it a second time as its own adjustment, and the
+        // server took it off the shelf twice.
+        if (($payload['adjustmentType'] ?? null) === 'sale' && ! empty($payload['orderId'])) {
+            return;
+        }
+
+        app(RegisterSales::class)->adjustStock(
+            $context,
             $entityId,
             $payload['productId'],
             (float) $payload['quantityDelta'],
@@ -449,62 +659,16 @@ class SyncController extends Controller
         );
     }
 
-    private function recordInventoryAdjustment(
-        Device $device,
-        string $adjustmentId,
-        string $productId,
-        float $quantityDelta,
-        string $adjustmentType,
-        ?string $reason,
-        ?string $orderId,
-        Carbon|string $createdAt,
-    ): void {
-        InventoryAdjustment::query()->updateOrCreate(
-            ['id' => $adjustmentId],
-            [
-                'organization_id' => $device->organization_id,
-                'store_id' => $device->store_id,
-                'device_id' => $device->id,
-                'product_id' => $productId,
-                'order_id' => $orderId,
-                'adjustment_type' => $adjustmentType,
-                'quantity_delta' => $quantityDelta,
-                'reason' => $reason,
-                'created_at' => $createdAt,
-                'synced_at' => now(),
-                'deleted_at' => null,
-            ],
-        );
-
-        $inventoryLevel = InventoryLevel::query()->firstOrNew([
-            'organization_id' => $device->organization_id,
-            'store_id' => $device->store_id,
-            'product_id' => $productId,
-        ]);
-
-        if (! $inventoryLevel->exists) {
-            $inventoryLevel->id = (string) str()->uuid();
-            $inventoryLevel->qty_on_hand = 0;
-        }
-
-        $inventoryLevel->organization_id = $device->organization_id;
-        $inventoryLevel->store_id = $device->store_id;
-        $inventoryLevel->product_id = $productId;
-        $inventoryLevel->qty_on_hand = max(0, (float) $inventoryLevel->qty_on_hand + $quantityDelta);
-        $inventoryLevel->updated_at = now();
-        $inventoryLevel->deleted_at = null;
-        $inventoryLevel->save();
-    }
-
-    private function deviceFromRequest(Request $request): Device
+    /**
+     * A stable id for this signed-in client, for the idempotency key.
+     *
+     * The token id, not the user id: one person can have the counter tablet and
+     * their own phone signed in at once, each with its own outbox, and keying
+     * both on the user would make the second one's events look like replays of
+     * the first's.
+     */
+    private function sessionKey(Request $request): string
     {
-        $device = $request->user();
-        abort_unless($device instanceof Device, 403, 'Authenticated device required.');
-
-        $device->forceFill([
-            'last_seen_at' => now(),
-        ])->save();
-
-        return $device;
+        return (string) ($request->user()?->currentAccessToken()?->id ?? 'session');
     }
 }

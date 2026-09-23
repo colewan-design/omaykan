@@ -11,7 +11,7 @@ import { messageFor, useRiderSession } from '@pos/web/rider/rider'
  * with a password that appears to be broken and no way to find out why.
  */
 
-const emit = defineEmits<{ register: [] }>()
+const emit = defineEmits<{ register: []; forgot: [] }>()
 
 const session = useRiderSession()
 
@@ -73,6 +73,15 @@ async function submit() {
         {{ submitting ? 'Signing in…' : 'Sign in' }}
       </button>
     </form>
+
+    <!-- Under the button, not beside the password field: a rider who is about
+         to succeed should not be offered a detour, and one who has just failed
+         is looking exactly here. -->
+    <p class="rdr-sub" style="margin: 18px 0 0; text-align: center">
+      <button class="rdr-link" type="button" @click="emit('forgot')">
+        Forgotten your password?
+      </button>
+    </p>
 
     <p class="rdr-sub" style="margin: 22px 0 0; text-align: center">
       New here?

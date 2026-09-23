@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\Store;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Support\Facades\Event;
+use Tests\Concerns\SignsInStaff;
 use Tests\TestCase;
 
 /**
@@ -21,19 +22,7 @@ use Tests\TestCase;
  */
 class SellerOrderApiTest extends TestCase
 {
-    use DatabaseMigrations;
-
-    private function deviceToken(): string
-    {
-        return $this->postJson('/api/device-sessions', [
-            'organizationSlug' => 'demo-coffee',
-            'storeCode' => 'main',
-            'pairingCode' => '123456',
-            'deviceName' => 'Counter 1',
-            'platform' => 'web',
-            'appVersion' => '0.1.0',
-        ])->assertOk()->json('token');
-    }
+    use SignsInStaff, DatabaseMigrations;
 
     /** Places a real storefront order so the seller has something to act on. */
     private function placeDeliveryOrder(): string
@@ -55,7 +44,7 @@ class SellerOrderApiTest extends TestCase
         $this->seed();
         $orderId = $this->placeDeliveryOrder();
 
-        $response = $this->withHeader('Authorization', "Bearer {$this->deviceToken()}")
+        $response = $this->withHeader('Authorization', "Bearer {$this->staffToken()}")
             ->getJson('/api/seller/online-orders')
             ->assertOk();
 
@@ -78,7 +67,7 @@ class SellerOrderApiTest extends TestCase
         $orderId = $this->placeDeliveryOrder();
         Event::fake([OrderDeliveryUpdated::class]);
 
-        $this->withHeader('Authorization', "Bearer {$this->deviceToken()}")
+        $this->withHeader('Authorization', "Bearer {$this->staffToken()}")
             ->postJson("/api/seller/online-orders/{$orderId}/rider", [
                 'riderName' => 'Jun Dela Cruz',
                 'riderPhone' => '0917 555 0101',
@@ -98,7 +87,7 @@ class SellerOrderApiTest extends TestCase
     {
         $this->seed();
         $orderId = $this->placeDeliveryOrder();
-        $token = $this->deviceToken();
+        $token = $this->staffToken();
 
         $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson("/api/seller/online-orders/{$orderId}/rider", ['riderName' => 'Jun'])
@@ -132,7 +121,7 @@ class SellerOrderApiTest extends TestCase
             'fulfillment' => ['method' => 'pickup'],
         ])->assertCreated()->json('orderId');
 
-        $this->withHeader('Authorization', "Bearer {$this->deviceToken()}")
+        $this->withHeader('Authorization', "Bearer {$this->staffToken()}")
             ->postJson("/api/seller/online-orders/{$orderId}/rider", ['riderName' => 'Jun'])
             ->assertStatus(422);
     }
@@ -143,7 +132,7 @@ class SellerOrderApiTest extends TestCase
         $orderId = $this->placeDeliveryOrder();
         Event::fake([OrderStatusChanged::class]);
 
-        $this->withHeader('Authorization', "Bearer {$this->deviceToken()}")
+        $this->withHeader('Authorization', "Bearer {$this->staffToken()}")
             ->postJson("/api/seller/online-orders/{$orderId}/status", ['status' => 'served'])
             ->assertOk()
             ->assertJsonPath('order.status', 'served');
@@ -158,7 +147,7 @@ class SellerOrderApiTest extends TestCase
         $orderId = $this->placeDeliveryOrder();
         $userId = (string) str()->uuid();
 
-        $this->withHeader('Authorization', "Bearer {$this->deviceToken()}")
+        $this->withHeader('Authorization', "Bearer {$this->staffToken()}")
             ->postJson("/api/seller/online-orders/{$orderId}/settle-payment", [
                 'paymentMethod' => 'cash',
                 'tenderedCents' => 20000,
@@ -178,33 +167,8 @@ class SellerOrderApiTest extends TestCase
         $this->seed();
         $orderId = $this->placeDeliveryOrder();
 
-        // A second store in its own organization, paired to its own device.
-        $otherOrg = Organization::query()->create([
-            'id' => (string) str()->uuid(),
-            'name' => 'Rival Cafe',
-            'slug' => 'rival-cafe',
-            'status' => 'active',
-        ]);
-        $otherStore = new Store([
-            'organization_id' => $otherOrg->id,
-            'name' => 'Rival Cafe',
-            'code' => 'main',
-            'business_mode' => 'coffee-shop',
-            'status' => 'active',
-        ]);
-        $otherStore->id = (string) str()->uuid();
-        // The pairing code is stored hashed, so it has to go through the model.
-        $otherStore->setPairingCode('654321');
-        $otherStore->save();
-
-        $otherToken = $this->postJson('/api/device-sessions', [
-            'organizationSlug' => 'rival-cafe',
-            'storeCode' => 'main',
-            'pairingCode' => '654321',
-            'deviceName' => 'Rival counter',
-            'platform' => 'web',
-            'appVersion' => '0.1.0',
-        ])->assertOk()->json('token');
+        // A second store in its own organization, with an owner of its own.
+        $otherToken = $this->staffTokenForNewTenant();
 
         $this->withHeader('Authorization', "Bearer {$otherToken}")
             ->postJson("/api/seller/online-orders/{$orderId}/rider", ['riderName' => 'Snooper'])

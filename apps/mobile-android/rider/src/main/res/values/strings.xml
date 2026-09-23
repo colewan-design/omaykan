@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      "Omaykan Rider", not "Omaykan". Three apps in this family can sit on one
+      phone, and three identical labels in the launcher is somebody opening the
+      wrong one while a bike is running.
+    -->
+    <string name="app_name">Omaykan Rider</string>
+
+    <!--
+      The location-sharing notification.
+
+      Worded as what it is rather than what it enables. "Sharing your location"
+      is the sentence a rider needs to be able to read at a glance from a
+      lock screen; "Live delivery tracking" would be marketing standing in
+      front of a disclosure.
+    -->
+    <string name="channel_sharing">Location sharing</string>
+    <string name="channel_sharing_description">Shown while you are sharing your location with the shops and customers whose orders you are carrying.</string>
+    <string name="sharing_title">Sharing your location</string>
+    <string name="sharing_body">Only the shops and customers whose orders you are carrying can see it.</string>
+    <string name="sharing_stop">Stop</string>
+
+    <!--
+      Job alerts.
+
+      Two channels, because they are two different things to a rider: the
+      ongoing one is furniture that makes the service visible and stoppable,
+      and the alerts are the feature. Separating them means a rider can silence
+      the first from system settings without silencing the second.
+    -->
+    <string name="channel_job_watch">Watching for jobs</string>
+    <string name="channel_job_watch_description">Shown while the app is checking the board for new deliveries in the background.</string>
+    <string name="channel_job_alerts">New jobs</string>
+    <string name="channel_job_alerts_description">A delivery you can take has appeared on the board.</string>
+    <string name="job_watch_title">Watching for jobs</string>
+    <string name="job_watch_body">You will be told when a delivery appears on the board.</string>
+    <!-- The fee leads: it is what a rider decides on from a lock screen. -->
+    <string name="alert_new_job">New job · %1$s</string>
+</resources>

@@ -1,5 +1,5 @@
 <script setup lang="ts" generic="T extends string">
-import { ChevronDown, Search } from '@lucide/vue'
+import { ChevronDown, Plus, Search } from '@lucide/vue'
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 
 interface Option<T> {
@@ -14,15 +14,23 @@ const props = withDefaults(defineProps<{
   placeholder?: string
   disabled?: boolean
   flat?: boolean
+  /**
+   * Set to let the person add an option that is not in the list, e.g.
+   * "category". The panel then offers "Add <what they typed>" and emits
+   * `create` with that name; the parent makes the option and selects it.
+   */
+  createLabel?: string
 }>(), {
   label: '',
   placeholder: 'Search…',
   disabled: false,
   flat: false,
+  createLabel: '',
 })
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: T): void
+  (e: 'create', name: string): void
 }>()
 
 const open = ref(false)
@@ -42,6 +50,22 @@ const filteredOptions = computed(() => {
   if (!needle) return props.options
   return props.options.filter((o) => o.label.toLowerCase().includes(needle))
 })
+
+/** What "Add …" would create, or '' when there is nothing new to add. */
+const creatableName = computed(() => {
+  if (!props.createLabel) return ''
+  const name = query.value.trim()
+  if (!name) return ''
+  const taken = props.options.some((o) => o.label.trim().toLowerCase() === name.toLowerCase())
+  return taken ? '' : name
+})
+
+function create() {
+  const name = creatableName.value
+  if (!name) return
+  emit('create', name)
+  closeMenu()
+}
 
 watch(filteredOptions, () => {
   highlightedIndex.value = 0
@@ -95,6 +119,7 @@ function onSearchKeydown(e: KeyboardEvent) {
     e.preventDefault()
     const opt = filteredOptions.value[highlightedIndex.value]
     if (opt) select(opt.value)
+    else create()
   } else if (e.key === 'Escape') {
     e.preventDefault()
     closeMenu()
@@ -161,7 +186,20 @@ onUnmounted(() => {
           >
             {{ opt.label }}
           </li>
-          <li v-if="!filteredOptions.length" class="acselect__empty">No matches</li>
+          <li v-if="!filteredOptions.length && !creatableName" class="acselect__empty">
+            {{ createLabel && !query.trim() ? `Type a name to add a ${createLabel}` : 'No matches' }}
+          </li>
+          <li
+            v-if="creatableName"
+            class="acselect__option acselect__create"
+            :class="{ 'acselect__option--highlighted': !filteredOptions.length }"
+            role="option"
+            aria-selected="false"
+            @click="create"
+          >
+            <Plus :size="14" aria-hidden="true" />
+            <span>Add {{ createLabel }} "{{ creatableName }}"</span>
+          </li>
         </ul>
       </div>
     </Transition>
@@ -308,6 +346,18 @@ onUnmounted(() => {
 .acselect__option--active {
   color: var(--accent);
   font-weight: 600;
+}
+
+.acselect__create {
+  gap: var(--space-2);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.acselect__create span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .acselect__empty {

@@ -1,9 +1,11 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { getPosRepository } from '@pos/core/services/runtime'
 import {
-  calculateTax,
   defaultSettings,
+  discountPercentOf,
+  formatCurrency,
+  priceOrder,
   guestCustomerName,
   type AppEvent,
   type AppSettings,
@@ -16,6 +18,7 @@ import {
   type CreateTableInput,
   type Customer,
   type DeliveryStage,
+  type OrderDiscountInput,
   type OrderStatus,
   type OrderSummary,
   type OrderType,
@@ -23,6 +26,7 @@ import {
   type Product,
   type ReorderMark,
   type RestaurantTable,
+  type RiderPosition,
   type ShiftSummary,
   type Supplier,
 } from '@pos/shared/index'
@@ -58,6 +62,12 @@ export const usePosStore = defineStore('pos', () => {
   const lastCompletedOrder = ref<OrderSummary | null>(null)
   const lowStockAlert = ref<Product[]>([])
   const shiftError = ref('')
+  // Why the last sale was not completed — the server's reason, or no
+  // connection. Shown on the payment sheet; cleared when the sheet opens.
+  const checkoutError = ref('')
+  // The id a refused or unanswered sale was sent under, kept while the cart
+  // is unchanged so trying again cannot record it twice.
+  let pendingSale: { id: string; fingerprint: string } | null = null
   const isReady = ref(false)
 
   function syncTenderedFromInput() {
@@ -114,11 +124,24 @@ export const usePosStore = defineStore('pos', () => {
       .filter((line): line is { product: Product; quantity: number; subtotalCents: number } => Boolean(line)),
   )
 
-  const subtotalCents = computed(() => cartLines.value.reduce((sum, line) => sum + line.subtotalCents, 0))
-  const taxCents = computed(() =>
-    cartLines.value.reduce((sum, line) => sum + calculateTax(line.subtotalCents, line.product.taxRate), 0),
+  /**
+   * The discount on this sale, as the cashier asked for it. Priced — and
+   * capped at the subtotal — by priceOrder, the same function saveOrder
+   * records with, so the till charges exactly what the screen shows.
+   */
+  const discount = ref<OrderDiscountInput | null>(null)
+
+  const priced = computed(() =>
+    priceOrder(
+      cartLines.value.map((line) => ({ lineTotalCents: line.subtotalCents, taxRate: line.product.taxRate })),
+      discount.value,
+    ),
   )
-  const totalCents = computed(() => subtotalCents.value + taxCents.value)
+  const subtotalCents = computed(() => priced.value.subtotalCents)
+  const discountCents = computed(() => priced.value.discountCents)
+  const appliedDiscount = computed(() => priced.value.discount)
+  const taxCents = computed(() => priced.value.taxCents)
+  const totalCents = computed(() => priced.value.totalCents)
   const changeCents = computed(() => Math.max(tenderedCents.value - totalCents.value, 0))
   const itemCount = computed(() => cartLines.value.reduce((sum, line) => sum + line.quantity, 0))
   const canCheckout = computed(
@@ -160,6 +183,7 @@ export const usePosStore = defineStore('pos', () => {
     tenderedCents.value = 0
     tenderedInput.value = ''
     cart.value = {}
+    discount.value = null
     lastCompletedOrder.value = null
     lowStockAlert.value = []
     shiftError.value = ''
@@ -258,8 +282,114 @@ export const usePosStore = defineStore('pos', () => {
     delete cart.value[productId]
   }
 
+  /**
+   * Take something off this sale. Returns why not, or null when applied.
+   *
+   * `maxPercent` is the signed-in person's role limit (maxDiscountPercentFor).
+   * Over it, the discount is refused here rather than sent for the server to
+   * flag after the money has changed hands: a manager signs in to give it.
+   */
+  function applyDiscount(input: OrderDiscountInput, maxPercent: number): string | null {
+    if (cartLines.value.length === 0) return 'Add something to the order first.'
+
+    const percent = input.percent
+    const amount = input.amountCents
+    if (percent == null && amount == null) return 'Enter an amount or a percentage.'
+    if (percent != null && (!Number.isFinite(percent) || percent <= 0 || percent > 100)) {
+      return 'A percentage between 1 and 100.'
+    }
+    if (amount != null && (!Number.isFinite(amount) || amount <= 0)) return 'Enter an amount above zero.'
+
+    const trial = priceOrder(
+      cartLines.value.map((line) => ({ lineTotalCents: line.subtotalCents, taxRate: line.product.taxRate })),
+      input,
+    )
+    if (amount != null && amount > trial.subtotalCents) {
+      return `That is more than the order — at most ${formatCurrency(trial.subtotalCents)}.`
+    }
+    if (discountPercentOf(trial.discountCents, trial.subtotalCents) > maxPercent + 1e-9) {
+      return maxPercent <= 0
+        ? 'Your role cannot give discounts. Ask a manager to apply this one.'
+        : `Your role can take up to ${maxPercent}% off. Ask a manager for more.`
+    }
+
+    discount.value = { ...input, reason: input.reason?.trim() || null }
+    return null
+  }
+
+  /**
+   * A promo code typed at the counter, checked by the server. Its amount is
+   * the server's and it is not the cashier's discretion, so no role limit
+   * applies. Returns why not, or null when applied.
+   */
+  async function applyPromoCode(code: string): Promise<string | null> {
+    const trimmed = code.trim()
+    if (!trimmed) return 'Enter a code.'
+    if (cartLines.value.length === 0) return 'Add something to the order first.'
+
+    try {
+      const check = await repository.checkPromoCode(trimmed, subtotalCents.value)
+      discount.value = {
+        kind: 'promo',
+        amountCents: check.discountCents,
+        percent: check.percent ?? undefined,
+        reason: check.code,
+        promoCodeId: check.promoCodeId,
+      }
+      return null
+    } catch (error) {
+      return error instanceof Error && error.message ? error.message : "That code doesn't apply."
+    }
+  }
+
+  /**
+   * Spend the selected customer's points on this sale. Checked by the server
+   * — their balance lives there, and a balance checked offline could be spent
+   * twice at two tills — and, like a promo, not the cashier's discretion.
+   * Returns why not, or null when applied.
+   */
+  async function applyLoyaltyPoints(points: number): Promise<string | null> {
+    const customer = selectedCustomer.value
+    if (!customer) return 'Choose the customer first.'
+    if (!Number.isInteger(points) || points <= 0) return 'Enter a number of points.'
+    if (cartLines.value.length === 0) return 'Add something to the order first.'
+
+    try {
+      const check = await repository.checkLoyaltyRedemption(customer.id, points, subtotalCents.value)
+      discount.value = {
+        kind: 'loyalty',
+        amountCents: check.discountCents,
+        points: check.points,
+        reason: `${check.points} points`,
+      }
+      return null
+    } catch (error) {
+      return error instanceof Error && error.message ? error.message : "Those points can't be used."
+    }
+  }
+
+  // A promo's amount, or what points are worth, was checked for the basket as
+  // it was. Changed, it could be wrong — a percentage of the old subtotal, or
+  // more than the new one — so it comes off and the cashier applies it again.
+  watch(
+    () => cartLines.value.map((line) => `${line.product.id}:${line.quantity}`).join(','),
+    () => {
+      if (discount.value?.kind === 'promo' || discount.value?.kind === 'loyalty') discount.value = null
+    },
+  )
+
+  // Points belong to a customer; a different customer cannot spend them.
+  watch(selectedCustomerId, () => {
+    if (discount.value?.kind === 'loyalty') discount.value = null
+  })
+
+  function removeDiscount() {
+    discount.value = null
+  }
+
   function clearCart() {
     cart.value = {}
+    discount.value = null
     paymentMethod.value = 'cash'
     selectedCustomerId.value = null
     tenderedInput.value = ''
@@ -363,6 +493,7 @@ export const usePosStore = defineStore('pos', () => {
   }
 
   async function notePaymentSheetOpened() {
+    checkoutError.value = ''
     await trackEvent('payment_sheet_opened', {
       totalCents: totalCents.value,
       itemCount: itemCount.value,
@@ -383,7 +514,6 @@ export const usePosStore = defineStore('pos', () => {
       'settings_saved',
       {
         businessMode: next.businessMode,
-        syncMode: next.syncMode,
         telemetryEnabled: next.telemetryEnabled,
       },
       true,
@@ -528,15 +658,23 @@ export const usePosStore = defineStore('pos', () => {
     )
   }
 
-  async function completeOrder() {
+  /**
+   * Charge the cart. The sale is recorded on the server first (the till is
+   * online-only), so this can be refused — a discount beyond the cashier's
+   * role, a promo code used up, no connection. Returns whether the sale went
+   * through; when it did not, `checkoutError` says why and the cart is left
+   * as it was.
+   */
+  async function completeOrder(): Promise<boolean> {
     if (!canCheckout.value) {
       if (!activeShift.value) {
         shiftError.value = 'Open a shift before charging orders on this register.'
+        checkoutError.value = shiftError.value
       }
-      return
+      return false
     }
 
-    const order = await repository.saveOrder({
+    const input = {
       businessMode: settings.value.businessMode,
       customerId: selectedCustomer.value?.id ?? null,
       customerName: selectedCustomerName.value,
@@ -550,8 +688,30 @@ export const usePosStore = defineStore('pos', () => {
         quantity: line.quantity,
         unitPriceCents: line.product.priceCents,
         lineTotalCents: line.subtotalCents,
+        taxRate: line.product.taxRate,
       })),
-    })
+      discount: discount.value,
+    }
+
+    // The same sale as last time, if nothing but the cash handed over has
+    // changed. A request that reached the server but whose answer was lost
+    // is then answered with the sale the server already has.
+    const fingerprint = JSON.stringify({ ...input, tenderedCents: undefined })
+    if (pendingSale?.fingerprint !== fingerprint) {
+      pendingSale = { id: crypto.randomUUID(), fingerprint }
+    }
+
+    checkoutError.value = ''
+    let order: OrderSummary
+    try {
+      order = await repository.saveOrder({ ...input, id: pendingSale.id })
+    } catch (error) {
+      checkoutError.value = error instanceof Error && error.message
+        ? error.message
+        : 'This sale could not be recorded. Try again.'
+      return false
+    }
+    pendingSale = null
 
     orders.value = [order, ...orders.value]
     lastCompletedOrder.value = order
@@ -578,12 +738,14 @@ export const usePosStore = defineStore('pos', () => {
 
       const threshold = p.lowStockThreshold ?? 5
       const wasAboveThreshold = p.stockQty > threshold
+      // The server took this off its own count with the sale.
       const updated = await repository.adjustInventory({
         productId: p.id,
         quantityDelta: -line.quantity,
         adjustmentType: 'sale',
         orderId: order.id,
         reason: `order:${order.ticketNumber}`,
+        localOnly: true,
       })
       if (!updated) continue
 
@@ -603,12 +765,14 @@ export const usePosStore = defineStore('pos', () => {
     }
 
     cart.value = {}
+    discount.value = null
     paymentMethod.value = 'cash'
     selectedCustomerId.value = null
     tenderedInput.value = ''
     tenderedCents.value = 0
     tableNumber.value = ''
     shiftError.value = ''
+    return true
   }
 
   async function updateOrderStatus(orderId: string, status: OrderStatus) {
@@ -649,6 +813,8 @@ export const usePosStore = defineStore('pos', () => {
         adjustmentType: 'manual_correction',
         orderId: order.id,
         reason: `void:${order.ticketNumber}`,
+        // The server put its own count back with the void.
+        localOnly: true,
       })
       if (!updated) continue
 
@@ -695,9 +861,69 @@ export const usePosStore = defineStore('pos', () => {
     return replaceOnlineOrder(await repository.updateOnlineOrderStatus(orderId, status))
   }
 
-  /** Records who is carrying the order; the API moves it to 'assigned'. */
-  async function notifyRider(orderId: string, rider: { riderName: string; riderPhone?: string | null }) {
+  /**
+   * Records who is carrying the order; the API moves it to 'assigned'.
+   *
+   * Takes the whole assignment shape rather than a name and a number, because
+   * a shop has three ways to answer the question and only one of them is
+   * typing: `savedRiderId` picks from the shop's list, `saveRider` remembers a
+   * typed-in one. See SellerOrderController::assignRider.
+   */
+  async function notifyRider(
+    orderId: string,
+    rider: {
+      savedRiderId?: string | null
+      riderName?: string
+      riderPhone?: string | null
+      saveRider?: boolean
+      saveNote?: string | null
+    },
+  ) {
     return replaceOnlineOrder(await repository.assignOrderRider(orderId, rider))
+  }
+
+  /** Takes the rider off and puts the order back on the platform board. */
+  async function returnToBoard(orderId: string) {
+    return replaceOnlineOrder(await repository.unassignOrderRider(orderId))
+  }
+
+  /**
+   * The shop's own riders, and the ones who have delivered for it.
+   *
+   * Read fresh every time rather than cached in the store: a saved rider's
+   * `online` flag is only true for the ten seconds it describes, and offering a
+   * stale one as available sends an order to a phone that is switched off.
+   */
+  async function loadSavedRiders() {
+    return repository.loadSavedRiders()
+  }
+
+  async function saveRider(input: {
+    riderId?: string | null
+    name: string
+    phone?: string | null
+    note?: string | null
+  }) {
+    return repository.saveRider(input)
+  }
+
+  async function deleteSavedRider(id: string) {
+    return repository.deleteSavedRider(id)
+  }
+
+  /**
+   * A position ping, applied to the order it belongs to.
+   *
+   * Kept out of `replaceOnlineOrder` deliberately: that one swaps the whole
+   * order, and a ping every ten seconds per delivery would rebuild the list —
+   * and every card's identity with it — six times a minute. This touches one
+   * field on one order and leaves the rest of the object alone.
+   */
+  function applyRiderPosition(orderId: string, position: RiderPosition | null) {
+    const index = onlineOrders.value.findIndex((order) => order.id === orderId)
+    if (index === -1) return
+    const order = onlineOrders.value[index]!
+    onlineOrders.value[index] = { ...order, riderPosition: position }
   }
 
   async function advanceDelivery(orderId: string, stage: DeliveryStage) {
@@ -787,9 +1013,13 @@ export const usePosStore = defineStore('pos', () => {
     lastCompletedOrder,
     lowStockAlert,
     shiftError,
+    checkoutError,
     filteredProducts,
     cartLines,
     subtotalCents,
+    discount,
+    discountCents,
+    appliedDiscount,
     taxCents,
     totalCents,
     changeCents,
@@ -805,6 +1035,10 @@ export const usePosStore = defineStore('pos', () => {
     decrement,
     removeLine,
     clearCart,
+    applyDiscount,
+    applyPromoCode,
+    applyLoyaltyPoints,
+    removeDiscount,
     appendTenderDigit,
     appendTenderDecimal,
     setTendered,
@@ -826,6 +1060,11 @@ export const usePosStore = defineStore('pos', () => {
     settleOnlineOrderPayment,
     updateOnlineOrderStatus,
     notifyRider,
+    returnToBoard,
+    applyRiderPosition,
+    loadSavedRiders,
+    saveRider,
+    deleteSavedRider,
     advanceDelivery,
     clearLowStockAlert,
     restockProduct,

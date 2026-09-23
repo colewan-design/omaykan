@@ -2,11 +2,13 @@
 
 namespace Tests\Feature\Api;
 
+use App\Events\OrderDeliveryUpdated;
 use App\Events\OrderPlaced;
 use App\Models\InventoryLevel;
 use App\Models\Order;
 use App\Models\Organization;
 use App\Models\Product;
+use App\Models\ProductStoreOverride;
 use App\Models\Store;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Support\Facades\Event;
@@ -77,6 +79,59 @@ class OnlineOrderApiTest extends TestCase
 
         $this->assertCount(1, $order->items);
         $this->assertSame(8, strlen($order->ticket_number));
+    }
+
+    /** The price the storefront catalog showed is the price charged. */
+    public function test_a_branch_price_is_what_the_shopper_is_charged(): void
+    {
+        $this->seed();
+        Event::fake([OrderPlaced::class]);
+        $store = Store::query()->where('code', 'main')->firstOrFail();
+        $product = Product::query()->where('sku', 'ESP-0001')->firstOrFail();
+
+        ProductStoreOverride::query()->create([
+            'organization_id' => $store->organization_id,
+            'store_id' => $store->id,
+            'product_id' => $product->id,
+            'price_cents' => 15000,
+        ]);
+
+        $this->getJson('/api/storefront/catalog?orgSlug=demo-coffee&storeCode=main')
+            ->assertOk()
+            ->assertJsonPath('products.0.priceCents', 15000);
+
+        $this->postJson('/api/online-orders/quote', $this->payload())
+            ->assertOk()
+            ->assertJsonPath('subtotalCents', 30000);
+
+        // Two at ₱150 plus 12% VAT.
+        $this->postJson('/api/online-orders', $this->payload())
+            ->assertCreated()
+            ->assertJsonPath('totalCents', 33600);
+
+        $order = Order::query()->firstOrFail();
+        $this->assertSame(30000, $order->subtotal_cents);
+        $this->assertSame(15000, $order->items->first()->unit_price_cents);
+    }
+
+    public function test_a_product_the_branch_has_switched_off_cannot_be_ordered(): void
+    {
+        $this->seed();
+        $store = Store::query()->where('code', 'main')->firstOrFail();
+        $product = Product::query()->where('sku', 'ESP-0001')->firstOrFail();
+
+        ProductStoreOverride::query()->create([
+            'organization_id' => $store->organization_id,
+            'store_id' => $store->id,
+            'product_id' => $product->id,
+            'is_available' => false,
+        ]);
+
+        $this->postJson('/api/online-orders', $this->payload())
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('items');
+
+        $this->assertSame(0, Order::query()->count());
     }
 
     public function test_placing_an_order_broadcasts_order_placed_after_the_commit(): void
@@ -314,6 +369,67 @@ class OnlineOrderApiTest extends TestCase
         // The link is the capability; forwarding it must not hand over PII.
         $this->assertStringNotContainsString('09171234567', $body);
         $this->assertStringNotContainsString('Maria Santos', $body);
+    }
+
+    public function test_tracking_serves_the_riders_number_only_while_the_delivery_is_live(): void
+    {
+        $this->seed();
+        Event::fake([OrderPlaced::class]);
+
+        $placed = $this->postJson('/api/online-orders', $this->payload())->assertCreated()->json();
+        $order = Order::query()->findOrFail($placed['orderId']);
+
+        // A rider has it and the customer is about to meet them at the door.
+        foreach (['assigned', 'picked_up'] as $stage) {
+            $order->forceFill([
+                'rider_name' => 'Ramon Cruz',
+                'rider_phone' => '09181234567',
+                'delivery_stage' => $stage,
+            ])->save();
+
+            $this->getJson("/api/online-orders/{$order->id}")
+                ->assertOk()
+                ->assertJsonPath('riderName', 'Ramon Cruz')
+                ->assertJsonPath('riderPhone', '09181234567');
+        }
+
+        // Handed over. The tracking link outlives the delivery and is meant to
+        // be forwarded, so the rider's mobile stops being served with it.
+        $order->forceFill(['delivery_stage' => 'delivered'])->save();
+
+        $body = $this->getJson("/api/online-orders/{$order->id}")
+            ->assertOk()
+            ->assertJsonPath('riderName', 'Ramon Cruz')
+            ->assertJsonPath('riderPhone', null)
+            ->getContent();
+
+        $this->assertStringNotContainsString('09181234567', $body);
+    }
+
+    public function test_the_public_delivery_broadcast_drops_the_riders_number_after_handover(): void
+    {
+        $this->seed();
+        Event::fake([OrderPlaced::class]);
+
+        $placed = $this->postJson('/api/online-orders', $this->payload())->assertCreated()->json();
+        $order = Order::query()->findOrFail($placed['orderId']);
+
+        $order->forceFill([
+            'rider_name' => 'Ramon Cruz',
+            'rider_phone' => '09181234567',
+            'delivery_stage' => 'picked_up',
+        ])->save();
+
+        // This payload rides the public order.{uuid} channel, not just the
+        // store's private one — see OrderDeliveryUpdated::broadcastOn().
+        $live = (new OrderDeliveryUpdated($order, 'assigned'))->broadcastWith();
+        $this->assertSame('09181234567', $live['riderPhone']);
+
+        $order->forceFill(['delivery_stage' => 'delivered'])->save();
+
+        $done = (new OrderDeliveryUpdated($order, 'picked_up'))->broadcastWith();
+        $this->assertNull($done['riderPhone']);
+        $this->assertSame('Ramon Cruz', $done['riderName']);
     }
 
     public function test_tracking_an_unknown_order_is_a_404(): void

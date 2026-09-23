@@ -7,7 +7,14 @@ defineProps<{
 
 <template>
   <article class="chart-card">
-    <h2 class="chart-card__title">{{ title }}</h2>
+    <!-- The header is a row only when something was put in it. A card with no
+         action keeps the bare heading it has always rendered. -->
+    <header v-if="$slots.action" class="chart-card__header">
+      <h2 class="chart-card__title">{{ title }}</h2>
+      <slot name="action" />
+    </header>
+    <h2 v-else class="chart-card__title">{{ title }}</h2>
+
     <div class="chart-card__body">
       <slot />
     </div>
@@ -24,6 +31,13 @@ defineProps<{
   padding: var(--space-5);
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
+}
+
+.chart-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
 }
 
 .chart-card__title {

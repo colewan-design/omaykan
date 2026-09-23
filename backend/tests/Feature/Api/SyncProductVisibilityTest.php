@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\Store;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
+use Tests\Concerns\SignsInStaff;
 use Tests\TestCase;
 
 /**
@@ -21,18 +22,7 @@ use Tests\TestCase;
  */
 class SyncProductVisibilityTest extends TestCase
 {
-    use RefreshDatabase;
-
-    private function deviceToken(): string
-    {
-        return $this->postJson('/api/device-sessions', [
-            'organizationSlug' => 'demo-coffee',
-            'storeCode' => 'main',
-            'pairingCode' => '123456',
-            'deviceName' => 'Counter 1',
-            'platform' => 'web',
-        ])->json('token');
-    }
+    use SignsInStaff, RefreshDatabase;
 
     /** @param array<string, mixed> $payload */
     private function pushProduct(string $token, string $productId, array $payload): TestResponse
@@ -58,7 +48,7 @@ class SyncProductVisibilityTest extends TestCase
         $this->seed();
         $id = (string) str()->uuid();
 
-        $this->pushProduct($this->deviceToken(), $id, [
+        $this->pushProduct($this->staffToken(), $id, [
             'sku' => 'TILL-1',
             'name' => 'Listed at the counter',
             'priceCents' => 15000,
@@ -74,7 +64,7 @@ class SyncProductVisibilityTest extends TestCase
         $this->seed();
         $id = (string) str()->uuid();
 
-        $this->pushProduct($this->deviceToken(), $id, [
+        $this->pushProduct($this->staffToken(), $id, [
             'sku' => 'TILL-2',
             'name' => 'Sellable online',
             'priceCents' => 15000,
@@ -94,7 +84,7 @@ class SyncProductVisibilityTest extends TestCase
         $this->seed();
         $id = (string) str()->uuid();
 
-        $this->pushProduct($this->deviceToken(), $id, [
+        $this->pushProduct($this->staffToken(), $id, [
             'sku' => 'TILL-3',
             'name' => 'Orderable',
             'priceCents' => 15000,
@@ -118,7 +108,7 @@ class SyncProductVisibilityTest extends TestCase
         $this->seed();
         $id = (string) str()->uuid();
 
-        $this->pushProduct($this->deviceToken(), $id, [
+        $this->pushProduct($this->staffToken(), $id, [
             'sku' => 'TILL-4',
             'name' => 'Multi-mode',
             'priceCents' => 15000,
@@ -128,11 +118,113 @@ class SyncProductVisibilityTest extends TestCase
         $this->assertSame(['grocery', 'restaurant'], Product::query()->findOrFail($id)->business_modes);
     }
 
+    /**
+     * The same class of bug as the one this file was opened for, on the same
+     * seam: `applyProductEvent` wrote none of the fields that decide how a
+     * product *looks* online. A merchant who photographed a line, marked it
+     * down, or labelled it "per kg" saw all of that on their own till and none
+     * of it in their shop — silently, because the row saved, synced and listed
+     * in the POS exactly as expected.
+     */
+    public function test_the_way_a_product_looks_online_survives_the_push_from_the_till(): void
+    {
+        $this->seed();
+        $id = (string) str()->uuid();
+
+        $this->pushProduct($this->staffToken(), $id, [
+            'sku' => 'TILL-6',
+            'name' => 'Photographed at the counter',
+            'priceCents' => 15000,
+            'compareAtPriceCents' => 19000,
+            'imageUrl' => 'https://cdn.example/front.png',
+            'photoUrls' => ['https://cdn.example/back.png', '', 'https://cdn.example/label.png'],
+            'brand' => 'Capri',
+            'packagingType' => 'Can',
+            'unitLabel' => '400g',
+        ])->assertOk();
+
+        $product = Product::query()->findOrFail($id);
+
+        $this->assertSame('https://cdn.example/front.png', $product->image_url);
+        // Blanks dropped, the merchant's order kept — the order is the whole
+        // of what "drag this shot to the front" means.
+        $this->assertSame(
+            ['https://cdn.example/back.png', 'https://cdn.example/label.png'],
+            $product->photo_urls,
+        );
+        $this->assertSame('Capri', $product->brand);
+        $this->assertSame('Can', $product->packaging_type);
+        $this->assertSame('400g', $product->unit_label);
+        $this->assertSame(19000, $product->compare_at_price_cents);
+    }
+
+    public function test_a_till_that_sends_no_gallery_does_not_strip_one(): void
+    {
+        $this->seed();
+        $id = (string) str()->uuid();
+        $token = $this->staffToken();
+
+        $this->pushProduct($token, $id, [
+            'sku' => 'TILL-7',
+            'name' => 'Photographed',
+            'priceCents' => 15000,
+            'imageUrl' => 'https://cdn.example/front.png',
+            'photoUrls' => ['https://cdn.example/back.png'],
+            'brand' => 'Capri',
+        ])->assertOk();
+
+        // A price edit from an older build carries none of these keys. It must
+        // not take the photographs off a product someone else set up.
+        $this->pushProduct($token, $id, [
+            'sku' => 'TILL-7',
+            'name' => 'Photographed',
+            'priceCents' => 16000,
+        ])->assertOk();
+
+        $product = Product::query()->findOrFail($id);
+
+        $this->assertSame(16000, $product->price_cents);
+        $this->assertSame('https://cdn.example/front.png', $product->image_url);
+        $this->assertSame(['https://cdn.example/back.png'], $product->photo_urls);
+        $this->assertSame('Capri', $product->brand);
+    }
+
+    public function test_an_empty_field_is_a_merchant_clearing_it_and_not_no_opinion(): void
+    {
+        $this->seed();
+        $id = (string) str()->uuid();
+        $token = $this->staffToken();
+
+        $this->pushProduct($token, $id, [
+            'sku' => 'TILL-8',
+            'name' => 'Rephotographed',
+            'priceCents' => 15000,
+            'imageUrl' => 'https://cdn.example/front.png',
+            'photoUrls' => ['https://cdn.example/back.png'],
+            'brand' => 'Capri',
+        ])->assertOk();
+
+        $this->pushProduct($token, $id, [
+            'sku' => 'TILL-8',
+            'name' => 'Rephotographed',
+            'priceCents' => 15000,
+            'imageUrl' => '',
+            'photoUrls' => [],
+            'brand' => '',
+        ])->assertOk();
+
+        $product = Product::query()->findOrFail($id);
+
+        $this->assertNull($product->image_url);
+        $this->assertNull($product->photo_urls);
+        $this->assertNull($product->brand);
+    }
+
     public function test_an_update_that_omits_the_field_does_not_un_list_the_product(): void
     {
         $this->seed();
         $id = (string) str()->uuid();
-        $token = $this->deviceToken();
+        $token = $this->staffToken();
 
         $this->pushProduct($token, $id, [
             'sku' => 'TILL-5',
@@ -169,7 +261,7 @@ class SyncProductVisibilityTest extends TestCase
         $this->seed();
         $id = (string) str()->uuid();
 
-        $this->pushProduct($this->deviceToken(), $id, [
+        $this->pushProduct($this->staffToken(), $id, [
             'sku' => 'NO-CAT',
             'name' => 'Filed under nothing',
             'priceCents' => 15000,

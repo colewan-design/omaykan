@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { Box, MapPin, Route, Store } from '@lucide/vue'
+import { Box, ChevronRight, MapPin, Route, Store } from '@lucide/vue'
 import { formatCurrency } from '@pos/shared/index'
+import JobDetailScreen from '@pos/web/rider/JobDetailScreen.vue'
+import LocationShare from '@pos/web/rider/LocationShare.vue'
+import TripMap from '@pos/web/rider/TripMap.vue'
 import {
   acceptDelivery,
   advanceDelivery,
@@ -23,6 +26,12 @@ import { applyGateRejection, messageFor } from '@pos/web/rider/rider'
  * board and puts it in `active`, releasing does the reverse. Two components
  * would each hold half the truth and would have to tell each other every time,
  * which is how one of them ends up showing a job that is already gone.
+ *
+ * A claimed job opens into JobDetailScreen rather than unfolding in place. The
+ * list is for choosing between jobs; the detail screen is for doing one, and it
+ * is where the map and the navigate-and-call handoffs live. Same split the
+ * Android app makes, and for the same reason: the moment this is read is
+ * somebody stopped at a kerb looking for one address.
  */
 
 const board = ref<DeliveryOffer[]>([])
@@ -34,6 +43,17 @@ const loading = ref(true)
 const busyId = ref('')
 const errorMessage = ref('')
 const notice = ref('')
+
+/**
+ * The job being looked at, by id rather than by object.
+ *
+ * Holding the object would freeze it: every action replaces the row in
+ * `active` with the server's answer, and a detail screen bound to the old copy
+ * would still be offering "Picked it up" on a job that is already picked up.
+ */
+const openJobId = ref('')
+
+const openJob = computed(() => active.value.find((job) => job.id === openJobId.value) ?? null)
 
 const STAGE_LABEL: Record<string, string> = {
   assigned: 'Head to the shop',
@@ -54,7 +74,7 @@ function distanceLabel(km: number | null): string | null {
  * Every call goes through here so a suspension mid-shift is handled in one
  * place: the approval gate answers 403 with the new status, the session picks
  * it up, and the portal shell swaps to the status screen by itself rather than
- * leaving the rider staring at an error over a board they can no longer use.
+ * leaving the rider staring at an error over a board they can no longer act on.
  */
 function handle(error: unknown, fallback: string) {
   if (applyGateRejection(error)) return
@@ -87,6 +107,9 @@ async function take(offer: DeliveryOffer) {
     board.value = board.value.filter((row) => row.id !== offer.id)
     active.value = [...active.value, order]
     tab.value = 'mine'
+    // Straight into the job. A rider who has just taken one is about to want
+    // the address and the Navigate button, not a list with one row on it.
+    openJobId.value = order.id
     notice.value = `${order.pickup.storeName} is yours. Head over and pick it up.`
   } catch (error) {
     // 409 is the normal race, not a fault: two riders tapped the same job.
@@ -114,6 +137,9 @@ async function advance(job: DeliveryAssignment, stage: 'picked_up' | 'delivered'
     if (stage === 'delivered') {
       active.value = active.value.filter((row) => row.id !== job.id)
       completed.value = [order, ...completed.value]
+      // The job is finished, so the screen for doing it closes itself rather
+      // than sitting there with no button left on it.
+      if (openJobId.value === job.id) openJobId.value = ''
       notice.value = 'Delivered. Nice one.'
     } else {
       active.value = active.value.map((row) => (row.id === job.id ? order : row))
@@ -132,6 +158,7 @@ async function giveBack(job: DeliveryAssignment) {
   try {
     await releaseDelivery(job.id)
     active.value = active.value.filter((row) => row.id !== job.id)
+    if (openJobId.value === job.id) openJobId.value = ''
     notice.value = 'Given back — it is on the board again.'
     void load({ quiet: true })
   } catch (error) {
@@ -153,7 +180,22 @@ onMounted(() => void load())
 </script>
 
 <template>
-  <div>
+  <!-- One job, opened out of the list. -->
+  <JobDetailScreen
+    v-if="openJob"
+    :job="openJob"
+    :busy="busyId === openJob.id"
+    @back="openJobId = ''"
+    @advance="(stage) => advance(openJob!, stage)"
+    @release="giveBack(openJob!)"
+  />
+
+  <div v-else>
+    <!-- Above the tabs, because it is true of the whole shift rather than of
+         either list, and because it is the control a rider is most likely to
+         be looking for when they open the portal at the start of one. -->
+    <LocationShare />
+
     <div class="rdr-tabs">
       <button
         class="rdr-tab"
@@ -188,6 +230,11 @@ onMounted(() => void load())
       </div>
 
       <article v-for="offer in board" :key="offer.id" class="rdr-card rdr-job">
+        <!-- The shop only. `asOffer` withholds the drop-off coordinates until a
+             job is claimed, and drawing a guessed door would put a
+             precise-looking answer exactly where the server chose to be vague. -->
+        <TripMap :pickup-lat="offer.pickup.lat" :pickup-lng="offer.pickup.lng" />
+
         <div class="rdr-job__top">
           <div>
             <p class="rdr-job__shop">{{ offer.pickup.storeName }}</p>
@@ -239,79 +286,45 @@ onMounted(() => void load())
         <p class="rdr-empty__note">Take a job from the board and it will show up here.</p>
       </div>
 
-      <article v-for="job in active" :key="job.id" class="rdr-card rdr-job">
-        <div class="rdr-job__top">
-          <div>
-            <p class="rdr-job__shop">{{ job.pickup.storeName }}</p>
-            <p class="rdr-job__where">
-              <Store :size="13" :stroke-width="1.8" />
-              {{ job.pickup.address || 'Ask at the counter' }}
-            </p>
+      <!-- A row, not a card full of controls: everything that acts on a job
+           now lives on the job's own screen, one tap away. -->
+      <button
+        v-for="job in active"
+        :key="job.id"
+        class="rdr-card rdr-job rdr-jobrow"
+        type="button"
+        @click="openJobId = job.id"
+      >
+        <div class="rdr-jobrow__body">
+          <div class="rdr-job__top">
+            <div>
+              <p class="rdr-job__shop">{{ job.pickup.storeName }}</p>
+              <p class="rdr-job__where">
+                <Store :size="13" :stroke-width="1.8" />
+                {{ job.pickup.address || 'Ask at the counter' }}
+              </p>
+            </div>
+            <div class="rdr-job__fee">
+              <span class="rdr-job__fee-value">{{ formatCurrency(job.deliveryFeeCents) }}</span>
+              <span class="rdr-job__fee-label">Yours</span>
+            </div>
           </div>
-          <div class="rdr-job__fee">
-            <span class="rdr-job__fee-value">{{ formatCurrency(job.deliveryFeeCents) }}</span>
-            <span class="rdr-job__fee-label">Yours</span>
+
+          <div class="rdr-steps">
+            <span class="rdr-step rdr-step--on" />
+            <span class="rdr-step" :class="{ 'rdr-step--on': job.deliveryStage !== 'assigned' }" />
+            <span class="rdr-step" :class="{ 'rdr-step--on': job.deliveryStage === 'delivered' }" />
           </div>
+          <p class="rdr-stage">{{ STAGE_LABEL[job.deliveryStage] ?? job.deliveryStage }}</p>
+
+          <p class="rdr-job__line">
+            <MapPin :size="13" :stroke-width="1.8" />
+            {{ job.deliveryAddress || job.dropoffArea || 'address from the shop' }}
+          </p>
         </div>
 
-        <div class="rdr-steps">
-          <span class="rdr-step rdr-step--on" />
-          <span class="rdr-step" :class="{ 'rdr-step--on': job.deliveryStage !== 'assigned' }" />
-          <span class="rdr-step" :class="{ 'rdr-step--on': job.deliveryStage === 'delivered' }" />
-        </div>
-        <p class="rdr-stage">{{ STAGE_LABEL[job.deliveryStage] ?? job.deliveryStage }}</p>
-
-        <p class="rdr-job__line">
-          <MapPin :size="13" :stroke-width="1.8" />
-          Deliver to <strong>{{ job.deliveryAddress || job.dropoffArea || 'address from the shop' }}</strong>
-          <template v-if="job.customerName"><br>{{ job.customerName }}</template>
-          <template v-if="job.customerPhone">
-            <br>
-            <a class="rdr-call" :href="`tel:${job.customerPhone}`">Call {{ job.customerPhone }}</a>
-          </template>
-        </p>
-
-        <p v-if="job.collectCents > 0" class="rdr-job__line">
-          Collect <strong>{{ formatCurrency(job.collectCents) }}</strong> in cash at the door.
-        </p>
-
-        <ul v-if="job.items.length" class="rdr-job__items">
-          <li v-for="item in job.items" :key="item.name">{{ item.quantity }} × {{ item.name }}</li>
-        </ul>
-
-        <div class="rdr-actions">
-          <button
-            v-if="job.deliveryStage === 'assigned'"
-            class="rdr-btn"
-            type="button"
-            :disabled="busyId === job.id"
-            @click="advance(job, 'picked_up')"
-          >
-            Picked it up
-          </button>
-          <button
-            v-else-if="job.deliveryStage === 'picked_up'"
-            class="rdr-btn"
-            type="button"
-            :disabled="busyId === job.id"
-            @click="advance(job, 'delivered')"
-          >
-            Delivered
-          </button>
-
-          <!-- Only before pickup. Once the food is in the bag, handing it back
-               is a phone call to the shop, not a button. -->
-          <button
-            v-if="job.deliveryStage === 'assigned'"
-            class="rdr-btn rdr-btn--danger"
-            type="button"
-            :disabled="busyId === job.id"
-            @click="giveBack(job)"
-          >
-            Give back
-          </button>
-        </div>
-      </article>
+        <ChevronRight class="rdr-jobrow__chevron" :size="20" :stroke-width="1.8" />
+      </button>
 
       <template v-if="completed.length">
         <p class="rdr-section-title">

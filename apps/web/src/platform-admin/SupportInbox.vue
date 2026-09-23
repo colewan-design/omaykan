@@ -108,8 +108,14 @@ async function loadList(selectMessageId?: string) {
   successMessage.value = ''
 
   try {
-    const response = await fetch('/api/platform/inbox?limit=30', {
-      headers: authHeaders(false),
+    // POST, not GET: the inbox listing reaches out to IMAP, and the route it
+    // is behind takes its `limit` in a body. It was called as a GET against
+    // `/api/platform/inbox` — wrong verb and wrong prefix — so it 404'd on
+    // every load. See api.ts for how the prefix came to be wrong everywhere.
+    const response = await fetch('/api/platform-admin/inbox', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ limit: 30 }),
     })
     const data = await parseJson(response)
 
@@ -149,7 +155,7 @@ async function openMessage(messageId: string) {
   replyError.value = ''
 
   try {
-    const response = await fetch(`/api/platform/inbox/${messageId}`, {
+    const response = await fetch(`/api/platform-admin/inbox/${messageId}`, {
       headers: authHeaders(false),
     })
     const data = await parseJson(response)
@@ -196,7 +202,7 @@ async function sendReply() {
   replyError.value = ''
 
   try {
-    const response = await fetch(`/api/platform/inbox/${selected.value.id}/reply`, {
+    const response = await fetch(`/api/platform-admin/inbox/${selected.value.id}/reply`, {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify({ subject, message }),
@@ -373,17 +379,26 @@ void loadList()
 </template>
 
 <style scoped>
+/*
+ * This screen was drawn for the old operator portal, which was dark. It is now
+ * one of nine screens in a cream one, and a single dark panel among eight pale
+ * ones reads as a different product rather than a different page.
+ *
+ * The whole re-skin is these eleven values: the rest of the block below is
+ * written against them, so pointing them at the portal's palette restyles the
+ * screen without touching a line of its layout.
+ */
 .si-page {
-  --si-bg: #18181b;
-  --si-surface: #1f2024;
-  --si-surface-strong: #24252a;
-  --si-border: rgba(255, 255, 255, 0.08);
-  --si-border-strong: rgba(255, 255, 255, 0.12);
-  --si-text: #f5f7fb;
-  --si-muted: #a0a6b2;
-  --si-subtle: #6f7685;
-  --si-success: #71d49f;
-  --si-danger: #ff8d84;
+  --si-bg: var(--sf-paper);
+  --si-surface: var(--sf-paper);
+  --si-surface-strong: var(--sf-sand);
+  --si-border: var(--sf-rule);
+  --si-border-strong: var(--sf-sand-deep);
+  --si-text: var(--sf-ink);
+  --si-muted: var(--sf-muted);
+  --si-subtle: var(--sf-faint);
+  --si-success: #0a6b0a;
+  --si-danger: #9c2626;
   display: grid;
 }
 

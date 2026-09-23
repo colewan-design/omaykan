@@ -12,4 +12,13 @@
   RewriteRule ^app/?$ app.html [L]
   RewriteRule ^app/.*$ app.html [L]
   RewriteRule ^landing/?$ landing.html [L]
+
+  # A shop's own page. The slug stays in the path; shop/main.ts reads it.
+  RewriteRule ^shop/[^/]+/?$ shop.html [L]
+
+  # The seller signup form. It moved off /signup, which still has to work: it
+  # is the URL the seller Android app opens, and every link that went out
+  # before the move.
+  RewriteRule ^seller/signup/?$ signup.html [L]
+  RewriteRule ^signup/?$ /seller/signup [R=301,L]
 </IfModule>

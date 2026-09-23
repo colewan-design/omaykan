@@ -46,6 +46,29 @@ function read(): DeliveryLocation {
 
 const location: Ref<DeliveryLocation> = ref(read())
 
+/**
+ * Whether the address panel is showing.
+ *
+ * Shared rather than owned by the header, because the header is no longer the
+ * only thing that opens it — the band under the hero asks the same question,
+ * and two independent copies of the dialog would be two dialogs.
+ */
+const dialogOpen = ref(false)
+
+/**
+ * The short place name, for prose that reads "near ___".
+ *
+ * A delivery address is written for a rider — "Blk 4 Lot 12, Km 5, La
+ * Trinidad, Benguet" — and the whole of it in a sentence is unreadable. The
+ * last two comma-separated parts are the barangay-and-town end of that, which
+ * is the part a shopper recognises as "where I am".
+ */
+function shortArea(address: string): string {
+  const parts = address.split(',').map((part) => part.trim()).filter((part) => part !== '')
+  if (parts.length === 0) return ''
+  return parts.slice(-2).join(', ')
+}
+
 function persist(): void {
   try {
     if (location.value.address === '' && location.value.lat === null) {
@@ -62,12 +85,39 @@ export function useDeliveryLocation(): {
   location: Ref<DeliveryLocation>
   isSet: ComputedRef<boolean>
   summary: ComputedRef<string>
+  shortSummary: ComputedRef<string>
+  area: ComputedRef<string>
+  town: ComputedRef<string>
+  hasPin: ComputedRef<boolean>
+  dialogOpen: Ref<boolean>
+  openDialog: () => void
+  closeDialog: () => void
   set: (next: Partial<DeliveryLocation>) => void
   clear: () => void
 } {
   return {
     location,
+    dialogOpen,
+    openDialog() { dialogOpen.value = true },
+    closeDialog() { dialogOpen.value = false },
     isSet: computed(() => location.value.address !== '' || location.value.lat !== null),
+    // Distance sorting needs the pin specifically: a typed address cannot be
+    // turned into coordinates anywhere in this project.
+    hasPin: computed(() => location.value.lat !== null),
+    area: computed(() => shortArea(location.value.address)),
+    // Just the municipality. "Shops near you in La Trinidad, Benguet" carries
+    // a province nobody needs in a heading; the fuller form still reads well
+    // in a sentence, so both stay.
+    town: computed(() => shortArea(location.value.address).split(',')[0]?.trim() ?? ''),
+    // What the header shows. A delivery address is written for a rider and is
+    // far too long for a bar that also has to hold a search field, so the bar
+    // carries the town and the dialog keeps the doorstep.
+    shortSummary: computed(() => {
+      const area = shortArea(location.value.address)
+      if (area !== '') return area
+      if (location.value.lat !== null) return 'Using your location'
+      return ''
+    }),
     summary: computed(() => {
       if (location.value.address !== '') return location.value.address
       // A pin with no text is still an answer, and saying so beats showing

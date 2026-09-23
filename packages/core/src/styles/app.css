@@ -2152,6 +2152,14 @@ button {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--auth-green) 22%, transparent);
 }
 
+/* The product sheet's description box — the sheet's inputs are single-line otherwise. */
+.ps-textarea {
+  min-height: 72px;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.45;
+}
+
 .auth-page .auth-password-toggle {
   width: 50px;
   height: 50px;
@@ -2310,9 +2318,23 @@ button {
   font: var(--type-caption);
 }
 
-.auth-guest {
+.auth-guest,
+.auth-alternatives {
   display: grid;
   gap: var(--space-4);
+}
+
+/* Google's button is an iframe and brings its own everything — all this does is
+   centre it and stop a second press landing while a sign-in is already away. */
+.auth-google {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+}
+
+.auth-google--busy {
+  pointer-events: none;
+  opacity: 0.55;
 }
 
 .auth-divider {
@@ -3268,6 +3290,36 @@ button {
   gap: var(--space-2);
 }
 
+/* The restored-draft notice under the sheet's title. */
+.ps-draft {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--separator));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-elevated));
+  color: var(--text-primary);
+  font: 500 0.8125rem/1.125rem var(--font-sans);
+}
+
+.ps-draft__reset {
+  flex: none;
+  padding: 4px 2px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: 600 0.8125rem/1.125rem var(--font-sans);
+  cursor: pointer;
+}
+
+.ps-draft__reset:hover {
+  text-decoration: underline;
+}
+
 /* Inline stock qty + threshold side by side */
 .ps-stock-row {
   display: grid;
@@ -3302,44 +3354,79 @@ button {
   border-top: 1px solid var(--separator);
 }
 
-/* Image row */
-.product-sheet__image-row {
+/* Photo gallery. The first tile is the primary shot; the rest are extra
+   views, and each carries its own promote and remove controls rather than a
+   shared toolbar that would need a selected-tile concept to act on. */
+.ps-gallery {
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.product-sheet__preview {
-  flex: none;
+.ps-shot {
+  position: relative;
   display: grid;
   place-items: center;
-  width: 64px;
-  height: 64px;
+  width: 76px;
+  height: 76px;
   border-radius: var(--radius-lg);
   overflow: hidden;
   background: var(--fill);
   color: var(--text-tertiary);
 }
 
-.product-sheet__preview img {
+.ps-shot img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.product-sheet__image-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
+/* The add tile is a <label> wrapping a hidden file input, so the whole square
+   is the picker's target rather than a button beside a preview. */
+.ps-shot--add {
+  gap: 2px;
+  border: 1px dashed var(--separator);
+  background: transparent;
+  cursor: pointer;
+  font: var(--type-caption);
+  text-align: center;
+}
+.ps-shot--add:hover { border-color: var(--accent); color: var(--accent); }
+
+.ps-shot__main {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  padding: 2px 6px;
+  border-radius: 0 var(--radius-sm) 0 0;
+  background: var(--accent);
+  color: #fff;
+  font: var(--type-caption);
+  font-weight: 700;
 }
 
-.product-sheet__upload-label {
-  display: inline-flex;
-  align-items: center;
+.ps-shot__promote,
+.ps-shot__remove {
+  position: absolute;
+  top: 4px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
   cursor: pointer;
-  min-height: 36px;
 }
+.ps-shot__promote { left: 4px; }
+.ps-shot__remove { right: 4px; }
+.ps-shot__promote:hover { background: var(--accent); }
+.ps-shot__remove:hover { background: var(--danger, #b3261e); }
 
 .product-sheet__size-warning {
   width: 100%;
@@ -3482,6 +3569,10 @@ button {
   font-weight: 700;
 }
 
+.ps-hint--error {
+  color: var(--danger);
+}
+
 /* ── Products page — responsive ─────────────────────────────────────────── */
 
 @media (max-width: 720px) {
@@ -3541,6 +3632,962 @@ button {
     scroll-behavior: auto !important;
     transition-duration: 0ms !important;
     animation-duration: 0ms !important;
+  }
+}
+
+/* ── Products management refresh ──────────────────────────────────────────
+   This block intentionally supersedes the older compact-list treatment above.
+   The page now uses one filter toolbar, one management table and document
+   scrolling; no child surface owns a vertical scrollbar. */
+
+.products-page {
+  gap: 16px;
+  padding: 4px 0 32px;
+}
+
+.p-header {
+  align-items: center;
+}
+
+.p-title {
+  color: var(--text-primary);
+  letter-spacing: -0.025em;
+}
+
+.p-copy {
+  margin-top: 3px;
+  font: var(--type-subhead);
+}
+
+.p-add-button {
+  min-height: 44px;
+  padding-inline: 18px;
+  gap: 8px;
+  border-radius: 12px;
+  font: 600 0.875rem/1rem var(--font-sans);
+  box-shadow: 0 5px 14px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.p-kpis {
+  gap: 10px;
+}
+
+.p-kpi {
+  position: relative;
+  min-width: 0;
+  min-height: 78px;
+  padding: 13px 15px;
+  border: 1px solid color-mix(in srgb, var(--separator) 72%, transparent);
+  border-radius: 15px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(20, 43, 32, 0.035);
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+
+.p-kpi:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--separator));
+  box-shadow: 0 8px 22px rgba(20, 43, 32, 0.07);
+}
+
+.p-kpi:focus-visible,
+.p-kpi--active {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--separator));
+  outline: none;
+}
+
+.p-kpi:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.p-kpi__body {
+  min-width: 0;
+  display: grid;
+}
+
+.p-kpi__icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+}
+
+.p-kpi__label {
+  margin: 0;
+  font: 500 0.75rem/1rem var(--font-sans);
+}
+
+.p-kpi__value {
+  margin-top: 1px;
+  font: 700 1.35rem/1.55rem var(--font-sans);
+}
+
+.p-kpi__chevron {
+  margin-left: auto;
+  color: var(--text-tertiary);
+}
+
+.product-workspace {
+  min-width: 0;
+  display: grid;
+  scroll-margin-top: 16px;
+}
+
+.p-tabs {
+  display: flex;
+  align-items: end;
+  width: 100%;
+  min-height: 43px;
+  border-bottom: 1px solid var(--separator);
+}
+
+.p-tab {
+  position: relative;
+  min-height: 43px;
+  padding: 0 18px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: 600 0.875rem/1rem var(--font-sans);
+  cursor: pointer;
+}
+
+.p-tab::after {
+  content: '';
+  position: absolute;
+  right: 12px;
+  bottom: -1px;
+  left: 12px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: transparent;
+}
+
+.p-tab:hover,
+.p-tab--active {
+  color: var(--accent);
+}
+
+.p-tab--active::after {
+  background: var(--accent);
+}
+
+.p-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+  border-radius: 8px;
+}
+
+.ptoolbar {
+  display: grid;
+  grid-template-columns: minmax(250px, 1.8fr) repeat(4, minmax(124px, 0.82fr)) minmax(148px, 1fr) minmax(130px, 0.8fr);
+  gap: 8px;
+  margin-top: 0;
+  padding: 13px;
+  border: 1px solid var(--separator);
+  border-top: 0;
+  border-radius: 0 0 16px 16px;
+  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+  box-shadow: 0 4px 16px rgba(20, 43, 32, 0.035);
+}
+
+.pfilter {
+  min-width: 0;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 11px;
+  border: 1px solid var(--separator);
+  border-radius: 11px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.pfilter:hover,
+.pfilter:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--separator));
+}
+
+.pfilter:focus-within {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.pfilter > svg {
+  flex: none;
+  color: color-mix(in srgb, var(--text-secondary) 88%, var(--accent));
+}
+
+.pfilter > span:not(.pcheck) {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 0;
+  text-align: left;
+}
+
+.pfilter small {
+  color: var(--text-tertiary);
+  font: 500 0.625rem/0.75rem var(--font-sans);
+  letter-spacing: 0.01em;
+}
+
+.pfilter select,
+.pfilter strong {
+  min-width: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  appearance: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: 500 0.75rem/1rem var(--font-sans);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.pfilter--search {
+  cursor: text;
+}
+
+.pfilter--search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  appearance: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: 400 0.8125rem/1.125rem var(--font-sans);
+}
+
+.pfilter--search input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.pfilter--search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.pfilter--search button {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--fill);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.pfilter--selection {
+  text-align: left;
+}
+
+/* FilterDropdown: the chip is one button, so the chevron opens it too. */
+.fdrop {
+  min-width: 0;
+  display: flex;
+}
+
+.fdrop__trigger {
+  width: 100%;
+  margin: 0;
+  text-align: left;
+}
+
+.fdrop__trigger:focus-visible {
+  outline: 0;
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--separator));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.fdrop--open .fdrop__trigger {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--separator));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.fdrop__chevron {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.fdrop--open .fdrop__chevron {
+  transform: rotate(180deg);
+  color: var(--accent);
+}
+
+.fdrop__menu {
+  position: fixed;
+  z-index: 300;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 5px;
+  list-style: none;
+  overflow-y: auto;
+  border: 1px solid var(--separator);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  box-shadow: 0 14px 34px rgba(20, 43, 32, 0.14), 0 2px 6px rgba(20, 43, 32, 0.06);
+  outline: 0;
+}
+
+.fdrop__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--text-primary);
+  font: 500 0.8125rem/1.125rem var(--font-sans);
+  cursor: pointer;
+  user-select: none;
+}
+
+.fdrop__option > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fdrop__option > svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.fdrop__option--highlighted {
+  background: var(--fill);
+}
+
+.fdrop__option--selected {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.fdrop__option--disabled {
+  color: var(--text-tertiary);
+  cursor: default;
+}
+
+.fdrop-menu-enter-active,
+.fdrop-menu-leave-active {
+  transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+
+.fdrop-menu-enter-from,
+.fdrop-menu-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+@media (pointer: coarse) {
+  .fdrop__option {
+    min-height: 44px;
+  }
+}
+
+.pcheck {
+  flex: none;
+  width: 17px;
+  height: 17px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 1.5px solid color-mix(in srgb, var(--text-tertiary) 70%, transparent);
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--accent-text-on);
+  cursor: pointer;
+}
+
+.pcheck--checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.bulk-bar {
+  margin-top: 10px;
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-elevated));
+}
+
+.bulk-bar__actions .table-action,
+.bulk-bar__actions .danger-button {
+  min-height: 34px;
+}
+
+.bulk-bar__delete {
+  gap: 6px;
+}
+
+.ptable {
+  position: relative;
+  min-width: 0;
+  margin-top: 12px;
+  overflow: visible;
+  border: 1px solid var(--separator);
+  border-radius: 16px;
+  background: var(--bg-elevated);
+  box-shadow: 0 5px 18px rgba(20, 43, 32, 0.045);
+}
+
+.ptable__grid {
+  display: grid;
+  grid-template-columns: 32px minmax(210px, 2.25fr) minmax(82px, 0.7fr) minmax(92px, 0.75fr) minmax(112px, 0.92fr) minmax(88px, 0.7fr) minmax(80px, 0.68fr) minmax(205px, 1.45fr);
+  align-items: center;
+  gap: 12px;
+  padding-inline: 15px;
+}
+
+.ptable__head {
+  min-height: 42px;
+  border-radius: 16px 16px 0 0;
+  background: color-mix(in srgb, var(--fill) 48%, var(--bg-elevated));
+  color: var(--text-secondary);
+  font: 600 0.6875rem/0.875rem var(--font-sans);
+}
+
+.ptable__group + .ptable__group {
+  border-top: 1px solid var(--separator);
+}
+
+.ptable__group-header {
+  width: 100%;
+  min-height: 39px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 16px 0 58px;
+  border: 0;
+  border-top: 1px solid var(--separator);
+  border-bottom: 1px solid color-mix(in srgb, var(--separator) 65%, transparent);
+  background: color-mix(in srgb, var(--fill) 26%, var(--bg-elevated));
+  color: var(--text-secondary);
+  font: 400 0.75rem/1rem var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ptable__group-header strong {
+  color: var(--text-primary);
+  font: 650 0.875rem/1rem var(--font-sans);
+}
+
+.ptable__group-header svg {
+  color: var(--text-primary);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.ptable__group-header svg.is-collapsed {
+  transform: rotate(-90deg);
+}
+
+.ptable__row {
+  position: relative;
+  min-height: 61px;
+  border-bottom: 1px solid color-mix(in srgb, var(--separator) 72%, transparent);
+  color: var(--text-secondary);
+  font: 400 0.75rem/1rem var(--font-sans);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.ptable__group:last-of-type .ptable__row:last-child {
+  border-bottom: 0;
+}
+
+.ptable__row:hover {
+  background: color-mix(in srgb, var(--fill) 44%, transparent);
+}
+
+.ptable__row--selected {
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-elevated));
+}
+
+.ptable__product {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ptable__thumb {
+  flex: none;
+  position: relative;
+  width: 39px;
+  height: 39px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--thumb-c, var(--accent)) 13%, var(--bg-elevated));
+  color: var(--thumb-c, var(--accent));
+  font: 700 0.875rem/1 var(--font-sans);
+}
+
+.ptable__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ptable__product-copy {
+  min-width: 0;
+  display: grid;
+}
+
+.ptable__product-copy strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font: 600 0.8125rem/1.05rem var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ptable__product-copy small {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font: 400 0.6875rem/0.9rem var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ptable__sku,
+.ptable__price {
+  font-variant-numeric: tabular-nums;
+}
+
+.ptable__price {
+  color: var(--text-primary);
+  font: 600 0.75rem/1rem var(--font-sans);
+  white-space: nowrap;
+}
+
+.ptable__price small {
+  margin-left: 2px;
+  color: var(--text-tertiary);
+  font: 400 0.625rem/0.8rem var(--font-sans);
+}
+
+.ptable__stock {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.ptable__stock i {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.ptable__stock--success { color: color-mix(in srgb, var(--success) 78%, #08783d); }
+.ptable__stock--warning { color: color-mix(in srgb, var(--warning) 82%, #a85c00); }
+.ptable__stock--danger { color: var(--danger); }
+
+.status-pill {
+  display: inline-flex;
+  min-height: 25px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border-radius: 999px;
+  font: 600 0.6875rem/0.875rem var(--font-sans);
+}
+
+.status-pill--active {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: color-mix(in srgb, var(--success) 72%, #086837);
+}
+
+.status-pill--inactive {
+  background: var(--fill);
+  color: var(--text-secondary);
+}
+
+.ptable__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+}
+
+.table-action {
+  min-height: 33px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--separator);
+  border-radius: 9px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font: 500 0.75rem/1rem var(--font-sans);
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(20, 43, 32, 0.025);
+  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.table-action:hover {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--separator));
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-elevated));
+  color: var(--accent);
+}
+
+.table-action:focus-visible,
+.ptable__product:focus-visible,
+.pcheck:focus-visible,
+.ptable__group-header:focus-visible,
+.ptable__pagination button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.table-action:disabled,
+.ptable__pagination button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.table-action--icon {
+  width: 34px;
+  padding: 0;
+}
+
+.ptable__more-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.ptable__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 12;
+  min-width: 145px;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--separator);
+  border-radius: 11px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+}
+
+.ptable__menu button {
+  min-height: 34px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-primary);
+  font: 500 0.75rem/1rem var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ptable__menu button:hover {
+  background: var(--fill);
+}
+
+.ptable__footer {
+  min-height: 66px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 15px;
+  border-top: 1px solid var(--separator);
+  color: var(--text-secondary);
+  font: 400 0.75rem/1rem var(--font-sans);
+}
+
+.ptable__pagination {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ptable__pagination label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ptable__pagination select,
+.ptable__pagination button {
+  min-height: 36px;
+  border: 1px solid var(--separator);
+  border-radius: 9px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font: 500 0.75rem/1rem var(--font-sans);
+}
+
+.ptable__pagination select {
+  min-width: 62px;
+  padding: 0 9px;
+}
+
+.ptable__pagination button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 11px;
+  cursor: pointer;
+}
+
+.ptable__pagination .ptable__next {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text-on);
+}
+
+.p-empty {
+  min-height: 260px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  margin-top: 12px;
+  border: 1px solid var(--separator);
+  border-radius: 16px;
+  color: var(--text-tertiary);
+}
+
+.p-empty strong {
+  color: var(--text-primary);
+  font: var(--type-headline);
+}
+
+.p-empty span {
+  font: var(--type-caption);
+}
+
+.category-manager {
+  margin-top: 12px;
+  overflow: hidden;
+  border: 1px solid var(--separator);
+  border-radius: 16px;
+  background: var(--bg-elevated);
+  box-shadow: 0 5px 18px rgba(20, 43, 32, 0.045);
+}
+
+.category-manager__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border-bottom: 1px solid var(--separator);
+}
+
+.category-manager__header h2,
+.category-manager__header p {
+  margin: 0;
+}
+
+.category-manager__header h2 {
+  font: var(--type-headline);
+}
+
+.category-manager__header p {
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font: var(--type-caption);
+}
+
+.category-row {
+  min-height: 62px;
+  padding: 10px 16px;
+}
+
+.category-row__icon {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+}
+
+@media (max-width: 1500px) {
+  .ptoolbar {
+    grid-template-columns: minmax(240px, 1.5fr) repeat(3, minmax(130px, 1fr));
+  }
+
+  .pfilter--search {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 1100px) {
+  .ptable__grid {
+    grid-template-columns: 28px minmax(205px, 2fr) minmax(80px, 0.7fr) minmax(90px, 0.8fr) minmax(110px, 0.9fr) minmax(82px, 0.7fr) minmax(78px, 0.65fr) minmax(198px, 1.35fr);
+    gap: 9px;
+    padding-inline: 12px;
+  }
+}
+
+@media (max-width: 900px) {
+  .ptable__head {
+    display: none;
+  }
+
+  .ptable__group:first-of-type .ptable__group-header {
+    border-top: 0;
+    border-radius: 16px 16px 0 0;
+  }
+
+  .ptable__group-header {
+    padding-left: 14px;
+  }
+
+  .ptable__row {
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding-block: 12px;
+  }
+
+  .ptable__row > .pcheck { grid-column: 1; grid-row: 1 / span 2; }
+  .ptable__product { grid-column: 2; grid-row: 1; }
+  .ptable__sku,
+  .ptable__category,
+  .ptable__row > span:has(.status-pill) { display: none; }
+  .ptable__stock { grid-column: 2; grid-row: 2; margin-left: 49px; }
+  .ptable__price { grid-column: 3; grid-row: 1; }
+  .ptable__actions { grid-column: 3; grid-row: 2; }
+
+  .ptable__footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .ptable__pagination {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 700px) {
+  .products-page {
+    gap: 14px;
+  }
+
+  .p-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .p-kpi {
+    min-height: 72px;
+    gap: 10px;
+    padding: 11px;
+  }
+
+  .p-kpi__icon {
+    width: 38px;
+    height: 38px;
+  }
+
+  .p-kpi__chevron {
+    display: none;
+  }
+
+  .ptoolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 10px;
+  }
+
+  .pfilter--search {
+    grid-column: 1 / -1;
+  }
+
+  .ptable__row {
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+  }
+
+  .ptable__actions .table-action {
+    font-size: 0;
+    width: 33px;
+    padding: 0;
+    gap: 0;
+  }
+
+  .ptable__actions .table-action svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .ptable__pagination label,
+  .ptable__pagination > span {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .category-manager__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 460px) {
+  .p-header .primary-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .pfilter {
+    min-height: 48px;
+  }
+
+  .ptable__product-copy small {
+    max-width: 32vw;
+  }
+
+  .ptable__actions {
+    gap: 4px;
+  }
+
+  .ptable__footer {
+    padding: 12px;
+  }
+
+  .ptable__pagination button {
+    flex: 1;
+    justify-content: center;
   }
 }
 

@@ -313,3 +313,129 @@ export function releaseDelivery(orderId: string): Promise<{ released: boolean }>
     fallbackError: 'Could not give that job back.',
   })
 }
+
+// -- The account -----------------------------------------------------------
+
+/**
+ * What a rider may change about themselves.
+ *
+ * Not the email and not the licence number — the API refuses both, for reasons
+ * written down in RiderAccountController. The form does not offer them rather
+ * than offering them and reporting a 422, because a disabled field that
+ * explains itself is kinder than a control that fails on submit.
+ */
+export interface RiderProfileUpdate {
+  name?: string
+  phone?: string
+  plateNumber?: string
+}
+
+export function updateRiderProfile(input: RiderProfileUpdate): Promise<{ rider: RiderProfile }> {
+  return request<{ rider: RiderProfile }>('/api/rider/me', {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+    fallbackError: 'Could not save your details.',
+  })
+}
+
+/**
+ * The `password_confirmation` key is Laravel's `confirmed` rule, not ours —
+ * the same snake_cased exception registration already makes.
+ */
+export function updateRiderPassword(
+  currentPassword: string,
+  password: string,
+): Promise<{ rider: RiderProfile }> {
+  return postJson<{ rider: RiderProfile }>(
+    '/api/rider/password',
+    { currentPassword, password, password_confirmation: password },
+    'Could not change your password.',
+  )
+}
+
+/**
+ * Both of these answer the same thing whether or not the address is a rider's.
+ * The portal shows that answer as-is rather than dressing it up as success:
+ * "if that email has an account" is the honest sentence, and it is the API's.
+ */
+export function requestRiderPasswordReset(email: string): Promise<{ message: string }> {
+  return postJson<{ message: string }>(
+    '/api/rider/forgot-password',
+    { email },
+    'Could not send a reset link.',
+  )
+}
+
+export function resetRiderPassword(
+  token: string,
+  email: string,
+  password: string,
+): Promise<{ message: string }> {
+  return postJson<{ message: string }>(
+    '/api/rider/reset-password',
+    { token, email, password, password_confirmation: password },
+    'Could not reset your password.',
+  )
+}
+
+// -- Where the rider is ----------------------------------------------------
+
+/** What the server does with a fix, and when it wants the next one. */
+export interface PositionReceipt {
+  recorded: boolean
+  activeDeliveries: number
+  /** The server sets the cadence, not the browser. 10s carrying, 60s idle. */
+  nextPingSeconds: number
+}
+
+export interface RiderFix {
+  lat: number
+  lng: number
+  headingDeg?: number | null
+  speedKph?: number | null
+  accuracyM?: number | null
+}
+
+export function shareRiderPosition(fix: RiderFix): Promise<PositionReceipt> {
+  return postJson<PositionReceipt>('/api/rider/position', fix, 'Could not share your position.')
+}
+
+/**
+ * Off means erased, not frozen: this nulls the columns rather than letting the
+ * last fix sit in the row going stale. Same promise the Android app makes.
+ */
+export function stopSharingRiderPosition(): Promise<{ recorded: boolean }> {
+  return request<{ recorded: boolean }>('/api/rider/position', {
+    method: 'DELETE',
+    fallbackError: 'Could not stop sharing your position.',
+  })
+}
+
+// -- Earnings --------------------------------------------------------------
+
+export interface EarningsTotal {
+  jobs: number
+  feeCents: number
+}
+
+export interface EarningsDay {
+  /** `YYYY-MM-DD` in Asia/Manila — the day the work was done in. */
+  date: string
+  jobs: number
+  feeCents: number
+}
+
+export interface EarningsSummary {
+  currency: string
+  today: EarningsTotal
+  week: EarningsTotal
+  month: EarningsTotal
+  allTime: EarningsTotal
+  days: EarningsDay[]
+}
+
+export function fetchRiderEarnings(): Promise<EarningsSummary> {
+  return request<EarningsSummary>('/api/rider/earnings', {
+    fallbackError: 'Could not load your earnings.',
+  })
+}

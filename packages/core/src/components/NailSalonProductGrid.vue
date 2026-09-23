@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { Footprints, Gem, Hand, LayoutGrid, PackageSearch, ShoppingBag, Sparkles } from '@lucide/vue'
+import { LayoutGrid, PackageSearch, Sparkles } from '@lucide/vue'
 import { computed, reactive } from 'vue'
+import { categoryIcon } from '@pos/core/utils/categoryIcons'
 import { categoryTagVar, formatCurrency } from '@pos/shared/index'
 import { usePosStore } from '@pos/core/stores/pos'
 import { haptic, ImpactStyle } from '@pos/core/utils/haptics'
@@ -51,17 +52,15 @@ function quantityFor(productId: string) {
   return cartQuantities.value.get(productId) ?? 0
 }
 
-const categoryIcons: Record<string, typeof Hand> = {
-  all: LayoutGrid,
-  manicures: Hand,
-  pedicures: Footprints,
-  'nail-enhancements': Sparkles,
-  'nail-addons': Gem,
-  'salon-retail': ShoppingBag,
-}
-
+// The register's own aisle glyphs come from the shared name-keyed table, so
+// the storefront and the register can't drift into drawing different icons for
+// the same shelf. Anything the table doesn't know falls back to Sparkles.
+//
+// `categoryNameFor` is the bridge: everything here addresses a category by id,
+// but ids off the API are uuids, and it is the name the table is keyed on.
 function iconFor(categoryId: string) {
-  return categoryIcons[categoryId] ?? Sparkles
+  if (categoryId === 'all') return LayoutGrid
+  return categoryIcon(categoryNameFor(categoryId)) ?? Sparkles
 }
 
 function categoryNameFor(categoryId: string) {

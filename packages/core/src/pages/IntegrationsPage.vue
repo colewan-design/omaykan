@@ -10,7 +10,6 @@ import {
   RefreshCw,
   ShieldCheck,
   Store,
-  WifiOff,
 } from '@lucide/vue'
 import ChartCard from '@pos/core/components/ChartCard.vue'
 import ToggleSwitch from '@pos/core/components/ToggleSwitch.vue'
@@ -38,7 +37,6 @@ function updateSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K
   void store.updateSettings({ ...store.settings, [key]: value })
 }
 
-const isOnlineSync = computed(() => store.settings.syncMode === 'online-sync')
 const hasBusinessProfile = computed(() => Boolean(store.settings.businessName.trim()))
 const latestEvent = computed(() => store.appEvents[0] ?? null)
 const pendingEvents = computed(() => store.pendingAppEvents.length)
@@ -93,11 +91,9 @@ const integrationCards = computed(() => [
   {
     key: 'sync',
     title: 'Online Sync',
-    description: isOnlineSync.value
-      ? 'Remote sync is selected for this register.'
-      : 'This register is storing data locally.',
-    status: isOnlineSync.value ? 'Connected' : 'Local only',
-    ready: isOnlineSync.value,
+    description: 'Every sale is recorded on Omaykan before it is completed.',
+    status: 'Connected',
+    ready: true,
     icon: Cloud,
   },
   {
@@ -146,10 +142,8 @@ const setupTasks = computed(() => [
   },
   {
     label: 'Telemetry queue',
-    detail: store.settings.syncMode === 'online-sync'
-      ? pendingEvents.value === 0 ? 'All captured events are uploaded' : `${pendingEvents.value} events pending upload`
-      : 'Switch to online sync to upload captured events',
-    done: store.settings.syncMode === 'online-sync' && pendingEvents.value === 0,
+    detail: pendingEvents.value === 0 ? 'All captured events are uploaded' : `${pendingEvents.value} events pending upload`,
+    done: pendingEvents.value === 0,
   },
   {
     label: 'Receipt printing',
@@ -166,10 +160,9 @@ const setupTasks = computed(() => [
         <h1 class="integrations-title">Integrations</h1>
         <p class="integrations-copy">Manage connected services, local device readiness, and data handoff points.</p>
       </div>
-      <div class="integrations-status" :class="{ 'integrations-status--online': isOnlineSync }">
-        <Cloud v-if="isOnlineSync" :size="16" />
-        <WifiOff v-else :size="16" />
-        <span>{{ isOnlineSync ? 'Online sync selected' : 'Local register mode' }}</span>
+      <div class="integrations-status integrations-status--online">
+        <Cloud :size="16" />
+        <span>Online</span>
       </div>
     </section>
 
@@ -246,18 +239,6 @@ const setupTasks = computed(() => [
     <section class="integrations-workspace">
       <ChartCard title="Connection Settings" summary="Primary integration settings for this register.">
         <div class="integrations-settings">
-          <div class="integrations-setting-row">
-            <div>
-              <strong>Online sync</strong>
-              <p>Switch between local-only operation and remote sync mode.</p>
-            </div>
-            <ToggleSwitch
-              :model-value="isOnlineSync"
-              ariaLabel="Enable online sync"
-              @update:model-value="(value) => updateSetting('syncMode', value ? 'online-sync' : 'local-only')"
-            />
-          </div>
-
           <div class="integrations-setting-row">
             <div>
               <strong>Telemetry</strong>

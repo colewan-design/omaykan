@@ -10,8 +10,13 @@ export interface OrderChannelOptions {
   storeId: string
   /** Staff bearer token — authorizes the private store.{id} channel. */
   token: string
-  /** Called on any live order event (placed, status change, delivery update). */
-  onOrderEvent: (payload: unknown) => void
+  /**
+   * Called on any live order event. `event` is the broadcast name without the
+   * leading dot — 'order.placed', 'order.status-changed', 'order.delivery-updated'
+   * or 'rider.position' — so the caller can tell the cheap, frequent one from
+   * the three that mean the order itself changed.
+   */
+  onOrderEvent: (payload: unknown, event: string) => void
 }
 
 // The Reverb websocket the browser connects to. Blank key means realtime is
@@ -36,7 +41,16 @@ function reverbEnv() {
   }
 }
 
-const ORDER_EVENTS = ['.order.placed', '.order.status-changed', '.order.delivery-updated']
+// `.rider.position` fires every ten seconds per delivery in flight, unlike the
+// other three which fire a handful of times per order. The dashboard's handler
+// has to treat it as a position update rather than an order refresh — see
+// DashboardPage — or every ping would trigger a full order reload.
+const ORDER_EVENTS = [
+  '.order.placed',
+  '.order.status-changed',
+  '.order.delivery-updated',
+  '.rider.position',
+]
 
 /**
  * Subscribe to a store's live order feed over Reverb. Returns a teardown
@@ -71,7 +85,7 @@ export function subscribeToStoreOrders(options: OrderChannelOptions): () => void
 
   const channel = echo.private(`store.${options.storeId}`)
   for (const event of ORDER_EVENTS) {
-    channel.listen(event, options.onOrderEvent)
+    channel.listen(event, (payload: unknown) => options.onOrderEvent(payload, event.slice(1)))
   }
 
   return () => {

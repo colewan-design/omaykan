@@ -12,7 +12,6 @@ import ProductGrid from '@pos/core/components/ProductGrid.vue'
 import RestaurantOrderPanel from '@pos/core/components/RestaurantOrderPanel.vue'
 import RestaurantProductGrid from '@pos/core/components/RestaurantProductGrid.vue'
 import ShiftPanel from '@pos/core/components/ShiftPanel.vue'
-import TrackOrderPanel from '@pos/core/components/TrackOrderPanel.vue'
 import { usePosStore } from '@pos/core/stores/pos'
 import { haptic, ImpactStyle } from '@pos/core/utils/haptics'
 import { printReceipt } from '@pos/core/utils/receipt'
@@ -56,10 +55,12 @@ function handlePrintReceipt() {
 </script>
 
 <template>
-  <div class="page-stack register-page-stack">
-    <div class="register-layout">
-      <div class="register-main-col">
-        <ShiftPanel />
+  <div class="register-page-stack">
+    <div class="register-workspace">
+      <ShiftPanel />
+
+      <div class="register-layout">
+        <div class="register-main-col">
 
         <div v-if="store.lastCompletedOrder" class="success-banner register-success-banner">
           <span>Payment captured for ticket {{ store.lastCompletedOrder.ticketNumber }}.</span>
@@ -78,21 +79,20 @@ function handlePrintReceipt() {
         <NailSalonProductGrid v-else-if="isNailSalon" />
         <ProductGrid v-else />
 
-        <TrackOrderPanel />
-      </div>
+        </div>
 
-      <div
-        class="register-order-backdrop"
-        :class="{ 'register-order-backdrop--visible': mobileCartOpen }"
-        :style="mobileCartOpen && (isOrderDragging || isOrderClosing) ? { '--sheet-backdrop-opacity': String(Math.max(0, 1 - orderDragOffset / 400)) } : undefined"
-        @click="mobileCartOpen = false"
-      />
+        <div
+          class="register-order-backdrop"
+          :class="{ 'register-order-backdrop--visible': mobileCartOpen }"
+          :style="mobileCartOpen && (isOrderDragging || isOrderClosing) ? { '--sheet-backdrop-opacity': String(Math.max(0, 1 - orderDragOffset / 400)) } : undefined"
+          @click="mobileCartOpen = false"
+        />
 
-      <div
-        class="register-order-wrap"
-        :class="{ 'register-order-wrap--open': mobileCartOpen, 'register-order-wrap--dragging': isOrderDragging }"
-        :style="mobileCartOpen && orderDragOffset ? { transform: `translateY(${orderDragOffset}px)` } : undefined"
-      >
+        <div
+          class="register-order-wrap"
+          :class="{ 'register-order-wrap--open': mobileCartOpen, 'register-order-wrap--dragging': isOrderDragging }"
+          :style="mobileCartOpen && orderDragOffset ? { transform: `translateY(${orderDragOffset}px)` } : undefined"
+        >
         <button
           class="register-order-wrap__handle"
           type="button"
@@ -104,52 +104,96 @@ function handlePrintReceipt() {
         >
           <span class="register-order-wrap__grabber" />
         </button>
-        <RestaurantOrderPanel v-if="isRestaurant" @payment-open="mobileCartOpen = false" />
-        <GroceryOrderPanel v-else-if="isGrocery" @payment-open="mobileCartOpen = false" />
-        <NailSalonOrderPanel v-else-if="isNailSalon" @payment-open="mobileCartOpen = false" />
-        <OrderPanel v-else @payment-open="mobileCartOpen = false" />
+          <RestaurantOrderPanel v-if="isRestaurant" @payment-open="mobileCartOpen = false" />
+          <GroceryOrderPanel v-else-if="isGrocery" @payment-open="mobileCartOpen = false" />
+          <NailSalonOrderPanel v-else-if="isNailSalon" @payment-open="mobileCartOpen = false" />
+          <OrderPanel v-else @payment-open="mobileCartOpen = false" />
+        </div>
       </div>
-    </div>
 
-    <button
-      class="register-cart-bar"
-      :class="{ 'register-cart-bar--hidden': mobileCartOpen }"
-      type="button"
-      @click="openMobileCart"
-    >
-      <span class="register-cart-bar__info">
-        <span class="register-cart-bar__icon-wrap">
-          <ShoppingCart :size="18" />
-          <span v-if="store.itemCount > 0" class="register-cart-bar__count">{{ store.itemCount }}</span>
+      <button
+        class="register-cart-bar"
+        :class="{ 'register-cart-bar--hidden': mobileCartOpen }"
+        type="button"
+        @click="openMobileCart"
+      >
+        <span class="register-cart-bar__info">
+          <span class="register-cart-bar__icon-wrap">
+            <ShoppingCart :size="18" />
+            <span v-if="store.itemCount > 0" class="register-cart-bar__count">{{ store.itemCount }}</span>
+          </span>
+          <span class="register-cart-bar__total">{{ formatCurrency(store.totalCents) }}</span>
         </span>
-        <span class="register-cart-bar__total">{{ formatCurrency(store.totalCents) }}</span>
-      </span>
-      <span class="register-cart-bar__label">
-        View order
-        <ChevronUp :size="16" />
-      </span>
-    </button>
+        <span class="register-cart-bar__label">
+          View order
+          <ChevronUp :size="16" />
+        </span>
+      </button>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .register-page-stack {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
+  --pos-green: #05634f;
+  --pos-green-dark: #034b3e;
+  --pos-mint: #eef7f5;
+  --pos-border: #dce8e5;
+  --accent: #06634f;
+  --accent-pressed: #044d3e;
+  --accent-text-on: #ffffff;
+  --bg-base: #edf6f4;
+  --bg-surface: #ffffff;
+  --bg-elevated: #ffffff;
+  --fill: #f0f6f4;
+  --text-primary: #17211f;
+  --text-secondary: #65726f;
+  --text-tertiary: #87918e;
+  --separator: #dce8e5;
+  /* Sized by the shell's content area (AppShell's --register main), not the
+     viewport: the workspace nav rail sits beside this, same as every other
+     page. */
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
+  border: 1px solid var(--separator);
+  border-radius: 20px;
+  background: #eef8f5;
+  box-shadow: 0 18px 50px rgba(5, 80, 63, 0.06);
+}
+
+.register-workspace {
+  display: flex;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
 }
 
 .register-layout {
   flex: 1;
   min-height: 0;
+  padding: 16px;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1.9fr) minmax(420px, 1fr);
+}
+
+/* The till now starts where the workspace rail ends, ~230px further in than
+   its old private rail left it. Through that band the order panel gives up its
+   420px floor rather than squeezing the catalog down to a single card. */
+@media (min-width: 1081px) and (max-width: 1320px) {
+  .register-layout {
+    gap: 12px;
+    padding: 12px 12px 12px 10px;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 0.62fr);
+  }
 }
 
 .register-main-col {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: 10px;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -160,7 +204,7 @@ function handlePrintReceipt() {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  margin: 0 20px;
+  margin: 0;
 }
 
 .register-success-banner__print {
@@ -172,7 +216,7 @@ function handlePrintReceipt() {
 .register-order-wrap {
   min-width: 0;
   min-height: 0;
-  margin: 0 20px 20px 0;
+  margin: 0;
   overflow: hidden;
 }
 
@@ -199,10 +243,18 @@ function handlePrintReceipt() {
   .register-page-stack {
     height: auto;
     overflow: visible;
+    border: none;
+    border-radius: 0;
   }
 
   .register-layout {
     flex: none;
+    padding: 12px;
+  }
+
+  .register-workspace {
+    height: auto;
+    min-height: 100vh;
   }
 
   .register-main-col {

@@ -1,6 +1,6 @@
 import { createApp } from 'vue'
-import PlatformAdminPage from './PlatformAdminPage.vue'
+import AdminApp from './AdminApp.vue'
 import '@pos/core/styles/tokens.css'
-import '@pos/core/styles/app.css'
+import './admin.css'
 
-createApp(PlatformAdminPage).mount('#platform-admin-app')
+createApp(AdminApp).mount('#platform-admin-app')

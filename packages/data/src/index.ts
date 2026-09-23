@@ -5,6 +5,7 @@ import {
   demoCategories,
   demoProducts,
   guestCustomerName,
+  priceOrder,
   slugTicket,
   type AppEvent,
   type AppEventType,
@@ -15,6 +16,8 @@ import {
   type CashMovementType,
   type CatalogSnapshot,
   type Category,
+  type ConversationSummary,
+  type ConversationThread,
   type CreateCustomerInput,
   type CreateCategoryInput,
   type CreateOrderInput,
@@ -31,6 +34,8 @@ import {
   type ReorderMark,
   type RestaurantTable,
   type RoleDefinition,
+  type SavedRider,
+  type SavedRiderDirectory,
   type ShiftSummary,
   type Supplier,
   type UserAccount,
@@ -39,6 +44,146 @@ import {
 export interface DataStore {
   read<T>(key: string, fallback: T): Promise<T>
   write<T>(key: string, value: T): Promise<void>
+}
+
+/**
+ * Whether the server says this shop may trade — `TenantAccess` in the backend.
+ *
+ * `suspended`: an operator switched the shop off. Nothing works, and the till
+ * says so rather than failing one call at a time.
+ *
+ * `unpaid`: the subscription lapsed. The till still reads its own records but
+ * starts nothing new — no sale, no shift. The rule is "finish, don't start".
+ *
+ * A local-only till never hears from the server, and is always `allowed`.
+ * See documentation/subscription-and-suspension.md.
+ */
+export type TenantAccessState = 'allowed' | 'suspended' | 'unpaid'
+
+/** `LoyaltyController::presentProgram` in the backend. */
+export interface LoyaltyProgram {
+  enabled: boolean
+  /** One point for every this-many centavos spent before VAT. */
+  spendCentsPerPoint: number
+  /** What one point is worth when spent. */
+  pointValueCents: number
+  minRedeemPoints: number
+  expiryMonths: number | null
+}
+
+export interface CustomerLoyalty {
+  balance: number
+  enrolled: boolean
+  entries: Array<{ id: string; reason: 'earn' | 'redeem' | 'expire' | 'adjust'; points: number; note: string | null; createdAt: string | null }>
+}
+
+export interface LoyaltyCheck {
+  points: number
+  discountCents: number
+  balance: number
+}
+
+/** `PromoCodeController::present` in the backend. */
+export interface PromoCode {
+  id: string
+  code: string
+  kind: 'percent' | 'amount'
+  percent: number | null
+  amountCents: number | null
+  minSubtotalCents: number
+  maxDiscountCents: number | null
+  channel: 'online' | 'counter' | 'both'
+  startsAt: string | null
+  endsAt: string | null
+  maxRedemptions: number | null
+  perCustomerLimit: number | null
+  isActive: boolean
+  redemptions: number
+  description: string
+}
+
+export type PromoCodeInput = Partial<Omit<PromoCode, 'id' | 'redemptions' | 'description'>>
+
+/** `PromoCodeController::check` in the backend. */
+export interface PromoCodeCheck {
+  promoCodeId: string
+  code: string
+  description: string
+  discountCents: number
+  percent: number | null
+}
+
+/** `StoreOrderingController::stateOf` in the backend. */
+export interface OrderingState {
+  paused: boolean
+  /** When the pause ends by itself; null while open or until reopened by hand. */
+  resumesAt: string | null
+  /** What shoppers are told — "…back at 4:00 PM." Null while open. */
+  message: string | null
+}
+
+export interface TenantAccessStatus {
+  access: TenantAccessState
+  /** The server's own sentence for it; null when allowed. */
+  message: string | null
+}
+
+/** One manual transfer the shop has told us about. `SubscriptionPayment`. */
+export interface SubscriptionPaymentRecord {
+  id: string
+  status: 'submitted' | 'accepted' | 'rejected'
+  reference: string
+  amountCents: number
+  note: string | null
+  submittedBy: string | null
+  submittedAt: string | null
+  periodStart: string | null
+  periodEnd: string | null
+  /** Why an operator could not match it. Null unless rejected. */
+  rejectionReason: string | null
+}
+
+/**
+ * What the shop owes and what it has sent — `SellerSubscriptionController`.
+ *
+ * `plan.amountCents` is the *current* platform price, which the operator can
+ * change at any time; `subscription.agreedAmountCents` is what this shop
+ * signed up at. Both are shown, because a merchant whose price has moved
+ * should see that rather than be surprised by it.
+ */
+export interface SubscriptionOverview {
+  /** Whether the server can open a PayMongo checkout at all. */
+  gatewayReady?: boolean
+  plan: { id: string; amountCents: number }
+  subscription: {
+    status: string
+    agreedAmountCents: number
+    trialEndsAt: string | null
+    currentPeriodEndsAt: string | null
+    graceEndsAt: string | null
+  } | null
+  payments: SubscriptionPaymentRecord[]
+  howToPay: { method: string; supportEmail: string }
+}
+
+/**
+ * A refusal because of the shop, not the person.
+ *
+ * Deliberately not an auth failure: the token is fine, and a till that cleared
+ * it here would sign a merchant out on the day their shop was suspended, which
+ * they would report as a broken login. Callers that catch errors generically
+ * still get a readable `message`.
+ */
+export class TenantAccessError extends Error {
+  // Declared rather than a constructor parameter property: the build runs
+  // TypeScript with erasableSyntaxOnly, which rejects that shorthand.
+  readonly access: Exclude<TenantAccessState, 'allowed'>
+
+  constructor(message: string, access: Exclude<TenantAccessState, 'allowed'>) {
+    super(message)
+    this.name = 'TenantAccessError'
+    this.access = access
+  }
 }
 
 export interface PosRepository {
@@ -60,11 +205,48 @@ export interface PosRepository {
    * the offline outbox, so unlike a register sale these need the network.
    */
   updateOnlineOrderStatus(orderId: string, status: OrderStatus): Promise<OrderSummary>
+  /**
+   * Name the rider carrying an online order.
+   *
+   * Three shapes, matching the three ways a shop dispatches — `savedRiderId`
+   * picks someone off the shop's list (and reaches their app when that row is
+   * a platform account), `riderName`/`riderPhone` types one in, and
+   * `saveRider` remembers a typed-in one for next time. Sending neither a
+   * saved id nor a name is a 422 from the API, not a silent no-op.
+   */
   assignOrderRider(
     orderId: string,
-    input: { riderName: string; riderPhone?: string | null },
+    input: {
+      savedRiderId?: string | null
+      riderName?: string
+      riderPhone?: string | null
+      saveRider?: boolean
+      saveNote?: string | null
+    },
   ): Promise<OrderSummary>
+  /** Put the order back on the platform board, with nobody assigned. */
+  unassignOrderRider(orderId: string): Promise<OrderSummary>
+  /** The shop's own riders, plus the ones who have delivered for it before. */
+  loadSavedRiders(): Promise<SavedRiderDirectory>
+  saveRider(input: {
+    riderId?: string | null
+    name: string
+    phone?: string | null
+    note?: string | null
+  }): Promise<SavedRider>
+  deleteSavedRider(id: string): Promise<void>
   updateOrderDeliveryStage(orderId: string, stage: DeliveryStage): Promise<OrderSummary>
+  /**
+   * Customer messages. Server-side like online orders, so a local-only store
+   * has an empty inbox rather than an error. A shop answers threads; it has no
+   * way to start one.
+   */
+  loadConversations(): Promise<ConversationSummary[]>
+  /** Reading a thread is what marks it read for the shop. */
+  loadConversation(id: string): Promise<ConversationThread>
+  sendConversationMessage(id: string, body: string): Promise<ConversationThread>
+  /** For the nav badge. Zero, never a throw, when the API can't be reached. */
+  loadUnreadMessageCount(): Promise<number>
   saveCustomer(input: CreateCustomerInput): Promise<Customer>
   updateCustomer(customer: Customer): Promise<Customer>
   deleteCustomer(id: string): Promise<void>
@@ -104,12 +286,30 @@ export interface PosRepository {
     adjustmentType: 'sale' | 'restock' | 'manual_correction'
     reason?: string
     orderId?: string
+    /** Change this till's count only — see adjustInventory. */
+    localOnly?: boolean
   }): Promise<Product | null>
   loadSettings(): Promise<AppSettings>
   saveSettings(settings: AppSettings): Promise<void>
   loadUsers(): Promise<UserAccount[]>
   saveUsers(users: UserAccount[]): Promise<void>
   loginUser(username: string, password: string): Promise<{ user: UserAccount; session: AuthSession } | null>
+  /**
+   * Sign in with a Google ID token instead of a password.
+   *
+   * Online-sync only, and null when the till isn't in it: the token is proof
+   * for the backend to check, and there is nothing local that can check it. It
+   * never creates an account — a staff account is a claim on a shop, so it is
+   * made by that shop. See StaffAuthController::google.
+   */
+  loginUserWithGoogle(credential: string): Promise<{ user: UserAccount; session: AuthSession } | null>
+  /**
+   * Finish a sign-in that happened on /seller/signup: open `storeId` with the
+   * unscoped token that page was given. Null when the till has no backend.
+   */
+  adoptRemoteSignIn(handoff: { token: string; storeId: string }): Promise<{ user: UserAccount; session: AuthSession } | null>
+  /** Whether sign-in can reach the backend at all — false on a local-only till. */
+  remoteAuthAvailable(): Promise<boolean>
   registerUser(input: {
     fullName: string
     username: string
@@ -129,6 +329,79 @@ export interface PosRepository {
   // The paired store's id, for subscribing to its live (Reverb) channel. Null
   // until a backend device session exists (local-only, or not yet paired).
   getSyncStoreId(): Promise<string | null>
+  /**
+   * What the server last said about this shop's right to trade. Learned at
+   * sign-in and from any refusal that carries a reason; always `allowed` on a
+   * till that never talks to the server.
+   */
+  loadTenantAccess(): Promise<TenantAccessStatus>
+  /**
+   * Ask the server now. How a till that was refused learns it has been let
+   * back in; offline, it returns the last known answer unchanged.
+   */
+  refreshTenantAccess(): Promise<TenantAccessStatus>
+  /** Told whenever that changes. Returns the unsubscribe. */
+  onTenantAccessChange(listener: (status: TenantAccessStatus) => void): () => void
+  /**
+   * The shop's own "not taking online orders right now". Server-side only,
+   * like online orders themselves: null on a till that never talks to it.
+   */
+  /**
+   * The shop's subscription and its payment history. Null on a till that
+   * never talks to the server, or for anyone but the owner.
+   *
+   * Reachable while the shop is unpaid, unlike every other write — see
+   * SellerSubscriptionController.
+   */
+  loadSubscription(): Promise<SubscriptionOverview | null>
+  /** "I sent this." Throws with the server's message if it is refused. */
+  submitSubscriptionPayment(input: {
+    reference: string
+    amountCents: number
+    note?: string
+  }): Promise<void>
+  /**
+   * "Pay now." Opens a PayMongo checkout and returns where to send the
+   * merchant. Rejects with the server's reason when the gateway is off.
+   */
+  startSubscriptionCheckout(): Promise<{ id: string; checkoutUrl: string }>
+  /**
+   * The merchant came back from GCash. Asks the server to settle, and
+   * returns what the payment is now.
+   *
+   * Not load-bearing: the webhook settles the same checkout. This is so the
+   * screen in front of the merchant turns paid immediately rather than
+   * whenever the notification arrives.
+   */
+  settleSubscriptionCheckout(sessionId: string): Promise<{ status: string }>
+  loadOrderingState(): Promise<OrderingState | null>
+  /** Pause (optionally until a time) or reopen. Needs the Orders page. */
+  setOrderingPaused(paused: boolean, resumesAt?: string | null): Promise<OrderingState>
+  /**
+   * Whether a code typed at the counter applies to a sale of this size, and
+   * for how much. Online only, by design: a code checked offline could not
+   * honour a redemption cap. Throws with the server's reason when it does
+   * not apply.
+   */
+  checkPromoCode(code: string, subtotalCents: number): Promise<PromoCodeCheck>
+  /** The shop's points rules. Null on a till with no server. */
+  loadLoyaltyProgram(): Promise<LoyaltyProgram | null>
+  /** Change the rules. Needs the Customers page. */
+  saveLoyaltyProgram(input: Partial<LoyaltyProgram>): Promise<LoyaltyProgram>
+  /** Every customer's balance, by customer id. Empty on a till with no server. */
+  loadLoyaltyBalances(): Promise<Record<string, number>>
+  /** One customer's balance and recent history. */
+  loadCustomerLoyalty(customerId: string): Promise<CustomerLoyalty>
+  /** What spending these points on a sale of this size is worth. Throws the reason when it cannot. */
+  checkLoyaltyRedemption(customerId: string, points: number, subtotalCents: number): Promise<LoyaltyCheck>
+  /** A manager's correction, as a new ledger entry. Returns the new balance. */
+  adjustLoyalty(customerId: string, points: number, note: string): Promise<number>
+  /** The shop's promo codes, newest first. Server-side; null on a till with no server. */
+  loadPromoCodes(): Promise<PromoCode[] | null>
+  /** Create (no id) or change one. The code itself cannot change once made. */
+  savePromoCode(input: PromoCodeInput, id?: string): Promise<PromoCode>
+  /** Retire one. Past orders keep saying which code they used. */
+  deletePromoCode(id: string): Promise<void>
   loadAppEvents(): Promise<AppEvent[]>
   trackAppEvent(input: {
     eventType: AppEventType
@@ -151,18 +424,23 @@ interface SyncConfig {
   apiBaseUrl: string
   organizationSlug: string
   storeCode: string
-  // Optional at construction: staff sign-in (POST /api/staff-sessions) needs
-  // only the org/store, while device pairing reads the code from persisted
-  // settings (seeded by onboarding). See ensureRemoteSession.
-  pairingCode?: string
   deviceName: string
   platform: string
   appVersion: string
 }
 
+/**
+ * The token every backend call rides on.
+ *
+ * It used to be a *device* session: the till paired once with the shop's code
+ * and held a token that belonged to the shop rather than to anyone in it. It is
+ * a staff session now — minted by signing in and choosing a store — which is
+ * why there is no `deviceId` here and why `ensureRemoteSession` can no longer
+ * conjure one. Nothing syncs until somebody signs in.
+ */
 interface SyncSession {
   token: string
-  deviceId: string
+  userId: string
   storeId: string
   storeName: string
   organizationId: string
@@ -171,7 +449,7 @@ interface SyncSession {
 
 interface SyncOutboxEvent {
   id: string
-  entityType: 'order' | 'category' | 'product' | 'inventory_adjustment' | 'app_event'
+  entityType: 'order' | 'category' | 'product' | 'inventory_adjustment' | 'app_event' | 'customer'
   entityId: string
   operation: 'upsert'
   occurredAt: string
@@ -196,6 +474,26 @@ interface BackendProduct {
   track_inventory?: boolean
   is_active?: boolean
   deleted_at?: string | null
+  image_url?: string | null
+  photo_urls?: string[] | null
+  brand?: string | null
+  packaging_type?: string | null
+  unit_label?: string | null
+  description?: string | null
+  compare_at_price_cents?: number | null
+}
+
+/** `SyncController::presentCustomer`. */
+interface BackendCustomer {
+  id: string
+  name: string
+  phone: string | null
+  email: string | null
+  notes: string | null
+  loyaltyConsentAt: string | null
+  createdAt: string | null
+  updatedAt: string | null
+  deletedAt: string | null
 }
 
 interface BackendInventoryLevel {
@@ -251,6 +549,9 @@ const storageKeys = {
   // A fingerprint of the shop photo this device last got onto the server —
   // not the photo itself, which is a data URL and already stored once.
   publishedStoreImage: 'pos.sync.store-image',
+  // Persisted so a suspended till reopened offline still says it is
+  // suspended, rather than ringing up sales that can never be pushed.
+  tenantAccess: 'pos.sync.tenant-access',
 } as const
 
 /**
@@ -474,7 +775,6 @@ function normalizeSyncConfig(input?: Partial<SyncConfig>): SyncConfig | null {
     apiBaseUrl: cfg.apiBaseUrl.replace(/\/+$/, ''),
     organizationSlug: cfg.organizationSlug,
     storeCode: cfg.storeCode,
-    pairingCode: cfg.pairingCode?.trim() || '',
     deviceName: cfg.deviceName?.trim() || defaultDeviceName(),
     platform: cfg.platform?.trim() || 'web',
     appVersion: cfg.appVersion?.trim() || '0.1.0',
@@ -562,6 +862,33 @@ class RemoteAuthError extends Error {
   }
 }
 
+/**
+ * The server's own sentence out of an error backendFetch threw — it throws the
+ * raw body for anything that is not a 2xx, and a 422's reason is inside it.
+ */
+function serverReason(error: unknown, fallback: string): string {
+  if (!(error instanceof Error)) return fallback
+  try {
+    const body = JSON.parse(error.message) as { errors?: Record<string, string[]>; message?: string }
+    return Object.values(body.errors ?? {})[0]?.[0] ?? body.message ?? fallback
+  } catch {
+    return error.message || fallback
+  }
+}
+
+/**
+ * What went wrong with a sale or a void sent to the server, in words for the
+ * cashier. A lost connection is a TypeError from fetch, and says nothing
+ * useful on its own.
+ */
+function registerRefusal(error: unknown, fallback: string): Error {
+  if (error instanceof TenantAccessError) return error
+  if (error instanceof TypeError) {
+    return new Error("Can't reach Omaykan, so nothing was recorded. Check the connection and try again.")
+  }
+  return new Error(serverReason(error, fallback))
+}
+
 async function responseMessage(response: Response, fallback: string): Promise<string> {
   const body = await response.clone().json().catch(() => null)
 
@@ -609,6 +936,21 @@ function mapBackendCategory(category: BackendCategory): Category {
   }
 }
 
+/**
+ * The server keeps VAT as a percentage (12.00) — OnlineOrderController charges
+ * with it that way — and the till works in fractions (0.12). Anything over 1 is
+ * a percentage; anything at or under is already a fraction, which is what a row
+ * written by an older till holds until the 2026-09-19 migration rewrites it. No
+ * real VAT rate is 1% or less, so the two cannot be confused.
+ *
+ * Read as-is, a seeded product's 12 was charged as 1,200% tax at the register.
+ */
+function taxRateFraction(value: string | number | null | undefined): number {
+  const rate = Number(value ?? 0)
+  if (!Number.isFinite(rate) || rate <= 0) return 0
+  return rate > 1 ? rate / 100 : rate
+}
+
 function mapBackendProduct(
   product: BackendProduct,
   inventoryLevels: Map<string, BackendInventoryLevel>,
@@ -628,12 +970,24 @@ function mapBackendProduct(
     barcode: product.barcode ?? '',
     name: override?.display_name || product.name,
     priceCents: override?.price_cents ?? product.price_cents,
-    taxRate: Number(product.tax_rate),
+    taxRate: taxRateFraction(product.tax_rate),
     kind: toProductKind(product.product_type),
     businessModes: toBusinessModes(categoryId),
     outOfStock: isAvailable ? stockQty === 0 : true,
     stockQty,
     lowStockThreshold,
+    // How the product looks online. These were not read back at all, so a
+    // till that loaded a product from the server held none of them — and its
+    // next edit of that product synced them as null, which the server reads as
+    // "clear it". A price change at the counter wiped the photos, unit and
+    // description someone had set from the seller app.
+    imageUrl: product.image_url ?? undefined,
+    photoUrls: product.photo_urls ?? [],
+    brand: product.brand ?? undefined,
+    packagingType: product.packaging_type ?? undefined,
+    unitLabel: product.unit_label ?? undefined,
+    description: product.description ?? undefined,
+    compareAtPriceCents: product.compare_at_price_cents ?? undefined,
   }
 }
 
@@ -730,6 +1084,8 @@ interface DemoSeedOrderPlan {
 }
 
 const demoProductMap = new Map(demoProducts.map((product) => [product.id, product]))
+const demoProductIds = new Set(demoProductMap.keys())
+const demoCategoryIds = new Set(demoCategories.map((category) => category.id))
 
 function demoTimestamp(daysAgo: number, hour: number, minute: number, extraMinutes = 0) {
   const date = new Date()
@@ -1061,13 +1417,14 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
   const syncConfig = normalizeSyncConfig(options.sync)
   const appVersion = syncConfig?.appVersion ?? '0.1.0'
 
+  /**
+   * Whether this till talks to a server. Always, once it is configured with
+   * one: the till is online-only, and there is no switch to turn that off —
+   * a till that could would record sales without the server's checks. Only
+   * a repository built with no sync configuration (tests) has no server.
+   */
   async function isOnlineSyncEnabled() {
-    if (!syncConfig) {
-      return false
-    }
-
-    const settings = await store.read<Partial<AppSettings>>(storageKeys.settings, defaultSettings)
-    return settings.syncMode === 'online-sync'
+    return syncConfig !== null
   }
 
   async function getDeviceId() {
@@ -1087,6 +1444,95 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
 
   async function writeSyncSession(session: SyncSession | null) {
     await store.write(storageKeys.syncSession, session)
+  }
+
+  const allowedStatus: TenantAccessStatus = { access: 'allowed', message: null }
+  const tenantAccessListeners = new Set<(status: TenantAccessStatus) => void>()
+
+  async function readTenantAccess(): Promise<TenantAccessStatus> {
+    return store.read<TenantAccessStatus>(storageKeys.tenantAccess, allowedStatus)
+  }
+
+  async function writeTenantAccess(next: TenantAccessStatus) {
+    const current = await readTenantAccess()
+    if (current.access === next.access && current.message === next.message) {
+      return
+    }
+
+    await store.write(storageKeys.tenantAccess, next)
+    for (const listener of tenantAccessListeners) {
+      listener(next)
+    }
+  }
+
+  /**
+   * The `tenantAccess` a refusal carries, if it carries one we act on.
+   *
+   * `closed` is the storefront's collapsed version and never reaches a till;
+   * anything unrecognised is treated as an ordinary error rather than guessed
+   * at, so a newer server cannot lock an older till out by accident.
+   */
+  async function tenantRefusal(response: Response): Promise<TenantAccessError | null> {
+    const body = await response.clone().json().catch(() => null) as
+      | { tenantAccess?: unknown; message?: unknown }
+      | null
+
+    const access = body?.tenantAccess
+    if (access !== 'suspended' && access !== 'unpaid') {
+      return null
+    }
+
+    const message = typeof body?.message === 'string' && body.message
+      ? body.message
+      : defaultTenantMessage(access)
+
+    return new TenantAccessError(message, access)
+  }
+
+  function defaultTenantMessage(access: Exclude<TenantAccessState, 'allowed'>) {
+    return access === 'suspended'
+      ? 'This shop has been suspended. Contact support to sort it out.'
+      : 'This shop\'s subscription is not up to date. Renew it to start taking orders again.'
+  }
+
+  /**
+   * Ask the server outright, rather than waiting to be refused.
+   *
+   * The only way an unpaid till learns it has been renewed: it is blocked from
+   * the writes whose success would otherwise say so. `/api/staff/stores` takes
+   * the store-scoped token and reports every shop's verdict — it is the store
+   * picker's own list — so this is one read, and it cannot itself be refused
+   * for the reason it is checking.
+   *
+   * Leaves the stored state alone when the server cannot be reached: offline is
+   * not evidence either way.
+   */
+  async function refreshTenantAccess(): Promise<TenantAccessStatus> {
+    const session = await readSyncSession()
+    if (!session || !(await isOnlineSyncEnabled())) {
+      return readTenantAccess()
+    }
+
+    try {
+      const response = await backendFetch<{
+        stores: Array<{ id: string; tenantAccess?: TenantAccessState }>
+      }>('/api/staff/stores')
+
+      const access = response.stores.find((entry) => entry.id === session.storeId)?.tenantAccess ?? 'allowed'
+      const current = await readTenantAccess()
+
+      if (access === 'allowed') {
+        await writeTenantAccess(allowedStatus)
+      } else if (access !== current.access) {
+        // Only when it changed: a refusal's own message is the server's fuller
+        // sentence, and swapping it for the generic one would just flicker.
+        await writeTenantAccess({ access, message: defaultTenantMessage(access) })
+      }
+    } catch {
+      // Offline or refused; the last known answer stands.
+    }
+
+    return readTenantAccess()
   }
 
   async function readOutbox() {
@@ -1193,6 +1639,30 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       return backendFetch<T>(path, init, false)
     }
 
+    // A refusal because of the shop. Recorded, so the shell can say so once
+    // instead of every screen failing in its own words; and the session is
+    // left exactly where it is — see TenantAccessError.
+    if (response.status === 403) {
+      const refusal = await tenantRefusal(response)
+      if (refusal) {
+        await writeTenantAccess({ access: refusal.access, message: refusal.message })
+        throw refusal
+      }
+    }
+
+    if (response.ok) {
+      // How a till learns it has been let back in. A suspended shop is
+      // refused everything, so any success means the suspension is over. An
+      // unpaid one can still read, so only a write getting through says the
+      // subscription is current again.
+      const current = await readTenantAccess()
+      const isWrite = (init.method ?? 'GET').toUpperCase() !== 'GET'
+
+      if (current.access === 'suspended' || (current.access === 'unpaid' && isWrite)) {
+        await writeTenantAccess(allowedStatus)
+      }
+    }
+
     if (!response.ok) {
       const text = await response.text()
       throw new Error(text || `Request failed: ${response.status}`)
@@ -1210,7 +1680,7 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
    * The image lives in AppSettings as a data URL and never had anywhere to go:
    * until now the only things that read it were the receipt header and the
    * settings avatar, both on this device. The storefront directory and the
-   * partner carousel on /signup read it off the store record instead, so it
+   * partner carousel on /seller/signup read it off the store record instead, so it
    * has to be pushed.
    *
    * Guarded by a stored fingerprint rather than by "did this save change it",
@@ -1218,7 +1688,7 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
    * server the first time the app opens after the update.
    */
   async function publishStoreImage(settings: AppSettings): Promise<void> {
-    if (settings.syncMode !== 'online-sync' || publishingStoreImage) {
+    if (!syncConfig || publishingStoreImage) {
       return
     }
 
@@ -1245,63 +1715,179 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     }
   }
 
+  /**
+   * The session this till is running on, or null.
+   *
+   * This used to *create* one on demand by pairing with the shop's code, which
+   * is why sync could run before anyone had signed in. It cannot now: the token
+   * belongs to a person, and only `loginUser` can mint one. A null here is not
+   * an error — it is "nobody has signed in yet", and every caller already
+   * treats it as "stay offline for the moment".
+   */
   async function ensureRemoteSession(): Promise<SyncSession | null> {
     if (!syncConfig) {
       return null
     }
 
-    let session = await readSyncSession()
-    if (session) {
-      return session
+    return readSyncSession()
+  }
+
+  /**
+   * Sign in, choose this till's store, and keep the token for both jobs.
+   *
+   * Two calls, because proving who you are does not say which shop you are
+   * standing in. The store is picked by the code this build is configured for,
+   * so a till stays pinned to its own branch and a manager who covers three
+   * does not have to choose on every shift; if that store is not among the ones
+   * the account reaches, the sign-in fails rather than quietly opening another.
+   *
+   * The token it ends with is the same one `ensureRemoteSession` hands to every
+   * backend call. There is no longer a second, device-shaped session alongside
+   * the person's — the till acts as whoever is signed in, and that is what puts
+   * a name on a settled payment and a closed drawer.
+   */
+  async function signInRemotely(
+    credentials: { identifier: string; password: string } | { googleCredential: string },
+  ): Promise<{ user: UserAccount; session: AuthSession } | null> {
+    const base = syncConfig?.apiBaseUrl
+    if (!base) {
+      return null
     }
 
-    // Onboarding persists the store's pairing code into settings; prefer that
-    // over any build-time config so a paired device can open a device session.
-    const settings = await store.read<Partial<AppSettings>>(storageKeys.settings, defaultSettings)
-    const pairingCode = (syncConfig.pairingCode ?? '') || (settings.pairingCode ?? '')
+    const endpoint = 'googleCredential' in credentials
+      ? '/api/staff/auth/google'
+      : '/api/staff/sign-in'
 
-    const payload = {
-      organizationSlug: syncConfig.organizationSlug,
-      storeCode: syncConfig.storeCode,
-      pairingCode,
-      deviceName: syncConfig.deviceName,
-      platform: syncConfig.platform,
-      appVersion: syncConfig.appVersion,
-    }
-
-    const response = await fetch(`${syncConfig.apiBaseUrl}/api/device-sessions`, {
+    const response = await fetch(`${base}${endpoint}`, {
       method: 'POST',
       headers: {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(
+        'googleCredential' in credentials
+          ? { credential: credentials.googleCredential }
+          : credentials,
+      ),
     })
 
+    // 403 is the door saying why it is shut — an unverified address, a disabled
+    // account, no membership anywhere — and each of those is worth repeating to
+    // the person rather than falling back to the local user list, which would
+    // let a sacked cashier in on a stale cached account.
+    if (response.status === 403) {
+      throw new RemoteAuthError(await responseMessage(response, 'This account cannot sign in here.'))
+    }
+
     if (!response.ok) {
-      const text = await response.text()
-      throw new Error(text || `Device pairing failed: ${response.status}`)
+      // A password refusal falls through to the local user list below, because
+      // an account created on this till before it was ever paired is a real
+      // case. Google has no such fallback — there is no local Google account to
+      // check against — so the server's 422 is the whole answer here (an
+      // unverified address, a spent credential, a client id that doesn't match
+      // the one the backend was configured with) and it has to be repeated to
+      // the person rather than turning into "incorrect username or password".
+      if ('googleCredential' in credentials) {
+        throw new RemoteAuthError(
+          await responseMessage(response, 'Google could not sign you in. Try again.'),
+        )
+      }
+
+      return null
     }
 
-    const body = await response.json() as {
+    const signIn = await response.json() as {
       token: string
-      device: { id: string }
-      store: { id: string; name: string }
-      organization: { id: string; slug: string }
+      user: { id: string; fullName: string; username: string | null; email: string | null }
+      stores: Array<{ id: string; code: string; name: string; organizationSlug: string; role: string }>
     }
 
-    session = {
+    const wanted = syncConfig?.storeCode
+    const store_ = signIn.stores.find((entry) => entry.code === wanted) ?? null
+
+    if (!store_) {
+      throw new RemoteAuthError(
+        "This account doesn't have access to this store. Ask an admin to add you in Staff.",
+      )
+    }
+
+    return openRemoteStore(base, signIn.token, store_.id)
+  }
+
+  /**
+   * The second half of sign-in: trade the unscoped token for one scoped to this
+   * store, and keep it as this till's session.
+   *
+   * Split out so /seller/signup's sign-in can finish here instead of making the
+   * person type the same password twice. That page proves who they are and
+   * which shop this browser is; this proves nothing new, it only opens the shop
+   * — and `session-store` refuses anyone without a membership there, whichever
+   * door the token came through.
+   */
+  async function openRemoteStore(
+    base: string,
+    unscopedToken: string,
+    storeId: string,
+  ): Promise<{ user: UserAccount; session: AuthSession }> {
+    const chosen = await fetch(`${base}/api/staff/session-store`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${unscopedToken}`,
+      },
+      body: JSON.stringify({ storeId }),
+    })
+
+    if (!chosen.ok) {
+      throw new RemoteAuthError(await responseMessage(chosen, 'Could not open that store.'))
+    }
+
+    const body = await chosen.json() as {
+      token: string
+      user: UserAccount
+      store: {
+        id: string
+        name: string
+        organizationId: string
+        organizationSlug: string
+        tenantAccess?: TenantAccessState
+      }
+    }
+
+    const session: AuthSession = {
+      userId: body.user.id,
+      signedInAt: new Date().toISOString(),
+      authToken: body.token,
+      authSource: 'remote',
+    }
+
+    const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
+    await store.write(storageKeys.users, [
+      body.user,
+      ...existingUsers.filter((entry) => entry.id !== body.user.id),
+    ])
+    await store.write(storageKeys.session, session)
+
+    await writeSyncSession({
       token: body.token,
-      deviceId: body.device.id,
+      userId: body.user.id,
       storeId: body.store.id,
       storeName: body.store.name,
-      organizationId: body.organization.id,
-      organizationSlug: body.organization.slug,
-    }
+      organizationId: body.store.organizationId,
+      organizationSlug: body.store.organizationSlug,
+    })
 
-    await writeSyncSession(session)
-    await store.write(storageKeys.deviceId, body.device.id)
-    return session
+    // A fresh sign-in is a fresh answer; whatever the last session left behind
+    // does not carry over. A suspended shop never gets this far — the
+    // session-store call above refuses it, and its message is what the person
+    // reads on the sign-in screen.
+    const access = body.store.tenantAccess === 'unpaid' ? 'unpaid' : 'allowed'
+    await writeTenantAccess(
+      access === 'unpaid' ? { access, message: defaultTenantMessage(access) } : allowedStatus,
+    )
+
+    return { user: body.user, session }
   }
 
   async function syncCatalogFromBootstrap() {
@@ -1311,9 +1897,14 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         products: BackendProduct[]
         overrides: BackendProductOverride[]
         inventoryLevels: BackendInventoryLevel[]
+        customers?: BackendCustomer[]
       }
       cursor: string
     }>('/api/sync/bootstrap')
+
+    if (response.catalog.customers) {
+      await mergeServerCustomers(response.catalog.customers, true)
+    }
 
     const overrides = new Map(response.catalog.overrides.map((entry) => [entry.product_id, entry]))
     const inventoryLevels = new Map(response.catalog.inventoryLevels.map((entry) => [entry.product_id, entry]))
@@ -1336,8 +1927,13 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         products: BackendProduct[]
         overrides: BackendProductOverride[]
         inventoryLevels: BackendInventoryLevel[]
+        customers?: BackendCustomer[]
       }
     }>(`/api/sync/pull${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`)
+
+    if (response.changes.customers?.length) {
+      await mergeServerCustomers(response.changes.customers, false)
+    }
 
     const currentCategories = await store.read<Category[]>(storageKeys.categories, [])
     const currentProducts = await store.read<Product[]>(storageKeys.products, [])
@@ -1414,12 +2010,30 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         .map((result) => result.eventId),
     )
 
-    if (successfulIds.size > 0) {
-      await writeOutbox(events.filter((event) => !successfulIds.has(event.id)))
+    // Refused for good — this person's role may not make that change. Kept, it
+    // would be re-sent on every flush forever; so it leaves the outbox like a
+    // success does, and is simply not applied.
+    const rejectedIds = new Set(
+      response.results
+        .filter((result) => result.status === 'rejected')
+        .map((result) => result.eventId),
+    )
+
+    const settledIds = new Set([...successfulIds, ...rejectedIds])
+    if (settledIds.size > 0) {
+      await writeOutbox(events.filter((event) => !settledIds.has(event.id)))
       await markAppEventsSent(successfulIds)
     }
 
-    await pullCatalogChanges()
+    if (rejectedIds.size > 0) {
+      // The device still shows the refused edit, and an incremental pull will
+      // not undo it: the server never changed, so there is nothing after the
+      // cursor to pull. A full bootstrap puts the server's catalog back.
+      await syncCatalogFromBootstrap()
+    } else {
+      await pullCatalogChanges()
+    }
+
     return successfulIds
   }
 
@@ -1434,13 +2048,40 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     }
 
     await pullCatalogChanges()
-    return {
-      categories: await store.read<Category[]>(storageKeys.categories, []),
-      products: await store.read<Product[]>(storageKeys.products, []),
+    return readShopCatalog()
+  }
+
+  /**
+   * The catalog a till tied to a shop has cached, and nothing else.
+   *
+   * Such a till never shows the bundled demo shelf: a merchant looking at 550
+   * sample products would believe their shop has them, while the server — and
+   * the shop's public page — has none. Older builds seeded that shelf into
+   * the cache whenever a sync failed, and a later pull kept it, so it is
+   * stripped here too. Demo ids are slugs and the server's are UUIDs, so
+   * nothing real can match.
+   */
+  async function readShopCatalog() {
+    const storedProducts = await store.read<Product[]>(storageKeys.products, [])
+    const storedCategories = await store.read<Category[]>(storageKeys.categories, [])
+    const products = storedProducts.filter((product) => !demoProductIds.has(product.id))
+    const categories = storedCategories.filter((category) => !demoCategoryIds.has(category.id))
+
+    if (products.length !== storedProducts.length) {
+      await store.write(storageKeys.products, products)
     }
+    if (categories.length !== storedCategories.length) {
+      await store.write(storageKeys.categories, categories)
+    }
+
+    return { products, categories }
   }
 
   async function loadCachedCatalog() {
+    if (await isOnlineSyncEnabled()) {
+      return readShopCatalog()
+    }
+
     const storedProducts = await store.read<Product[] | null>(storageKeys.products, null)
     const storedCategories = await store.read<Category[] | null>(storageKeys.categories, null)
 
@@ -1464,6 +2105,49 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     }
   }
 
+  /**
+   * A sale, to the server, before the till completes it. Throws the server's
+   * reason when it refuses one, and says so plainly when it cannot be reached.
+   */
+  async function recordSaleOnServer(payload: Record<string, unknown>): Promise<{ orderId: string; ticketNumber: string }> {
+    if (!(await readSyncSession())) {
+      throw new Error('Sign in again to record sales. This sale was not recorded.')
+    }
+
+    // A customer added at this till a moment ago may still be in the outbox,
+    // and the sale names them — their points depend on the server knowing
+    // who they are first.
+    try {
+      await flushOutbox()
+    } catch {
+      // The sale itself says whether the server has what it needs.
+    }
+
+    try {
+      return await backendFetch<{ orderId: string; ticketNumber: string }>('/api/register/orders', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+    } catch (error) {
+      throw registerRefusal(error, 'This sale could not be recorded. Try again.')
+    }
+  }
+
+  async function voidSaleOnServer(orderId: string, payload: Record<string, unknown>): Promise<void> {
+    if (!(await readSyncSession())) {
+      throw new Error('Sign in again to void a sale.')
+    }
+
+    try {
+      await backendFetch(`/api/register/orders/${orderId}/void`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+    } catch (error) {
+      throw registerRefusal(error, 'This sale could not be voided. Try again.')
+    }
+  }
+
   async function enqueueProductEvent(product: Product) {
     await appendOutboxEvent({
       id: crypto.randomUUID(),
@@ -1483,6 +2167,17 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         stockQty: product.stockQty ?? null,
         lowStockThreshold: product.lowStockThreshold ?? null,
         isActive: !product.outOfStock,
+        // How the product reads on a storefront. These were absent from the
+        // payload entirely, so a photo, a unit label or a markdown set at the
+        // counter never left the till — the row saved, synced and listed in
+        // the POS exactly as expected, and the storefront showed none of it.
+        imageUrl: product.imageUrl ?? null,
+        photoUrls: product.photoUrls ?? [],
+        brand: product.brand ?? null,
+        packagingType: product.packagingType ?? null,
+        unitLabel: product.unitLabel ?? null,
+        description: product.description ?? null,
+        compareAtPriceCents: product.compareAtPriceCents ?? null,
       },
     })
   }
@@ -1508,6 +2203,72 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         orderId: input.orderId ?? null,
       },
     })
+  }
+
+  /**
+   * A named customer, to the server — so every till in the shop has them,
+   * a reinstall does not lose them, and points have someone to belong to.
+   */
+  async function enqueueCustomerEvent(customer: Customer, deletedAt?: string) {
+    if (!(await isOnlineSyncEnabled())) {
+      return
+    }
+
+    await appendOutboxEvent({
+      id: crypto.randomUUID(),
+      entityType: 'customer',
+      entityId: customer.id,
+      operation: 'upsert',
+      occurredAt: new Date().toISOString(),
+      payload: {
+        name: customer.name,
+        phone: customer.phone ?? null,
+        email: customer.email ?? null,
+        notes: customer.notes ?? null,
+        loyaltyConsentAt: customer.loyaltyConsentAt ?? null,
+        deletedAt: deletedAt ?? null,
+      },
+    })
+
+    try {
+      await flushOutbox()
+    } catch {
+      // Stays queued for the next sync.
+    }
+  }
+
+  /** The server's customers laid over this till's: server wins, deletions go, unsynced local ones stay. */
+  async function mergeServerCustomers(incoming: BackendCustomer[], replaceAll: boolean) {
+    const current = await store.read<Customer[]>(storageKeys.customers, [])
+    const outbox = await readOutbox()
+    const pending = new Set(outbox.filter((event) => event.entityType === 'customer').map((event) => event.entityId))
+    const next = new Map(
+      current
+        // On a full load, a local customer the server has never heard of is
+        // kept only while it is still waiting to be sent.
+        .filter((customer) => !replaceAll || pending.has(customer.id))
+        .map((customer) => [customer.id, customer]),
+    )
+
+    for (const customer of incoming) {
+      if (pending.has(customer.id)) continue // this till's own edit is newer
+      if (customer.deletedAt) {
+        next.delete(customer.id)
+        continue
+      }
+      next.set(customer.id, normalizeCustomer({
+        id: customer.id,
+        name: customer.name,
+        phone: customer.phone ?? undefined,
+        email: customer.email ?? undefined,
+        notes: customer.notes ?? undefined,
+        loyaltyConsentAt: customer.loyaltyConsentAt ?? null,
+        createdAt: customer.createdAt ?? undefined,
+        updatedAt: customer.updatedAt ?? undefined,
+      }))
+    }
+
+    await store.write(storageKeys.customers, Array.from(next.values()))
   }
 
   async function enqueueCategoryEvent(category: Category, deletedAt?: string) {
@@ -1579,6 +2340,7 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       phone: input.phone?.trim() || undefined,
       email: input.email?.trim() || undefined,
       notes: input.notes?.trim() || undefined,
+      loyaltyConsentAt: input.loyaltyConsentAt ?? null,
       createdAt: input.createdAt ?? timestamp,
       updatedAt: input.updatedAt ?? timestamp,
     }
@@ -1721,16 +2483,46 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     },
 
     async saveOrder(input) {
-      const subtotalCents = input.items.reduce((sum, item) => sum + item.lineTotalCents, 0)
-      const taxCents = Math.round(subtotalCents * 0.12)
-      const totalCents = subtotalCents + taxCents
-      const orderId = crypto.randomUUID()
+      // The till is offline-first: a sale is rung up here and pushed later, so
+      // the server refusing the push cannot by itself stop one. This is the
+      // local half of the same rule. Without it an unpaid — or suspended,
+      // reopened offline — till would take a customer's money for a sale that
+      // can never reach the server.
+      const tenant = await readTenantAccess()
+      if (tenant.access !== 'allowed') {
+        throw new TenantAccessError(tenant.message ?? defaultTenantMessage(tenant.access), tenant.access)
+      }
+
+      // Each line keeps the VAT rate it was sold at. The register sends it;
+      // anything that does not is looked up, and only then assumed to be 12%.
+      // This used to be a flat 12% of the subtotal whatever was in the cart,
+      // so a zero-rated vegetable was recorded with tax the customer was
+      // never charged — the cart showed one total and the ledger kept another.
+      const storedProducts = await store.read<Product[]>(storageKeys.products, [])
+      const rateOf = new Map(storedProducts.map((product) => [product.id, product.taxRate]))
+      const items = input.items.map((item) => ({
+        ...item,
+        taxRate: item.taxRate ?? rateOf.get(item.productId) ?? 0.12,
+      }))
+
+      const session = await store.read<AuthSession | null>(storageKeys.session, null)
+      const priced = priceOrder(
+        items.map((item) => ({ lineTotalCents: item.lineTotalCents, taxRate: item.taxRate })),
+        input.discount,
+      )
+      const { subtotalCents, discountCents, taxCents, totalCents } = priced
+      const discount = priced.discount ? { ...priced.discount, appliedByUserId: session?.userId ?? null } : null
+
+      // The caller's id when it is retrying a sale the server may already
+      // have (see completeOrder); the server answers a known id with the sale
+      // it has rather than recording it twice.
+      const orderId = input.id ?? crypto.randomUUID()
       const ticketSeed = crypto.randomUUID()
       const order: OrderSummary = {
         id: orderId,
         ticketNumber: slugTicket(ticketSeed),
         businessMode: input.businessMode,
-        createdByUserId: (await store.read<AuthSession | null>(storageKeys.session, null))?.userId ?? null,
+        createdByUserId: session?.userId ?? null,
         customerId: input.customerId ?? null,
         customerName: input.customerName?.trim() || guestCustomerName,
         orderType: input.orderType,
@@ -1738,60 +2530,77 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         status: 'preparing',
         paymentMethod: input.paymentMethod,
         subtotalCents,
+        discountCents,
+        discount,
         taxCents,
         totalCents,
         tenderedCents: input.tenderedCents,
         changeCents: Math.max(input.tenderedCents - totalCents, 0),
         createdAt: new Date().toISOString(),
-        items: input.items,
+        items,
+      }
+
+      const salePayload = {
+        order: {
+          id: order.id,
+          ticketNumber: order.ticketNumber,
+          orderType: order.orderType,
+          tableNumber: order.tableNumber,
+          // The named customer, so the sale earns their points and counts
+          // toward their history on every till.
+          customerId: order.customerId ?? null,
+          status: order.status,
+          paymentStatus: 'paid',
+          subtotalCents: order.subtotalCents,
+          discountCents: order.discountCents ?? 0,
+          taxCents: order.taxCents,
+          totalCents: order.totalCents,
+          businessDate: order.createdAt.slice(0, 10),
+          completedAt: order.createdAt,
+        },
+        items: order.items.map((item) => ({
+          id: crypto.randomUUID(),
+          productId: item.productId,
+          productName: item.name,
+          quantity: item.quantity,
+          unitPriceCents: item.unitPriceCents,
+          lineTotalCents: item.lineTotalCents,
+          taxRate: item.taxRate ?? null,
+        })),
+        // Who gave what off, and why. The server keeps one row per discount
+        // (order_discounts) and checks it against the giver's role limit.
+        discounts: order.discount
+          ? [{
+              kind: order.discount.kind,
+              amountCents: order.discount.amountCents,
+              percent: order.discount.percent,
+              reason: order.discount.reason,
+              appliedByUserId: order.discount.appliedByUserId ?? null,
+              promoCodeId: order.discount.promoCodeId ?? null,
+              points: order.discount.points ?? null,
+            }]
+          : [],
+        payments: [{
+          id: crypto.randomUUID(),
+          paymentMethod: order.paymentMethod,
+          amountCents: order.totalCents,
+          tenderedCents: order.tenderedCents,
+          changeCents: order.changeCents,
+        }],
+      }
+
+      // Online-only: the sale is recorded on the server before it is recorded
+      // here, and a refusal — totals that don't add up, a discount beyond the
+      // cashier's role, a promo code used up, points the customer doesn't
+      // have, no connection — throws before anything is kept, so the payment
+      // sheet can say why and the sale is not completed.
+      if (await isOnlineSyncEnabled()) {
+        const recorded = await recordSaleOnServer(salePayload)
+        order.ticketNumber = recorded.ticketNumber
       }
 
       const orders = await store.read<OrderSummary[]>(storageKeys.orders, [])
-      await store.write(storageKeys.orders, [order, ...orders])
-
-      await appendOutboxEvent({
-        id: crypto.randomUUID(),
-        entityType: 'order',
-        entityId: order.id,
-        operation: 'upsert',
-        occurredAt: order.createdAt,
-        payload: {
-          order: {
-            id: order.id,
-            ticketNumber: order.ticketNumber,
-            orderType: order.orderType,
-            tableNumber: order.tableNumber,
-            status: order.status,
-            paymentStatus: 'paid',
-            subtotalCents: order.subtotalCents,
-            taxCents: order.taxCents,
-            totalCents: order.totalCents,
-            businessDate: order.createdAt.slice(0, 10),
-            completedAt: order.createdAt,
-          },
-          items: order.items.map((item) => ({
-            id: crypto.randomUUID(),
-            productId: item.productId,
-            productName: item.name,
-            quantity: item.quantity,
-            unitPriceCents: item.unitPriceCents,
-            lineTotalCents: item.lineTotalCents,
-          })),
-          payments: [{
-            id: crypto.randomUUID(),
-            paymentMethod: order.paymentMethod,
-            amountCents: order.totalCents,
-            tenderedCents: order.tenderedCents,
-            changeCents: order.changeCents,
-          }],
-        },
-      })
-
-      try {
-        await flushOutbox()
-      } catch {
-        // Order stays queued until the next sync attempt.
-      }
+      await store.write(storageKeys.orders, [order, ...orders.filter((entry) => entry.id !== order.id)])
 
       await updateCachedShift((current) => {
         if (!current || current.closedAt) {
@@ -1835,9 +2644,21 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         return orders[index]
       }
 
+      // The server first, as with a sale: a void it refuses — not the owner,
+      // no connection — is not kept here either. The server puts the stock
+      // back and takes the points back itself.
+      const voidedAt = new Date().toISOString()
+      if (await isOnlineSyncEnabled()) {
+        await voidSaleOnServer(orderId, {
+          voidedAt,
+          voidedByUserId: input.userId ?? null,
+          reason: input.reason?.trim() || null,
+        })
+      }
+
       const updated = normalizeOrder({
         ...orders[index],
-        voidedAt: new Date().toISOString(),
+        voidedAt,
         voidedByUserId: input.userId ?? null,
         voidReason: input.reason?.trim() || null,
       })
@@ -1912,12 +2733,76 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       return normalizeOrder(payload.order)
     },
 
+    async unassignOrderRider(orderId) {
+      const payload = await backendFetch<{ order: OrderSummary }>(
+        `/api/seller/online-orders/${encodeURIComponent(orderId)}/rider`,
+        { method: 'DELETE' },
+      )
+      return normalizeOrder(payload.order)
+    },
+
+    // Not cached and not mirrored into IndexedDB, unlike the catalog. A saved
+    // rider's `status` and `online` are only true at the moment they are read —
+    // a stale copy would offer a suspended rider as available, which is worse
+    // than a spinner.
+    async loadSavedRiders() {
+      return backendFetch<SavedRiderDirectory>('/api/seller/riders')
+    },
+
+    async saveRider(input) {
+      const payload = await backendFetch<{ savedRider: SavedRider }>('/api/seller/riders', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      })
+      return payload.savedRider
+    },
+
+    async deleteSavedRider(id) {
+      await backendFetch<{ deleted: boolean }>(`/api/seller/riders/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      })
+    },
+
     async updateOrderDeliveryStage(orderId, stage) {
       const payload = await backendFetch<{ order: OrderSummary }>(
         `/api/seller/online-orders/${encodeURIComponent(orderId)}/delivery-stage`,
         { method: 'POST', body: JSON.stringify({ stage }) },
       )
       return normalizeOrder(payload.order)
+    },
+
+    // Not cached: a conversation is only worth reading as it is now, and a
+    // stale copy would show a customer's question as unanswered after a
+    // colleague already answered it.
+    async loadConversations() {
+      if (!(await isOnlineSyncEnabled())) {
+        return []
+      }
+      const payload = await backendFetch<{ conversations: ConversationSummary[] }>('/api/seller/conversations')
+      return payload.conversations ?? []
+    },
+
+    async loadConversation(id) {
+      return backendFetch<ConversationThread>(`/api/seller/conversations/${encodeURIComponent(id)}`)
+    },
+
+    async sendConversationMessage(id, body) {
+      return backendFetch<ConversationThread>(
+        `/api/seller/conversations/${encodeURIComponent(id)}/messages`,
+        { method: 'POST', body: JSON.stringify({ body }) },
+      )
+    },
+
+    async loadUnreadMessageCount() {
+      if (!(await isOnlineSyncEnabled())) {
+        return 0
+      }
+      try {
+        const payload = await backendFetch<{ unread: number }>('/api/seller/conversations/unread')
+        return payload.unread ?? 0
+      } catch {
+        return 0
+      }
     },
 
     async saveCustomer(input) {
@@ -1928,12 +2813,14 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         phone: input.phone,
         email: input.email,
         notes: input.notes,
+        loyaltyConsentAt: input.loyaltyConsentAt ?? null,
         createdAt: timestamp,
         updatedAt: timestamp,
       })
 
       const customers = await store.read<Customer[]>(storageKeys.customers, [])
       await store.write(storageKeys.customers, [customer, ...customers])
+      await enqueueCustomerEvent(customer)
       return customer
     },
 
@@ -1961,15 +2848,20 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         ),
       )
 
+      await enqueueCustomerEvent(nextCustomer)
       return nextCustomer
     },
 
     async deleteCustomer(id) {
       const customers = await store.read<Customer[]>(storageKeys.customers, [])
+      const removed = customers.find((customer) => customer.id === id)
       await store.write(
         storageKeys.customers,
         customers.filter((customer) => customer.id !== id),
       )
+      if (removed) {
+        await enqueueCustomerEvent(removed, new Date().toISOString())
+      }
     },
 
     async saveTable(input) {
@@ -2231,6 +3123,12 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         products.map((entry) => (entry.id === updated.id ? updated : entry)),
       )
 
+      // A sale's or a void's stock is moved on the server by the sale or the
+      // void itself; sending it again would move it twice.
+      if (input.localOnly) {
+        return updated
+      }
+
       await enqueueInventoryAdjustmentEvent(input)
 
       try {
@@ -2263,7 +3161,7 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       // publish it must not stop the settings save or hold up the sync.
       await publishStoreImage(settings)
 
-      if (settings.syncMode === 'online-sync') {
+      if (syncConfig) {
         try {
           await ensureRemoteSession()
           await enqueuePendingAppTelemetryEvents()
@@ -2295,38 +3193,9 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
     async loginUser(username, password) {
       if (await isOnlineSyncEnabled()) {
         try {
-          const response = await fetch(`${syncConfig?.apiBaseUrl}/api/staff-sessions`, {
-            method: 'POST',
-            headers: {
-              'Accept': 'application/json',
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              organizationSlug: syncConfig?.organizationSlug,
-              storeCode: syncConfig?.storeCode,
-              username,
-              password,
-            }),
-          })
-
-          if (response.ok) {
-            const body = await response.json() as {
-              user: UserAccount
-              session: AuthSession
-            }
-            const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
-            await store.write(storageKeys.users, [
-              body.user,
-              ...existingUsers.filter((entry) => entry.id !== body.user.id),
-            ])
-            await store.write(storageKeys.session, body.session)
-            return body
-          }
-
-          if (response.status === 403) {
-            throw new RemoteAuthError(
-              await responseMessage(response, 'Please verify your email first.'),
-            )
+          const remote = await signInRemotely({ identifier: username, password })
+          if (remote) {
+            return remote
           }
         } catch (error) {
           if (error instanceof RemoteAuthError) {
@@ -2365,40 +3234,44 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       return { user, session }
     },
 
-    async registerUser(input) {
-      if (await isOnlineSyncEnabled()) {
-        try {
-          const response = await fetch(`${syncConfig?.apiBaseUrl}/api/staff-register`, {
-            method: 'POST',
-            headers: {
-              'Accept': 'application/json',
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              organizationSlug: syncConfig?.organizationSlug,
-              storeCode: syncConfig?.storeCode,
-              fullName: input.fullName,
-              username: input.username,
-              password: input.password,
-            }),
-          })
+    async loginUserWithGoogle(credential) {
+      if (!(await isOnlineSyncEnabled())) {
+        return null
+      }
 
-          if (response.ok) {
-            const body = await response.json() as {
-              user: UserAccount
-              session: AuthSession
-            }
-            const existingUsers = await store.read<UserAccount[]>(storageKeys.users, [])
-            await store.write(storageKeys.users, [
-              body.user,
-              ...existingUsers.filter((entry) => entry.id !== body.user.id),
-            ])
-            await store.write(storageKeys.session, body.session)
-            return body
-          }
-        } catch {
-          // Fall back to local registration below.
-        }
+      return signInRemotely({ googleCredential: credential })
+    },
+
+    async adoptRemoteSignIn(handoff) {
+      const base = syncConfig?.apiBaseUrl
+      if (!base) {
+        return null
+      }
+
+      return openRemoteStore(base, handoff.token, handoff.storeId)
+    },
+
+    async remoteAuthAvailable() {
+      return isOnlineSyncEnabled()
+    },
+
+    async registerUser(input) {
+      // No self-registration against a backend. This used to POST
+      // /api/staff-register, which went when pairing did: a register that could
+      // mint its own staff account is exactly the hole retiring the shop code
+      // closed, because anyone who could open the till could add themselves to
+      // the shop. An account is made by the shop now — at signup for an owner,
+      // or by an admin in Staff for everybody else.
+      //
+      // Thrown rather than returned null, and thrown *before* the local branch
+      // below. That branch is still right for a till that has never been
+      // online, but reaching it from an online till would write an account into
+      // IndexedDB that no other device and no backend has ever heard of, and
+      // hand back a session that looks exactly like a real one.
+      if (await isOnlineSyncEnabled()) {
+        throw new RemoteAuthError(
+          'This register is connected to a shop, so accounts are added by an admin in Staff — ask yours to add you, then sign in.',
+        )
       }
 
       const users = await store.read<UserAccount[]>(storageKeys.users, [])
@@ -2535,6 +3408,211 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
       return session?.storeId ?? null
     },
 
+    async loadSubscription() {
+      if (!(await isOnlineSyncEnabled()) || !(await readSyncSession())) {
+        return null
+      }
+
+      try {
+        return await backendFetch<SubscriptionOverview>('/api/seller/subscription')
+      } catch {
+        // A cashier gets a 403 here by design, and an offline till gets
+        // nothing. Neither is an error worth showing: the panel just does not
+        // appear.
+        return null
+      }
+    },
+
+    async startSubscriptionCheckout() {
+      if (!(await isOnlineSyncEnabled()) || !(await readSyncSession())) {
+        throw new Error('Paying online needs a connection to Omaykan. Try again when this till is online.')
+      }
+
+      return backendFetch<{ id: string; checkoutUrl: string }>(
+        '/api/seller/subscription/checkout',
+        { method: 'POST', body: '{}' },
+      )
+    },
+
+    async settleSubscriptionCheckout(sessionId) {
+      if (!(await isOnlineSyncEnabled()) || !(await readSyncSession())) {
+        throw new Error('Confirming a payment needs a connection to Omaykan.')
+      }
+
+      return backendFetch<{ status: string }>(
+        '/api/seller/subscription/checkout/settle',
+        { method: 'POST', body: JSON.stringify({ sessionId }) },
+      )
+    },
+
+    async submitSubscriptionPayment(input) {
+      if (!(await isOnlineSyncEnabled()) || !(await readSyncSession())) {
+        throw new Error('Recording a payment needs a connection to Omaykan. Try again when this till is online.')
+      }
+
+      try {
+        await backendFetch<{ id: string }>('/api/seller/subscription/payments', {
+          method: 'POST',
+          body: JSON.stringify(input),
+        })
+      } catch (error) {
+        // Same shape as checkPromoCode: backendFetch throws the raw body on a
+        // 422, and the useful sentence is inside it.
+        if (error instanceof Error) {
+          const parsed = (() => {
+            try {
+              return JSON.parse(error.message) as {
+                errors?: Record<string, string[]>
+                message?: string
+              }
+            } catch {
+              return null
+            }
+          })()
+
+          const firstError = parsed?.errors ? Object.values(parsed.errors)[0]?.[0] : undefined
+
+          if (firstError || parsed?.message) {
+            throw new Error(firstError ?? parsed?.message ?? '')
+          }
+        }
+
+        throw error
+      }
+    },
+
+    async loadOrderingState() {
+      if (!(await isOnlineSyncEnabled()) || !(await readSyncSession())) {
+        return null
+      }
+
+      try {
+        return await backendFetch<OrderingState>('/api/seller/ordering')
+      } catch {
+        return null
+      }
+    },
+
+    async checkPromoCode(code, subtotalCents) {
+      if (!(await isOnlineSyncEnabled()) || !(await readSyncSession())) {
+        throw new Error('Promo codes need a connection to Omaykan. Try again when this till is online.')
+      }
+
+      try {
+        return await backendFetch<PromoCodeCheck>('/api/seller/promo-codes/check', {
+          method: 'POST',
+          body: JSON.stringify({ code, subtotalCents }),
+        })
+      } catch (error) {
+        // backendFetch throws the raw body for a 422; the reason is in it.
+        if (error instanceof Error) {
+          const parsed = (() => {
+            try {
+              return JSON.parse(error.message) as { errors?: { code?: string[] }; message?: string }
+            } catch {
+              return null
+            }
+          })()
+          const reason = parsed?.errors?.code?.[0] ?? parsed?.message
+          if (reason) throw new Error(reason)
+        }
+        throw error
+      }
+    },
+
+    async loadLoyaltyProgram() {
+      if (!(await isOnlineSyncEnabled()) || !(await readSyncSession())) {
+        return null
+      }
+      return (await backendFetch<{ program: LoyaltyProgram }>('/api/seller/loyalty')).program
+    },
+
+    async saveLoyaltyProgram(input) {
+      return (await backendFetch<{ program: LoyaltyProgram }>('/api/seller/loyalty', {
+        method: 'PUT',
+        body: JSON.stringify(input),
+      })).program
+    },
+
+    async loadLoyaltyBalances() {
+      if (!(await isOnlineSyncEnabled()) || !(await readSyncSession())) {
+        return {}
+      }
+      try {
+        return (await backendFetch<{ balances: Record<string, number> | [] }>('/api/seller/loyalty/balances')).balances as Record<string, number>
+      } catch {
+        return {}
+      }
+    },
+
+    async loadCustomerLoyalty(customerId) {
+      return backendFetch<CustomerLoyalty>(`/api/seller/customers/${encodeURIComponent(customerId)}/loyalty`)
+    },
+
+    async checkLoyaltyRedemption(customerId, points, subtotalCents) {
+      if (!(await isOnlineSyncEnabled()) || !(await readSyncSession())) {
+        throw new Error('Points need a connection to Omaykan. Try again when this till is online.')
+      }
+      try {
+        return await backendFetch<LoyaltyCheck>('/api/seller/loyalty/check', {
+          method: 'POST',
+          body: JSON.stringify({ customerId, points, subtotalCents }),
+        })
+      } catch (error) {
+        throw new Error(serverReason(error, "Those points can't be used."))
+      }
+    },
+
+    async adjustLoyalty(customerId, points, note) {
+      try {
+        return (await backendFetch<{ balance: number }>(`/api/seller/customers/${encodeURIComponent(customerId)}/loyalty/adjust`, {
+          method: 'POST',
+          body: JSON.stringify({ points, note }),
+        })).balance
+      } catch (error) {
+        throw new Error(serverReason(error, "That correction didn't save."))
+      }
+    },
+
+    async loadPromoCodes() {
+      if (!(await isOnlineSyncEnabled()) || !(await readSyncSession())) {
+        return null
+      }
+
+      const response = await backendFetch<{ promoCodes: PromoCode[] }>('/api/seller/promo-codes')
+      return response.promoCodes
+    },
+
+    async savePromoCode(input, id) {
+      const response = await backendFetch<{ promoCode: PromoCode }>(
+        id ? `/api/seller/promo-codes/${encodeURIComponent(id)}` : '/api/seller/promo-codes',
+        { method: id ? 'PATCH' : 'POST', body: JSON.stringify(input) },
+      )
+      return response.promoCode
+    },
+
+    async deletePromoCode(id) {
+      await backendFetch(`/api/seller/promo-codes/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    },
+
+    async setOrderingPaused(paused, resumesAt = null) {
+      return backendFetch<OrderingState>('/api/seller/ordering', {
+        method: 'PUT',
+        body: JSON.stringify({ paused, resumesAt }),
+      })
+    },
+
+    loadTenantAccess: readTenantAccess,
+
+    refreshTenantAccess,
+
+    onTenantAccessChange(listener) {
+      tenantAccessListeners.add(listener)
+      return () => {
+        tenantAccessListeners.delete(listener)
+      }
+    },
+
     async loadAppEvents() {
       const events = await store.read<AppEvent[]>(storageKeys.appEvents, [])
       return events.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -2609,6 +3687,15 @@ export function createBrowserPosRepository(options: BrowserPosRepositoryOptions 
         || previous.lowStockThreshold !== product.lowStockThreshold
         || previous.outOfStock !== product.outOfStock
         || String(previous.stockQty ?? '') !== String(product.stockQty ?? '')
+        // The storefront-facing fields. Absent from this list, an edit that
+        // only changed a photo, a unit or a description never left the till.
+        || previous.imageUrl !== product.imageUrl
+        || JSON.stringify(previous.photoUrls ?? []) !== JSON.stringify(product.photoUrls ?? [])
+        || previous.brand !== product.brand
+        || previous.packagingType !== product.packagingType
+        || previous.unitLabel !== product.unitLabel
+        || previous.description !== product.description
+        || previous.compareAtPriceCents !== product.compareAtPriceCents
 
       if (metadataChanged) {
         await enqueueProductEvent(product)

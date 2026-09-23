@@ -53,6 +53,10 @@ class OnlineOrderConfirmationMail extends OmaykanMailable
                     'lineTotal' => $this->peso($item->line_total_cents),
                 ])->all(),
                 'subtotal' => $this->peso($this->order->subtotal_cents),
+                'discount' => (int) $this->order->discount_cents > 0
+                    ? '−'.$this->peso($this->order->discount_cents)
+                    : null,
+                'discountLabel' => $this->order->discountLabel(),
                 'tax' => $this->peso($this->order->tax_cents),
                 'deliveryFee' => $this->peso($this->order->delivery_fee_cents),
                 'total' => $this->peso($this->order->total_cents),

@@ -7,24 +7,18 @@ use App\Models\Product;
 use App\Models\Store;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\SignsInStaff;
 use Tests\TestCase;
 
 class ShiftApiTest extends TestCase
 {
-    use RefreshDatabase;
+    use SignsInStaff, RefreshDatabase;
 
-    public function test_authenticated_device_can_open_update_and_close_a_shift(): void
+    public function test_signed_in_staff_can_open_update_and_close_a_shift(): void
     {
         $this->seed();
 
-        $login = $this->postJson('/api/device-sessions', [
-            'organizationSlug' => 'demo-coffee',
-            'storeCode' => 'main',
-            'pairingCode' => '123456',
-            'deviceName' => 'Counter 1',
-            'platform' => 'web',
-            'appVersion' => '0.1.0',
-        ])->assertOk()->json();
+        $token = $this->staffToken();
 
         $organization = Organization::query()->where('slug', 'demo-coffee')->firstOrFail();
         $store = Store::query()
@@ -33,7 +27,6 @@ class ShiftApiTest extends TestCase
             ->firstOrFail();
         $admin = User::query()->where('username', 'admin')->firstOrFail();
         $product = Product::query()->where('organization_id', $organization->id)->firstOrFail();
-        $token = $login['token'];
 
         $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/shifts/open', [
@@ -45,47 +38,35 @@ class ShiftApiTest extends TestCase
             ->assertJsonPath('shift.cashSalesCents', 0);
 
         $this->withHeader('Authorization', "Bearer {$token}")
-            ->postJson('/api/sync/push', [
-                'organizationId' => $organization->id,
-                'storeId' => $store->id,
-                'events' => [[
-                    'id' => '10101010-1111-7111-8111-111111111111',
-                    'entityType' => 'order',
-                    'entityId' => '20202020-2222-7222-8222-222222222222',
-                    'operation' => 'upsert',
-                    'occurredAt' => now()->toIso8601String(),
-                    'payload' => [
-                        'order' => [
-                            'id' => '20202020-2222-7222-8222-222222222222',
-                            'ticketNumber' => 'SHIFT-001',
-                            'orderType' => 'takeaway',
-                            'paymentStatus' => 'paid',
-                            'subtotalCents' => 12000,
-                            'taxCents' => 1440,
-                            'totalCents' => 13440,
-                            'businessDate' => now()->toDateString(),
-                            'completedAt' => now()->toIso8601String(),
-                        ],
-                        'items' => [[
-                            'id' => '30303030-3333-7333-8333-333333333333',
-                            'productId' => $product->id,
-                            'productName' => $product->name,
-                            'quantity' => 1,
-                            'unitPriceCents' => 12000,
-                            'lineTotalCents' => 12000,
-                        ]],
-                        'payments' => [[
-                            'id' => '40404040-4444-7444-8444-444444444444',
-                            'paymentMethod' => 'cash',
-                            'amountCents' => 13440,
-                            'tenderedCents' => 14000,
-                            'changeCents' => 560,
-                        ]],
-                    ],
+            ->postJson('/api/register/orders', [
+                'order' => [
+                    'id' => '20202020-2222-7222-8222-222222222222',
+                    'ticketNumber' => 'SHIFT-001',
+                    'orderType' => 'takeaway',
+                    'paymentStatus' => 'paid',
+                    'subtotalCents' => 12000,
+                    'taxCents' => 1440,
+                    'totalCents' => 13440,
+                    'businessDate' => now()->toDateString(),
+                    'completedAt' => now()->toIso8601String(),
+                ],
+                'items' => [[
+                    'id' => '30303030-3333-7333-8333-333333333333',
+                    'productId' => $product->id,
+                    'productName' => $product->name,
+                    'quantity' => 1,
+                    'unitPriceCents' => 12000,
+                    'lineTotalCents' => 12000,
+                ]],
+                'payments' => [[
+                    'id' => '40404040-4444-7444-8444-444444444444',
+                    'paymentMethod' => 'cash',
+                    'amountCents' => 13440,
+                    'tenderedCents' => 14000,
+                    'changeCents' => 560,
                 ]],
             ])
-            ->assertOk()
-            ->assertJsonPath('results.0.status', 'applied');
+            ->assertCreated();
 
         $this->withHeader('Authorization', "Bearer {$token}")
             ->postJson('/api/shifts/current/movements', [

@@ -23,4 +23,14 @@ class Category extends Model
     {
         return $this->belongsTo(Organization::class);
     }
+
+    /**
+     * Added for the operator portal's catalog tabs, which count products per
+     * category. The storefront reaches the other way (a product names its
+     * category), so nothing needed this until something wanted the totals.
+     */
+    public function products()
+    {
+        return $this->hasMany(Product::class);
+    }
 }

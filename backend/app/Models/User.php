@@ -26,6 +26,8 @@ class User extends Authenticatable implements MustVerifyEmail
     protected $fillable = [
         'name',
         'email',
+        'google_sub',
+        'avatar_url',
         'username',
         'password',
         'status',
@@ -39,6 +41,9 @@ class User extends Authenticatable implements MustVerifyEmail
     protected $hidden = [
         'password',
         'remember_token',
+        // Google's subject id. Not a secret, but it is a stable cross-service
+        // identifier for a person and no client here has a use for it.
+        'google_sub',
     ];
 
     /**
@@ -52,6 +57,37 @@ class User extends Authenticatable implements MustVerifyEmail
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    /**
+     * The staff account behind a Google identity, matched on Google's subject
+     * id rather than the email.
+     *
+     * Deliberately not the email, for the reason CustomerAccount states: Google
+     * lets someone change the address on their account, and matching on it
+     * would eventually hand one person's till access to whoever inherits their
+     * old address.
+     */
+    public static function findByGoogleSub(string $sub): ?self
+    {
+        return static::query()->where('google_sub', $sub)->first();
+    }
+
+    /**
+     * False for someone who has only ever pressed the Google button.
+     *
+     * The column is nullable now, so every caller that was reaching for
+     * `$user->password` has to ask this first — `Hash::check()` against null is
+     * a TypeError, and against a random hash it is a silent lie.
+     */
+    public function hasPassword(): bool
+    {
+        return $this->password !== null && $this->password !== '';
+    }
+
+    public function usesGoogle(): bool
+    {
+        return $this->google_sub !== null;
     }
 
     public function organizationMemberships()

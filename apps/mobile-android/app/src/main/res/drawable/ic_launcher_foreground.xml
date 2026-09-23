@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The omaykan wordmark, in its light-on-dark colourway, over the green
+  background in colors.xml.
+
+  A layer-list rather than an <inset> because the wordmark is 640x149: an inset
+  hands the bitmap a square box and the bitmap stretches to fill it. Sizing the
+  item explicitly and centring it keeps the 4.3:1 shape intact.
+
+  62dp of the 108dp canvas, because only the middle 66dp survives the
+  launcher's mask and a full-width word would lose its outer letters to a
+  circle crop.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:width="62dp"
+        android:height="14.5dp"
+        android:gravity="center"
+        android:drawable="@drawable/logo_wordmark_light" />
+</layer-list>

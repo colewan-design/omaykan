@@ -27,7 +27,11 @@ class Product extends Model
         'business_modes',
         'compare_at_price_cents',
         'image_url',
+        'photo_urls',
+        'brand',
+        'packaging_type',
         'unit_label',
+        'description',
         'low_stock_threshold',
     ];
 
@@ -38,6 +42,7 @@ class Product extends Model
             'track_inventory' => 'boolean',
             'is_active' => 'boolean',
             'business_modes' => 'array',
+            'photo_urls' => 'array',
         ];
     }
 

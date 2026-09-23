@@ -129,8 +129,15 @@ class CustomerAddressController extends Controller
             'notes' => ['sometimes', 'nullable', 'string', 'max:500'],
             // Same pairing rule the order endpoint uses: half a coordinate is
             // worse than none, because it quietly changes the delivery quote.
-            'lat' => ['sometimes', 'nullable', 'numeric', 'between:-90,90', 'required_with:lng'],
-            'lng' => ['sometimes', 'nullable', 'numeric', 'between:-180,180', 'required_with:lat'],
+            //
+            // No 'sometimes' on these two, unlike the fields above. It skips
+            // every rule on an absent field — including required_with, which is
+            // exactly the case being guarded against — so with it, `lat` alone
+            // saved an address carrying half a pin and said nothing. They still
+            // stay optional: 'nullable' allows both to be absent, and update()
+            // writes either one only when the key was actually sent.
+            'lat' => ['nullable', 'numeric', 'between:-90,90', 'required_with:lng'],
+            'lng' => ['nullable', 'numeric', 'between:-180,180', 'required_with:lat'],
             'isDefault' => ['sometimes', 'boolean'],
         ]);
     }

@@ -45,15 +45,15 @@
         Getting customers to your shop
     </h2>
     <p style="font-family:{{ $sans }}; font-size:15px; line-height:23px; margin:0 0 8px; color:#1a1a1a;">
-        Your store has a short code that customers type into the Omaykan app to
-        find you. It is in the register under <strong>Settings &rsaquo; Online
-        Store</strong>, alongside the link you can post anywhere.
+        Your shop has its own page on Omaykan, and its own link. Both are in
+        the register under <strong>Settings &rsaquo; Online Store</strong> —
+        post the link anywhere you would put a phone number.
     </p>
-    {{-- The code doubles as the till pairing secret until it is rotated, so it
-         is shown in the app rather than mailed. See SellerWelcomeMail. --}}
+    {{-- No credential in here on purpose: staff sign in as themselves, so
+         there is nothing shop-wide left to mail. See SellerWelcomeMail. --}}
     <p style="font-family:{{ $sans }}; font-size:15px; line-height:23px; margin:0; color:#5b6b62;">
-        Keep it to yourself until you are open — the same code is what pairs a
-        new till to your store.
+        Anyone who works for you signs in with their own account — add them
+        under <strong>Staff</strong>, and they use the same app you do.
     </p>
 
     <x-slot:footnote>

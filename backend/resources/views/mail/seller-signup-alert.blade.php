@@ -39,8 +39,7 @@
             <td style="{{ $cell }}">{{ $owner->username }}</td>
         </tr>
         {{-- The slug is the handle everything else is looked up by, and it is
-             public anyway — it is in every storefront URL. The store code is
-             not here on purpose: it is also the till pairing secret. --}}
+             public anyway — it is in every storefront URL. --}}
         <tr>
             <td style="{{ $label }}">Org slug</td>
             <td style="{{ $cell }}">{{ $organization->slug }}</td>

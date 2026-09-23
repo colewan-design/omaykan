@@ -34,7 +34,10 @@ class CustomerOrderController extends Controller
         $orders = Order::query()
             ->online()
             ->where('customer_account_id', $account->getKey())
-            ->with('items')
+            // `rider` and `store` join `items` here because toTrackedArray now
+            // reads both for the delivery map. Loading them per row would be
+            // two extra queries for every order in the list.
+            ->with(['items', 'rider', 'store'])
             ->latest()
             ->limit(self::LIMIT)
             ->get();
@@ -59,7 +62,7 @@ class CustomerOrderController extends Controller
         $row = Order::query()
             ->online()
             ->where('customer_account_id', $account->getKey())
-            ->with('items')
+            ->with(['items', 'rider', 'store'])
             ->findOrFail($order);
 
         return response()->json($row->toTrackedArray());

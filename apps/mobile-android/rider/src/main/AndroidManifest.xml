@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
+      From API 33 a notification is something the user grants, not something an
+      app takes. Asked for the first time the work screen opens, not on launch:
+      a rider who has not yet seen a job board has no reason to say yes.
+
+      Denied is a supported state. The board still refreshes and the new job
+      still appears at the top — the alert is what is lost, not the work.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
+      Location, for the live map the shop and the customer watch.
+
+      FINE and COARSE together, and the app works with either: a rider who
+      grants only approximate location still shows up on a map, just as a
+      neighbourhood rather than a street. Refusing to work without FINE would
+      turn a reasonable answer into no feature at all.
+
+      Both are runtime permissions asked for on the work screen, at the moment
+      the rider turns sharing on — never on launch, and never before they have
+      seen what this app is for. Denied is a supported state: the board, the
+      jobs and every stage transition are unaffected. The map is what is lost.
+
+      ACCESS_BACKGROUND_LOCATION is deliberately absent. This app reads location
+      only from a foreground service with a visible, dismissable notification,
+      which is the arrangement a rider can actually see and stop. The
+      all-day-in-the-background grant is a much bigger ask and this feature does
+      not need it.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!--
+      The reporting service. Held only while the rider has the switch on.
+
+      Typed `location`, not `dataSync`, and that is not a formality: on API 34+
+      the type is what grants sensor access with the app in the background, and
+      it is what makes the system show the location indicator in the status bar
+      for as long as this runs. The rider's own phone tells them this app is
+      reading their position, continuously, and this app cannot turn that off.
+      For a feature like this that is the correct arrangement.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!--
+      The job watcher. `dataSync` and not `location`: it reads a list from the
+      API and touches no sensor, and claiming a location type for it would put
+      a location indicator in the rider's status bar for something that is not
+      reading their position. See JobWatcherService.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <!--
+      What this app can start, and therefore what Android lets it see on a
+      phone with package visibility (API 30+).
+    -->
+    <queries>
+        <!-- Navigation: geo: to whichever map app the rider already uses. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
+        </intent>
+        <!-- Ringing the customer from the assignment card. -->
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
+    </queries>
+
+    <application
+        android:name=".RiderApp"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.OmaykanRider.Starting">
+
+        <!--
+          One activity, no deep links and nothing exported but the launcher.
+          Every screen is behind a signed-in rider, so there is no URL worth
+          honouring from outside and no reason to offer an entry point that
+          anything on the phone could fire an intent at.
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.OmaykanRider.Starting"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          Not exported: nothing outside this app may start the rider's location
+          feed. The two things that legitimately do — the switch on the work
+          screen, and the Stop action on the service's own notification — are
+          both this app.
+        -->
+        <service
+            android:name=".core.location.LocationShareService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
+        <!--
+          Watches the board while the app is closed. Opt-in, stoppable from its
+          own notification, and NOT stickily restarted — see JobWatcherService
+          for why a service nobody re-enabled should stay dead.
+        -->
+        <service
+            android:name=".core.alerts.JobWatcherService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+    </application>
+
+</manifest>

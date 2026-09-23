@@ -1,91 +1,135 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
 import {
-  ChevronLeft,
   CircleDollarSign,
   CreditCard,
   Gift,
-  History,
+  Heart,
+  LayoutDashboard,
+  LogOut,
   MapPin,
-  Settings,
+  MessageCircle,
+  Package,
+  User,
   Users,
 } from '@lucide/vue'
-import { formatCurrency } from '@pos/shared/index'
 import FdHeader from '@pos/web/landing/FdHeader.vue'
 import FdFooter from '@pos/web/landing/FdFooter.vue'
 import { useCustomerAccount } from '@pos/web/commerce/customer'
+import { useUnreadMessages } from '@pos/web/commerce/messages'
+import { MESSAGING_ENABLED } from '@pos/web/commerce/features'
 import CustomerAuth from './CustomerAuth.vue'
+import AccountDashboard from './sections/AccountDashboard.vue'
 import AccountPreferences from './sections/AccountPreferences.vue'
 import DeliveryAddresses from './sections/DeliveryAddresses.vue'
 import PaymentMethods from './sections/PaymentMethods.vue'
 import OrderHistoryPanel from './sections/OrderHistoryPanel.vue'
+import MessagesPanel from './sections/MessagesPanel.vue'
+import WishlistPanel from './sections/WishlistPanel.vue'
 import StoreCredit from './sections/StoreCredit.vue'
 import GiftCards from './sections/GiftCards.vue'
 import ReferAFriend from './sections/ReferAFriend.vue'
 
-// The customer portal.
+// The customer portal, in the storefront's highland redesign: a sidebar of
+// sections on the left, and on the right either the dashboard — who you are,
+// your latest orders, your addresses and saved items at a glance — or the
+// section picked.
 //
-// The menu panel is the whole design: a greeting, the address we'd write to,
-// and one row per thing a customer might have come here to change. On a wide
-// screen that panel is the left column and the chosen section sits beside it;
-// on a phone the panel *is* the page until a row is tapped, and the section
-// replaces it — a 320px sidebar next to a form is unusable on a phone, and a
-// sidebar that collapses into a hamburger hides the only navigation there is.
+// On a phone the sidebar becomes a row of chips above the content rather than
+// a hamburger: a menu hidden behind an icon hides the only navigation there is.
 //
-// This is a separate Vite entry, like /about and /signup, so the sections are
+// This is a separate Vite entry, like /about and /cart, so the sections are
 // not routes — the chosen one lives in ?section= and is pushed to history, so
-// Back walks out of a section rather than off the site.
+// Back walks out of a section rather than off the site. No ?section= is the
+// dashboard.
 
 const SHOP_HREF = '/'
 
 const account = useCustomerAccount()
+const unreadMessages = useUnreadMessages().unread
 
 interface Section {
   id: string
   label: string
   icon: Component
   component: Component
-  /** Second line under the label, the way the reference shows the balance. */
-  detail?: () => string
+  /** A count worth showing beside the label. */
+  badge?: () => number
 }
 
+// The dashboard is not in this list: it is what no section means.
 const sections: Section[] = [
-  { id: 'preferences', label: 'Account preferences', icon: Settings, component: AccountPreferences },
-  { id: 'addresses', label: 'Delivery addresses', icon: MapPin, component: DeliveryAddresses },
+  { id: 'orders', label: 'Orders', icon: Package, component: OrderHistoryPanel },
+  { id: 'wishlist', label: 'Wishlist', icon: Heart, component: WishlistPanel },
+  ...(MESSAGING_ENABLED
+    ? [{ id: 'messages', label: 'Messages', icon: MessageCircle, component: MessagesPanel, badge: () => unreadMessages.value }]
+    : []),
+  { id: 'addresses', label: 'Addresses', icon: MapPin, component: DeliveryAddresses },
+  // The id predates the redesign's "Profile" label; links in the wild use it.
+  { id: 'preferences', label: 'Profile', icon: User, component: AccountPreferences },
   { id: 'payment', label: 'Payment methods', icon: CreditCard, component: PaymentMethods },
-  { id: 'orders', label: 'Order history', icon: History, component: OrderHistoryPanel },
-  {
-    id: 'credit',
-    label: 'Store credit',
-    icon: CircleDollarSign,
-    component: StoreCredit,
-    detail: () => `${formatCurrency(account.storeCreditCents.value)} available`,
-  },
+]
+
+// Below a rule: real sections, but not what most visits are for.
+const extras: Section[] = [
+  { id: 'credit', label: 'Store credit', icon: CircleDollarSign, component: StoreCredit },
   { id: 'gift-cards', label: 'Gift cards', icon: Gift, component: GiftCards },
   { id: 'referrals', label: 'Refer a friend', icon: Users, component: ReferAFriend },
 ]
 
+const everySection = [...sections, ...extras]
+
 function readSection(): string {
   try {
     const requested = new URLSearchParams(window.location.search).get('section')?.trim() ?? ''
-    return sections.some((section) => section.id === requested) ? requested : ''
+    return everySection.some((section) => section.id === requested) ? requested : ''
   } catch {
     return ''
   }
 }
 
 const activeId = ref(readSection())
-const active = computed(() => sections.find((section) => section.id === activeId.value) ?? null)
+const active = computed(() => everySection.find((section) => section.id === activeId.value) ?? null)
 
-function openSection(id: string) {
-  activeId.value = id
-  window.history.pushState({}, '', `${window.location.pathname}?section=${id}`)
-  window.scrollTo({ top: 0, behavior: 'smooth' })
+/*
+ * Where to go once they're signed in.
+ *
+ * Checkout sends a signed-out shopper here with ?next= pointing back at the
+ * cart, so signing in returns them to it rather than to the portal. Nothing
+ * depends on this — the cart is in localStorage either way — it just stops the
+ * sign-in feeling like a detour.
+ *
+ * Only a same-origin path is honoured. Anything else is an open redirect, and
+ * this URL is one a shopper could be handed by somebody else.
+ */
+function safeNext(): string {
+  try {
+    const raw = new URLSearchParams(window.location.search).get('next') ?? ''
+    // A single leading slash and no scheme: "/cart" yes, "//evil.com" and
+    // "https://evil.com" no.
+    return /^\/(?!\/)[^\s]*$/.test(raw) ? raw : ''
+  } catch {
+    return ''
+  }
 }
 
-function closeSection() {
-  activeId.value = ''
-  window.history.pushState({}, '', window.location.pathname)
+watch(
+  () => account.signedIn.value,
+  (signedIn) => {
+    const next = safeNext()
+    if (signedIn && next) window.location.replace(next)
+  },
+  { immediate: true },
+)
+
+/** `extra` carries what a section is being opened about — ?order= for Orders. */
+function openSection(id: string, extra: Record<string, string> = {}) {
+  activeId.value = id
+  const params = new URLSearchParams(extra)
+  if (id) params.set('section', id)
+  const query = params.toString()
+  window.history.pushState({}, '', query ? `${window.location.pathname}?${query}` : window.location.pathname)
+  window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 function applyUrl() {
@@ -104,15 +148,12 @@ watch(
   { immediate: true },
 )
 
-/** First name only — "Hi, Christian." reads as a person, "Hi, Christian Colewan." does not. */
-const firstName = computed(() => account.account.value?.name.trim().split(/\s+/)[0] ?? '')
-
 // -- Signing out -----------------------------------------------------------
 
 // Two-step rather than a browser confirm(). The stakes are lower than they
 // were — addresses and cards are on the server now, so this ends a session
 // rather than deleting anything — but the gift codes kept on this device do go
-// with it, and a mis-tapped "Sign out" on a phone is easy.
+// with it, and a mis-tapped "Log out" on a phone is easy.
 const confirmingSignOut = ref(false)
 const signingOut = ref(false)
 
@@ -124,7 +165,7 @@ async function signOut() {
     signingOut.value = false
   }
   confirmingSignOut.value = false
-  closeSection()
+  openSection('')
 }
 
 function search(term: string) {
@@ -134,7 +175,14 @@ function search(term: string) {
 
 <template>
   <div class="landing fd acct">
-    <FdHeader :shop-href="SHOP_HREF" @search="search" />
+    <!-- No account banner here: the card below already is the invitation. No
+         category menu either: this page isn't a shelf. -->
+    <FdHeader
+      :shop-href="SHOP_HREF"
+      :account-banner="false"
+      :category-nav="false"
+      @search="search"
+    />
 
     <main class="acct-main">
       <!-- A stored token is being traded for the account it belongs to. Showing
@@ -147,77 +195,128 @@ function search(term: string) {
       <!-- Signed out: sign in, register, or recover a password. -->
       <CustomerAuth v-else-if="!account.signedIn.value" />
 
-      <!-- Signed in: the menu panel, and whatever it has opened. -->
-      <div v-else class="acct-shell" :class="{ 'acct-shell--open': active }">
-        <nav class="acct-menu" aria-label="Your account">
-          <h1 class="acct-menu__greeting">Hi, {{ firstName }}.</h1>
-          <p class="acct-menu__email">{{ account.account.value?.email }}</p>
+      <!-- Signed in: the sidebar, and the dashboard or the section it opened. -->
+      <div v-else class="acct-shell">
+        <aside class="acct-side">
+          <p class="acct-side__title">My Account</p>
 
-          <ul class="acct-menu__list">
-            <li v-for="section in sections" :key="section.id">
-              <a
-                class="acct-menu__row"
-                :class="{ 'acct-menu__row--on': section.id === activeId }"
-                :href="`?section=${section.id}`"
-                :aria-current="section.id === activeId ? 'page' : undefined"
-                @click.prevent="openSection(section.id)"
-              >
-                <component :is="section.icon" class="acct-menu__icon" :size="24" :stroke-width="1.4" />
-                <span class="acct-menu__text">
-                  <span class="acct-menu__label">{{ section.label }}</span>
-                  <span v-if="section.detail" class="acct-menu__detail">{{ section.detail() }}</span>
-                </span>
-              </a>
-            </li>
-          </ul>
+          <nav aria-label="Your account">
+            <ul class="acct-nav">
+              <li>
+                <a
+                  class="acct-nav__row"
+                  :class="{ 'acct-nav__row--on': !active }"
+                  href="/account"
+                  :aria-current="!active ? 'page' : undefined"
+                  @click.prevent="openSection('')"
+                >
+                  <LayoutDashboard class="acct-nav__icon" :size="19" :stroke-width="1.7" />
+                  <span class="acct-nav__label">Dashboard</span>
+                </a>
+              </li>
 
-          <div class="acct-menu__out">
-            <button
-              v-if="!confirmingSignOut"
-              type="button"
-              class="acct-menu__signout"
-              @click="confirmingSignOut = true"
-            >
-              Sign out
-            </button>
-            <template v-else>
-              <p class="acct-menu__warn">
-                This signs out this device only. Your addresses, payment methods and orders stay on
-                your account — saved gift card codes are kept on this device and will go.
-              </p>
-              <div class="acct-actions" style="margin-top: 10px">
-                <button type="button" class="acct-btn" :disabled="signingOut" @click="signOut">
-                  {{ signingOut ? 'Signing out…' : 'Sign out' }}
-                </button>
+              <li v-for="section in sections" :key="section.id">
+                <a
+                  class="acct-nav__row"
+                  :class="{ 'acct-nav__row--on': section.id === activeId }"
+                  :href="`?section=${section.id}`"
+                  :aria-current="section.id === activeId ? 'page' : undefined"
+                  @click.prevent="openSection(section.id)"
+                >
+                  <component :is="section.icon" class="acct-nav__icon" :size="19" :stroke-width="1.7" />
+                  <span class="acct-nav__label">{{ section.label }}</span>
+                  <span v-if="(section.badge?.() ?? 0) > 0" class="acct-nav__badge">
+                    {{ section.badge!() > 9 ? '9+' : section.badge!() }}
+                  </span>
+                </a>
+              </li>
+
+              <li class="acct-nav__rule" role="presentation"></li>
+
+              <li v-for="section in extras" :key="section.id">
+                <a
+                  class="acct-nav__row acct-nav__row--quiet"
+                  :class="{ 'acct-nav__row--on': section.id === activeId }"
+                  :href="`?section=${section.id}`"
+                  :aria-current="section.id === activeId ? 'page' : undefined"
+                  @click.prevent="openSection(section.id)"
+                >
+                  <component :is="section.icon" class="acct-nav__icon" :size="19" :stroke-width="1.7" />
+                  <span class="acct-nav__label">{{ section.label }}</span>
+                </a>
+              </li>
+
+              <li class="acct-nav__rule" role="presentation"></li>
+
+              <li>
                 <button
                   type="button"
-                  class="acct-link"
-                  :disabled="signingOut"
-                  @click="confirmingSignOut = false"
+                  class="acct-nav__row acct-nav__row--out"
+                  :aria-expanded="confirmingSignOut"
+                  @click="confirmingSignOut = !confirmingSignOut"
                 >
-                  Cancel
+                  <LogOut class="acct-nav__icon" :size="19" :stroke-width="1.7" />
+                  <span class="acct-nav__label">Log out</span>
                 </button>
-              </div>
-            </template>
+              </li>
+            </ul>
+          </nav>
+
+          <div v-if="confirmingSignOut" class="acct-side__confirm">
+            <p>
+              This signs out this device only. Your addresses, payment methods and orders stay on
+              your account — saved gift card codes are kept on this device and will go.
+            </p>
+            <div class="acct-actions" style="margin-top: 12px">
+              <button type="button" class="acct-btn" :disabled="signingOut" @click="signOut">
+                {{ signingOut ? 'Signing out…' : 'Log out' }}
+              </button>
+              <button type="button" class="acct-link" :disabled="signingOut" @click="confirmingSignOut = false">
+                Cancel
+              </button>
+            </div>
           </div>
-        </nav>
 
-        <section v-if="active" class="acct-panel">
-          <button type="button" class="acct-panel__back" @click="closeSection">
-            <ChevronLeft :size="17" :stroke-width="2" />
-            Your account
-          </button>
-          <component :is="active.component" />
-        </section>
+          <!-- The reference's sidebar foot: misty ridges, pines, a line of type. -->
+          <div class="acct-side__art" aria-hidden="true">
+            <svg viewBox="0 0 240 150" preserveAspectRatio="xMidYMax meet">
+              <path d="M0 150V70l34-26 22 16 40-44 36 34 26-16 34 22 48-30v124Z" fill="#ddd4c6" />
+              <path d="m96 16-9 10 6-2 4 5 5-6 4 3Z" fill="#ffffff" />
+              <path d="M0 150V96l42-26 30 18 46-34 40 30 34-14 48 26v54Z" fill="#c7bdad" />
+              <path d="M0 150v-30l52-16 38 14 44-20 50 22 56-12v42Z" fill="#aca290" />
+              <g fill="#5f6a5b">
+                <path d="m18 150 9-30 9 30Z" />
+                <path d="m34 150 7-22 7 22Z" />
+                <path d="m50 150 10-36 10 36Z" />
+                <path d="m66 150 6-18 6 18Z" />
+                <path d="m176 150 9-32 9 32Z" />
+                <path d="m192 150 7-22 7 22Z" />
+                <path d="m206 150 10-38 10 38Z" />
+              </g>
+            </svg>
+            <p>Local hands.<br />Brighter horizons.</p>
+          </div>
+        </aside>
 
-        <!-- Wide screens only: the right column would otherwise be blank. -->
-        <section v-else class="acct-panel acct-panel--idle">
-          <p class="acct-panel__idle-title">Everything about your orders, in one place.</p>
-          <p class="acct-panel__idle-note">Pick something on the left to get started.</p>
+        <section class="acct-content">
+          <nav class="acct-crumbs" aria-label="Breadcrumb">
+            <a href="/">Home</a>
+            <span aria-hidden="true">›</span>
+            <a v-if="active" href="/account" @click.prevent="openSection('')">Account</a>
+            <span v-else class="acct-crumbs__here">Account</span>
+            <template v-if="active">
+              <span aria-hidden="true">›</span>
+              <span class="acct-crumbs__here">{{ active.label }}</span>
+            </template>
+          </nav>
+
+          <AccountDashboard v-if="!active" @open="openSection" />
+          <component :is="active.component" v-else />
         </section>
       </div>
     </main>
 
+    <div class="sf-weave" aria-hidden="true"></div>
     <FdFooter :shop-href="SHOP_HREF" />
   </div>
 </template>
@@ -234,197 +333,194 @@ function search(term: string) {
 
 /* ── The shell ───────────────────────────────────────────────────────── */
 
-/* Columns stretch rather than sitting at `start`: the white menu panel has to
-   run the full height of whatever the section beside it is, or it ends in
-   mid-air with the grey ground showing under it. */
+/* Columns stretch rather than sitting at `start`: the sidebar has to run the
+   full height of whatever is beside it, or it ends in mid-air. */
 .acct-shell {
   display: grid;
-  grid-template-columns: 336px minmax(0, 1fr);
-  gap: 0;
-  max-width: 1180px;
+  grid-template-columns: 250px minmax(0, 1fr);
+  max-width: 1320px;
   margin: 0 auto;
 }
 
-/* ── Menu panel — the reference ──────────────────────────────────────── */
+/* ── Sidebar ─────────────────────────────────────────────────────────── */
 
-/* Both edges ruled: on a wide screen the panel floats inside the centred
-   container, and one border would leave it looking like it had come loose. */
-.acct-menu {
-  padding: 56px 40px 64px;
-  background: var(--acct-surface);
-  border-left: 1px solid var(--acct-rule);
+.acct-side {
+  display: flex;
+  flex-direction: column;
+  padding: 36px 20px 0;
+  background: #f1eadf;
   border-right: 1px solid var(--acct-rule);
 }
 
-.acct-menu__greeting {
-  margin: 0 0 12px;
-  font-size: 40px;
-  font-weight: 800;
-  letter-spacing: -0.035em;
-  line-height: 1.05;
+.acct-side__title {
+  margin: 0 0 20px 10px;
+  font-family: var(--sf-serif);
+  font-size: 21px;
+  font-weight: 700;
   color: var(--acct-ink);
-  /* A long first name shouldn't push the panel wide or clip. */
-  overflow-wrap: anywhere;
 }
 
-.acct-menu__email {
-  margin: 0 0 44px;
-  font-size: 14px;
-  color: var(--acct-muted);
-  overflow-wrap: anywhere;
-}
-
-.acct-menu__list {
+.acct-nav {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.acct-menu__row {
-  display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
+.acct-nav__row {
+  position: relative;
+  display: flex;
   align-items: center;
-  gap: 22px;
-  padding: 15px 0;
-  color: var(--acct-ink);
-  text-decoration: none;
-}
-
-.acct-menu__icon {
-  justify-self: start;
-  color: #4b5563;
-  transition: color 0.15s ease;
-}
-
-.acct-menu__row:hover .acct-menu__icon,
-.acct-menu__row--on .acct-menu__icon {
-  color: var(--acct-green);
-}
-
-.acct-menu__text {
-  min-width: 0;
-}
-
-/* Regular, not medium: at 500 the system UI font on Windows snaps to semibold
-   and the whole list reads as seven headings. The greeting is the only heavy
-   thing on the panel. */
-.acct-menu__label {
-  display: block;
-  font-size: 15.5px;
-  font-weight: 400;
-  line-height: 1.35;
-}
-
-.acct-menu__row:hover .acct-menu__label {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.acct-menu__row--on .acct-menu__label {
-  font-weight: 700;
-}
-
-.acct-menu__detail {
-  display: block;
-  margin-top: 3px;
-  font-size: 13.5px;
-  color: var(--acct-muted);
-}
-
-.acct-menu__out {
-  margin-top: 46px;
-}
-
-.acct-menu__signout {
-  padding: 0;
+  gap: 14px;
+  width: 100%;
+  padding: 11px 12px;
   border: none;
+  border-radius: 6px;
   background: none;
   color: var(--acct-ink);
-  font: 600 15px/1 inherit;
-  text-decoration: underline;
-  text-underline-offset: 5px;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 1.2;
+  text-align: left;
+  text-decoration: none;
   cursor: pointer;
+  transition: background 150ms, color 150ms;
 }
 
-.acct-menu__warn {
+.acct-nav__row:hover { background: rgba(180, 83, 42, 0.07); }
+.acct-nav__row:focus-visible { outline: 2px solid var(--acct-accent); outline-offset: -2px; }
+
+/* The reference's selected row: a terracotta wash with a bar on its edge. */
+.acct-nav__row--on {
+  background: #f3d9cb;
+  color: var(--acct-accent-deep);
+  font-weight: 700;
+}
+.acct-nav__row--on::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--acct-accent);
+}
+.acct-nav__row--on:hover { background: #f0d2c1; }
+
+.acct-nav__icon { flex-shrink: 0; color: currentColor; }
+.acct-nav__row--quiet { font-size: 13.5px; color: var(--acct-muted); }
+.acct-nav__row--quiet.acct-nav__row--on { color: var(--acct-accent-deep); }
+
+.acct-nav__label { flex: 1; min-width: 0; }
+
+.acct-nav__badge {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--acct-accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.acct-nav__rule {
+  height: 1px;
+  margin: 12px 10px;
+  background: var(--acct-rule);
+}
+
+.acct-side__confirm {
+  margin: 8px 10px 0;
+  padding: 14px;
+  border: 1px solid var(--acct-rule);
+  border-radius: 8px;
+  background: var(--acct-surface);
+}
+.acct-side__confirm p {
   margin: 0;
-  max-width: 34ch;
-  font-size: 13px;
+  font-size: 12.5px;
   line-height: 1.6;
   color: var(--acct-muted);
 }
 
-/* ── Right column ────────────────────────────────────────────────────── */
-
-.acct-panel {
-  padding: 56px 48px 72px;
-  min-width: 0;
+.acct-side__art {
+  margin: auto -20px 0;
+  padding-top: 48px;
+  text-align: center;
 }
-
-.acct-panel__back {
-  display: none;
-  align-items: center;
-  gap: 4px;
-  margin-bottom: 18px;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--acct-muted);
-  font: 600 14px/1 inherit;
-  cursor: pointer;
-}
-
-.acct-panel--idle {
-  padding-top: 96px;
-}
-
-.acct-panel__idle-title {
-  margin: 0 0 8px;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--acct-ink);
-}
-
-.acct-panel__idle-note {
+.acct-side__art svg { display: block; width: 100%; height: auto; }
+.acct-side__art p {
   margin: 0;
-  font-size: 14.5px;
-  color: var(--acct-muted);
+  padding: 14px 0 28px;
+  background: #aca290;
+  font-family: var(--sf-serif);
+  font-size: 15px;
+  line-height: 1.5;
+  color: #ffffff;
 }
 
-/* ── Phones: one column at a time ────────────────────────────────────── */
+/* ── Content ─────────────────────────────────────────────────────────── */
+
+.acct-content {
+  min-width: 0;
+  padding: 22px 40px 64px;
+}
+
+.acct-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+  font-size: 13px;
+  color: var(--acct-faint);
+}
+.acct-crumbs a { color: var(--acct-muted); }
+.acct-crumbs a:hover { color: var(--acct-accent); text-decoration: underline; text-underline-offset: 3px; }
+.acct-crumbs__here { color: var(--acct-ink); font-weight: 600; }
+
+/* ── Narrower screens: the sidebar becomes a row of chips ────────────── */
 
 @media (max-width: 900px) {
-  .acct-shell {
-    display: block;
-  }
+  .acct-shell { display: block; }
 
-  .acct-menu {
-    padding: 44px var(--fd-gutter) 56px;
-    border-left: none;
+  .acct-side {
+    padding: 14px 0 0;
     border-right: none;
+    border-bottom: 1px solid var(--acct-rule);
   }
 
-  .acct-menu__greeting {
-    font-size: 34px;
-  }
+  .acct-side__title,
+  .acct-side__art,
+  .acct-nav__rule { display: none; }
 
-  .acct-panel {
-    padding: 30px var(--fd-gutter) 64px;
+  .acct-nav {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 0 var(--fd-gutter) 14px;
+    scrollbar-width: none;
   }
+  .acct-nav::-webkit-scrollbar { display: none; }
 
-  /* The idle right column has nothing to say when it isn't beside anything. */
-  .acct-panel--idle {
-    display: none;
+  .acct-nav__row {
+    width: auto;
+    gap: 8px;
+    padding: 9px 14px;
+    border: 1px solid var(--acct-rule);
+    border-radius: 999px;
+    background: var(--acct-surface);
+    font-size: 13.5px;
+    white-space: nowrap;
   }
+  .acct-nav__row--on { border-color: var(--acct-accent); }
+  .acct-nav__row--on::before { display: none; }
 
-  /* A section is open: it takes the page, and Back returns to the menu. */
-  .acct-shell--open .acct-menu {
-    display: none;
-  }
+  .acct-side__confirm { margin: 0 var(--fd-gutter) 14px; }
 
-  .acct-shell--open .acct-panel__back {
-    display: inline-flex;
-  }
+  .acct-content { padding: 18px var(--fd-gutter) 56px; }
 }
 </style>

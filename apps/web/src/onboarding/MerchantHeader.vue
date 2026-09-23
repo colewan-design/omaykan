@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import BrandLogo from '@pos/core/components/BrandLogo.vue'
 
-// /signup had no chrome at all: a merchant who landed here from a shared link
+// /seller/signup had no chrome at all: a merchant who landed here from a shared link
 // had no way back to the marketplace and no way to reach the form except
 // scrolling past the whole pitch. This is the merchant-side header — separate
 // from FdHeader, which carries a cart and a category rail that mean nothing on
@@ -22,18 +22,18 @@ withDefaults(
     <div class="mh__inner">
       <a class="mh__brand" href="/">
         <BrandLogo variant="light" :size="20" />
-        <span class="mh__tag">for merchants</span>
+        <span class="mh__tag">For storefronts. For communities.</span>
       </a>
 
       <template v-if="!compact">
         <nav class="mh__nav" aria-label="Sections">
           <a href="#what">What you get</a>
           <a href="#how">How it works</a>
-          <a href="#counter">Behind the counter</a>
+          <a href="#stories">Stories</a>
+          <a href="/about">Help</a>
         </nav>
 
         <div class="mh__actions">
-          <a class="mh__link" href="/">Back to shopping</a>
           <a class="mh__cta" href="#register">Start selling free</a>
         </div>
       </template>
@@ -50,7 +50,7 @@ withDefaults(
   position: sticky;
   top: 0;
   z-index: 30;
-  background: rgba(255, 255, 255, 0.86);
+  background: rgba(255, 255, 255, 0.94);
   backdrop-filter: saturate(160%) blur(14px);
   border-bottom: 1px solid rgba(15, 23, 42, 0.07);
 }
@@ -59,8 +59,8 @@ withDefaults(
   display: flex;
   align-items: center;
   gap: 28px;
-  max-width: 1280px;
-  height: 68px;
+  max-width: 1180px;
+  height: 66px;
   margin: 0 auto;
   padding: 0 40px;
 }
@@ -75,7 +75,7 @@ withDefaults(
 
 /* Lowercase and quiet — it qualifies the brand, it isn't a second brand. */
 .mh__tag {
-  font-size: 12.5px;
+  font-size: 10.5px;
   font-weight: 600;
   letter-spacing: -0.01em;
   color: #8a938e;
@@ -84,13 +84,13 @@ withDefaults(
 .mh__nav {
   display: flex;
   align-items: center;
-  gap: 22px;
+  gap: 28px;
   margin-left: auto;
 }
 
 .mh__nav a,
 .mh__link {
-  font-size: 13.5px;
+  font-size: 12px;
   font-weight: 600;
   color: #5b6b62;
   text-decoration: none;
@@ -113,12 +113,12 @@ withDefaults(
 .mh__cta {
   display: inline-flex;
   align-items: center;
-  padding: 10px 20px;
-  border-radius: 980px;
+  padding: 11px 21px;
+  border-radius: 9px;
   /* Dark ink on the bright green: white would be ~2.2:1. */
-  background: #22c55e;
-  color: #06240f;
-  font-size: 13.5px;
+  background: #099447;
+  color: #ffffff;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: -0.01em;
   text-decoration: none;

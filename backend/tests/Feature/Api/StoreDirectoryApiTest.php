@@ -56,7 +56,6 @@ class StoreDirectoryApiTest extends TestCase
             'lat' => $lat,
             'lng' => $lng,
         ]);
-        $store->setPairingCode((string) $this->nextCode++);
         $store->save();
 
         $category = Category::query()->create([
@@ -155,7 +154,7 @@ class StoreDirectoryApiTest extends TestCase
     }
 
     /**
-     * The same gate StoreCodeController applies when resolving a code: a salon
+     * The same gate `Store::ONLINE_MODES` states everywhere else: a salon
      * takes appointments, not carts, so listing it as somewhere to order from
      * would be an invitation to a 409.
      */
@@ -295,14 +294,16 @@ class StoreDirectoryApiTest extends TestCase
      * The directory is public. The pairing code is the secret a till proves to
      * pair itself, and nothing about listing a shop should hand it out.
      */
-    public function test_never_exposes_the_pairing_secret(): void
+    public function test_never_exposes_a_credential(): void
     {
         $this->seed();
 
         $response = $this->getJson('/api/stores')->assertOk();
 
-        $response->assertJsonMissing(['pairingCode' => '123456']);
-        $this->assertStringNotContainsString('pairing_code_hash', $response->getContent());
-        $this->assertStringNotContainsString('123456', $response->getContent());
+        // The pairing code this once guarded is gone from the schema entirely.
+        // The assertion stays as the standing rule: a public list of shops
+        // publishes nothing anyone could sign in with.
+        $this->assertStringNotContainsString('pairing', $response->getContent());
+        $this->assertStringNotContainsString('password', $response->getContent());
     }
 }

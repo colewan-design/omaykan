@@ -16,6 +16,12 @@ Delivery aggregators take 20–30% from the merchant, squeeze the rider's per-dr
 |---|---|
 | [positioning.md](documentation/positioning.md) | What this is, who it's for, the price-parity covenant, business model, beachhead, risks. **Start here.** |
 | [plan.md](documentation/plan.md) | The phased build sequence. Stale in places — see feature-audit.md §6 |
+| [mobile-plan.md](documentation/mobile-plan.md) | The native Android customer app (Kotlin) — API contract, realtime, phases. Re-verified against `main` 2026-08-28 |
+| [seller/README.md](apps/mobile-android/seller/README.md) | The native Android **seller** app — why it pairs as a device, why it polls rather than using the Reverb channel, and what is deliberately left out |
+| [rider/README.md](apps/mobile-android/rider/README.md) | The native Android **rider** app — why it signs in a person rather than a device, why the approval gate is three screens, and why there is no location in it yet |
+| [live-delivery-tracking.md](documentation/live-delivery-tracking.md) | The live rider map and the shop's own riders — the privacy model, the Mapbox setup, and why a shop is never forced onto the open board |
+| [google-sign-in.md](documentation/google-sign-in.md) | Sign in with Google — the Google Cloud console setup, the three OAuth clients, account linking, and the Android PKCE flow |
+| [todo-checklist.md](documentation/todo-checklist.md) | Checklist of every feature and fix still not done, re-checked against the code 2026-09-18 |
 | [feature-audit.md](documentation/feature-audit.md) | What is missing, unfinished, or inert. Audited against the code and the live database |
 | [e2e-findings.md](documentation/e2e-findings.md) | A ten-run pass of seller → customer → rider → completion, what failed, and what to improve |
 | [deployment.md](documentation/deployment.md) | The VPS, the deploy procedure, rollback, and why production's schema differs from `main` |
@@ -34,15 +40,42 @@ Delivery aggregators take 20–30% from the merchant, squeeze the rider's per-dr
                    # syncing to the Laravel API over /api/sync/*
 /apps
   /web             # PWA: merchant till + customer storefront + rider + platform admin
+  /mobile-android  # Three native Kotlin apps in one Gradle build:
+                   #   :app     com.omaykan.storefront — the shopper's storefront
+                   #   :seller  com.omaykan.seller     — the merchant's order phone
+                   #   :rider   com.omaykan.rider      — the rider's job board
 /backend           # Laravel 12 + PostgreSQL + Reverb — the backend
 ```
 
 The marketing site is not a separate app — it is `apps/web/src/landing`, built into
 `landing.html`.
 
-There is no mobile app in the tree. The two Capacitor shells were deleted — neither
-built, and both reached for the Firebase SDK that the Laravel migration removed. A
-native Kotlin app replaces them and has not landed yet.
+The two Capacitor shells that used to be here were deleted — neither built, and both
+reached for the Firebase SDK that the Laravel migration removed. Native Kotlin
+replaced them: the shopper's app (`:app`, see
+[mobile-plan.md](documentation/mobile-plan.md)), the merchant's order phone
+(`:seller`, see
+[apps/mobile-android/seller/README.md](apps/mobile-android/seller/README.md)) and the
+rider's job board (`:rider`, see
+[apps/mobile-android/rider/README.md](apps/mobile-android/rider/README.md)).
+
+The seller app is deliberately not a register. It shows storefront orders, advances
+them, assigns riders and settles payments — the till stays a PWA. It signs in a
+**person** — a username or email and a password, or the Google button — and then asks
+which shop, for somebody who works at more than one.
+
+Every merchant client signs in that way now. Until 2026-09, all of them *paired*
+instead: one code, printed on the shop's own paperwork, that both found the shop and
+let a till join it. That was a good sign-in for a counter and it is gone for the reason
+it was good — a secret everybody at the shop shares cannot put a name on a settled
+payment, and removing one leaver meant rotating it and re-pairing every device. See
+`StaffAuthController` and the seller app's `SessionRepository` for the whole of that
+trade.
+
+The rider app works the same way, and always has: every rider route resolves a `Rider`
+on its own Laravel guard, because a rider works across every shop rather than for one. It carries no location permission — the API has
+nowhere to put a coordinate yet — and hands navigation to whichever map app the phone
+already has.
 
 ## Running
 
@@ -65,8 +98,7 @@ php artisan storage:link           # rider licence and plate photos
 
 `db:seed` is `firstOrCreate` throughout, so it is safe to re-run. On its own it
 leaves the minimum the test suite asserts against: org `demo-coffee` with store
-`main`, pairing code **123456**, one product, and an owner signing in as
-`admin` / `password`.
+`main`, one product, and an owner signing in as `admin` / `password`.
 
 For something you can actually browse, follow it with the demo sellers — one
 per business mode, each with store `main`, an owner whose password is
@@ -76,16 +108,18 @@ per business mode, each with store `main`, an owner whose password is
 php artisan db:seed --class=DemoSellerSeeder
 ```
 
-| Organization | Mode | Pairing code | Sign in as | Products |
-| --- | --- | --- | --- | --- |
-| `demo-coffee` | coffee-shop | **123456** | `admin` | 32 |
-| `baguio-fresh-market` | grocery | **234567** | `grocery` | 475 |
-| `session-road-grill` | restaurant | **345678** | `restaurant` | 24 |
-| `polished-nail-lounge` | nail-salon | **456789** | `salon` | 21 |
+| Organization | Mode | Sign in as | Products |
+| --- | --- | --- | --- |
+| `demo-coffee` | coffee-shop | `admin` | 32 |
+| `baguio-fresh-market` | grocery | `grocery` | 475 |
+| `session-road-grill` | restaurant | `restaurant` | 24 |
+| `polished-nail-lounge` | nail-salon | `salon` | 21 |
 
-Staff sign-in takes the **username**, not the email — see
-`POST /api/staff-sessions`. The salon answers `store-codes/resolve` with a 409
-by design: `ONLINE_MODES` keeps appointment businesses out of the cart.
+Every one of those signs in with the password `password`, at
+`POST /api/staff/sign-in`, which takes a **username or an email** — accounts created
+from a username alone still exist, and still have to get in. The salon signs in like
+the rest and is deliberately absent from the shop directory: `Store::ONLINE_MODES`
+keeps appointment businesses out of the cart, not out of the register.
 
 The catalog is not written into the seeder. It is read from
 `backend/database/seeders/data/demo-catalog.json`, which is projected out of
@@ -99,6 +133,40 @@ node scripts/export-demo-catalog.mjs   # after changing demoProducts
 Products whose catalog entry names no stock quantity — salon services, mostly —
 are seeded with `track_inventory` off, because the storefront drops any tracked
 product sitting at zero.
+
+### The beachhead sellers
+
+A second, smaller set — the kind of merchant
+[positioning.md §6](documentation/positioning.md) actually targets first, rather
+than a demo tenant:
+
+```bash
+php artisan db:seed --class=LocalSellerSeeder
+```
+
+| Organization | Sells as | Sign in as | Products |
+| --- | --- | --- | --- |
+| `balili-highland-farm` | Farm produce | `farmer` | 16 |
+| `nenas-market-stall` | Public market stall | `market` | 20 |
+| `lourdes-mini-grocery` | Mini grocery | `minigrocery` | 28 |
+
+Password `password`, same as the demo sellers. All three run in business mode
+`grocery` — it is the only mode in `Store::ONLINE_MODES` that fits any of them,
+and a mode outside that list is kept out of the shop directory entirely. What
+tells them apart on a directory card is `business_type_label`.
+
+Their catalog **is** written into the seeder, unlike `DemoSellerSeeder`'s.
+Nothing in the client renders these three, so there is no TypeScript for the
+JSON to stay in step with, and the prices belong next to the seller they are
+for. Tax rate is 0 rather than 12: tax is added on top of `price_cents` at
+checkout, and all three are small non-VAT merchants — charging 12% over a market
+stall's kasim would break the price-parity covenant in the one place a customer
+can see it.
+
+These three are seeded on the VPS as of 2026-09-13. Product photos are reused
+from the `/products/*.jpg` set the demo catalog already ships; a line with no
+match there carries no photo, and none of the three has uploaded a shopfront
+image, so the directory card falls back to a picture off the shelf.
 
 ### Which shop the landing page shows
 
@@ -188,20 +256,25 @@ needs these rewrites (nginx `try_files`, or equivalent):
 | `/` | `index.html` |
 | `/landing` | `landing.html` |
 | `/app`, `/app/*` | `app.html` |
+| `/app.html` | 301 redirect to `/app` |
 | `/about` | `about.html` |
-| `/signup` | `signup.html` |
+| `/seller/signup` | `signup.html` |
+| `/signup` | 301 redirect to `/seller/signup` |
 | `/account` | `account.html` |
+| `/cart` | `cart.html` |
 | `/rider` | `rider.html` |
 | `/platform-admin` | `platform-admin.html` |
 | `/support-inbox` | `support-inbox.html` |
 
-`/api/*` proxies to the Laravel backend. The client build also needs the
+`/signup` redirects rather than 404s because the seller Android app opens
+that URL (`SIGNUP_URL` in `ExternalLinks.kt`) and installed copies cannot be
+re-pointed. `/api/*` proxies to the Laravel backend. The client build also needs the
 `VITE_API_BASE` / `VITE_REVERB_*` / `VITE_POS_*` variables set at build time — see
 `apps/web/.env.example`.
 
 ## Status
 
-Working: merchant POS (17 pages, four business modes, shifts with cash reconciliation, full-order voids, inventory), the customer storefront on web, store pairing by code, signup, and the platform admin dashboard.
+Working: merchant POS (17 pages, four business modes, shifts with cash reconciliation, full-order voids, inventory), the customer storefront on web, staff sign-in by password or Google, signup, and the platform admin dashboard.
 
 The rider side is now built too: riders apply at `/rider` with their licence and
 plate — number and photo of each — and can do nothing until an operator has

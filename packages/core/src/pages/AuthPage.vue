@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import { Eye, EyeOff, UserRound } from '@lucide/vue'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { SUPPORT_EMAIL, supportMailto } from '@pos/shared/index'
 import BrandLogo from '@pos/core/components/BrandLogo.vue'
+import {
+  googleSignInAvailable,
+  releaseGoogleButton,
+  renderGoogleButton,
+} from '@pos/core/services/google'
 import { useAuthStore } from '@pos/core/stores/auth'
 
 const auth = useAuthStore()
@@ -74,9 +79,92 @@ async function continueAsGuest() {
   await goToApp()
 }
 
+// -- Google -------------------------------------------------------------------
+
+/*
+ * Google sits under the form, as the alternative to a password rather than a
+ * replacement for it. Three things have to be true before it appears at all:
+ * the build has a client id, this register is on online sync, and we're on the
+ * Login tab.
+ *
+ * Login only, because the backend never creates a staff account from a Google
+ * token — an account here is a claim on someone's shop, so it is made by that
+ * shop, through signup or by an admin in Staff. A Google button on Register
+ * would look like a way to sign up and answer every press with "that account
+ * isn't set up for any shop yet".
+ */
+
+const googleSlot = ref<HTMLElement | null>(null)
+/** Latched off if the script won't load, so the gap closes rather than gaping. */
+const googleUsable = ref(googleSignInAvailable())
+const googlePending = ref(false)
+
+const googleOffered = computed(
+  () => googleUsable.value && auth.remoteAuthReady && mode.value === 'login',
+)
+
+async function onGoogleCredential(credential: string) {
+  if (googlePending.value) {
+    return
+  }
+
+  googlePending.value = true
+
+  try {
+    const success = await auth.loginWithGoogle(credential)
+    if (success) {
+      await goToApp()
+    }
+  } finally {
+    googlePending.value = false
+  }
+}
+
+async function mountGoogleButton() {
+  if (!googleOffered.value || googleSlot.value === null) {
+    return
+  }
+
+  try {
+    await renderGoogleButton(googleSlot.value, onGoogleCredential, { shape: 'pill' })
+  } catch {
+    // Blocked by an extension, offline, or Google having a bad morning. Not
+    // worth an error line: the username and password form underneath does the
+    // same job, and a red message about a button nobody pressed only makes the
+    // sign-in look broken.
+    googleUsable.value = false
+  }
+}
+
+// The slot only exists on the Login tab and only once `initialize` has said
+// this register is online, so the button is drawn when those put it in the DOM
+// rather than once on mount. `flush: 'post'` is what makes the element there to
+// draw into — the template ref filling in is itself one of the changes this
+// fires on, so there is no separate onMounted call and no double render.
+watch([googleOffered, googleSlot], () => void mountGoogleButton(), { flush: 'post' })
+
+onBeforeUnmount(() => releaseGoogleButton(onGoogleCredential))
+
+/*
+ * Register is for a till that has never been online — the one case where the
+ * first person at it has no account anywhere and nothing can make them one.
+ *
+ * A register bound to a shop is the opposite: whoever is standing at it already
+ * has an account, made at signup or by an admin in Staff, and the backend has
+ * no route that would make another. Offering the tab there sends the owner who
+ * has just signed in at /signup to a form that cannot work.
+ */
+// Gated on isReady as well, or the control renders on first paint — when
+// remoteAuthReady is still its initial false — and vanishes a tick later.
+const registrationOffered = computed(() => auth.isReady && !auth.remoteAuthReady)
+
 onMounted(async () => {
   await auth.initialize()
-  mode.value = auth.hasUsers ? 'login' : 'register'
+  // hasUsers is the local user list, and on a browser that has just been bound
+  // to a shop it is empty — /api/staff-users needs a session this screen exists
+  // to get. Left on its own it opens the *Register* tab at someone who signed
+  // in thirty seconds ago, so being online decides this first.
+  mode.value = auth.remoteAuthReady || auth.hasUsers ? 'login' : 'register'
 })
 </script>
 
@@ -114,7 +202,14 @@ onMounted(async () => {
         <BrandLogo variant="light" :size="21" />
       </div>
 
-      <div class="segmented-control auth-mode-switch" role="group" aria-label="Authentication mode">
+      <!-- The whole control goes with Register, rather than leaving a lone
+           "Login" tab switching between one thing. -->
+      <div
+        v-if="registrationOffered"
+        class="segmented-control auth-mode-switch"
+        role="group"
+        aria-label="Authentication mode"
+      >
         <button
           class="segment-button"
           :class="{ active: mode === 'login' }"
@@ -203,9 +298,22 @@ onMounted(async () => {
 
       <p v-if="auth.authError" class="auth-error">{{ auth.authError }}</p>
 
-      <div v-if="showGuestAccess" class="auth-guest">
+      <!-- One "or" over both ways in, not one each: they are alternatives to the
+           form above, and two rules stacked would read as two separate offers. -->
+      <div v-if="googleOffered || showGuestAccess" class="auth-alternatives">
         <div class="auth-divider" role="separator"><span>or</span></div>
-        <button class="auth-guest-button" type="button" @click="continueAsGuest">
+
+        <!-- Google renders its own button in here. It is an iframe, and the
+             branding terms that come with the API are why it can't be one of
+             ours; the slot is a bare div so it has nothing to fight with. -->
+        <div
+          v-if="googleOffered"
+          ref="googleSlot"
+          class="auth-google"
+          :class="{ 'auth-google--busy': googlePending }"
+        />
+
+        <button v-if="showGuestAccess" class="auth-guest-button" type="button" @click="continueAsGuest">
           <UserRound :size="16" />
           <span>Continue as guest</span>
         </button>

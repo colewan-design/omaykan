@@ -170,7 +170,7 @@ gating, the sync outbox — has no automated coverage at all.
 `Organization` relation, `SignupController` (creates one) and
 `PlatformAdminController` (displays and verifies one). It is checked by **no
 middleware and no controller**. There is no gate on `/api/sync/*`, on
-`/api/staff-sessions`, or on order placement.
+`/api/staff/sign-in`, or on order placement.
 
 An organization whose subscription is unpaid, unverified, or absent has exactly
 the same access as one that paid. The ₱499 figure is a placeholder with a

@@ -23,6 +23,8 @@ class Order extends Model
         'order_type',
         'payment_status',
         'subtotal_cents',
+        'discount_cents',
+        'pos_customer_id',
         'tax_cents',
         'total_cents',
         'business_date',
@@ -45,6 +47,8 @@ class Order extends Model
         'payment_confirmed_at',
         'payment_confirmed_by_user_id',
         'guest_contact',
+        'voided_by_user_id',
+        'void_reason',
     ];
 
     protected function casts(): array
@@ -70,6 +74,45 @@ class Order extends Model
     public function scopeOnline($query)
     {
         return $query->where('channel', 'online');
+    }
+
+    /**
+     * The discount in a line a receipt can print: "Promo WELCOME10", "Discount
+     * (10%) · Regular". Null when nothing came off.
+     */
+    public function discountLabel(): ?string
+    {
+        if ((int) $this->discount_cents <= 0) {
+            return null;
+        }
+
+        $discount = $this->relationLoaded('discounts') ? $this->discounts->first() : $this->discounts()->first();
+
+        if ($discount === null) {
+            return 'Discount';
+        }
+
+        if ($discount->kind === OrderDiscount::KIND_PROMO) {
+            return 'Promo '.$discount->reason;
+        }
+
+        $label = $discount->percent !== null
+            ? 'Discount ('.rtrim(rtrim(number_format($discount->percent, 2), '0'), '.').'%)'
+            : 'Discount';
+
+        return $discount->reason ? $label.' · '.$discount->reason : $label;
+    }
+
+    /** The named counter customer, when the cashier chose one. */
+    public function posCustomer()
+    {
+        return $this->belongsTo(PosCustomer::class);
+    }
+
+    /** Who took what off this order, and why. See order_discounts. */
+    public function discounts()
+    {
+        return $this->hasMany(OrderDiscount::class);
     }
 
     public function items()
@@ -109,6 +152,125 @@ class Order extends Model
     }
 
     /**
+     * The delivery stages during which a rider is physically holding the order
+     * and the customer is about to meet them.
+     *
+     * `pending` never has rider contact to begin with — releasing a delivery
+     * nulls both columns (RiderDeliveryController::release) — so this is really
+     * about everything after `delivered`.
+     */
+    private const RIDER_CONTACTABLE_STAGES = ['assigned', 'picked_up'];
+
+    /**
+     * The rider's phone number, but only while the delivery is in flight.
+     *
+     * The number exists so the customer can reach the person walking up to
+     * their door. That need ends when the order is handed over; the exposure
+     * does not, because the tracking view is public by UUID and that link is
+     * *meant* to be forwarded — to a flatmate, to whoever is actually home. A
+     * number that stays readable forever afterwards is a real person's mobile
+     * handed to everyone who ever saw the link, and the rider never agreed to
+     * that.
+     *
+     * So it is served during `assigned` and `picked_up` and withheld after.
+     * The name is left alone: far weaker on its own, and the customer's order
+     * history reasonably says who brought it.
+     */
+    public function riderPhoneForCustomer(): ?string
+    {
+        return in_array($this->delivery_stage, self::RIDER_CONTACTABLE_STAGES, true)
+            ? $this->rider_phone
+            : null;
+    }
+
+    /**
+     * Where the rider is, but only while they are carrying this order.
+     *
+     * The same gate as the phone number and for a stronger version of the same
+     * reason. A phone number leaked after the handover is a nuisance; a live
+     * position leaked after the handover is a person's movements for the rest
+     * of their shift, readable by anyone who was ever forwarded this tracking
+     * link. So the disclosure is bounded twice over — by the stage, and by the
+     * fact that a rider only ever reports at all while an order is open.
+     *
+     * A rider typed in at the till has no `rider_id` and therefore no position.
+     * The map falls back to shop and door, which is all it ever had for them.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function riderPositionForCustomer(): ?array
+    {
+        if (! in_array($this->delivery_stage, self::RIDER_CONTACTABLE_STAGES, true)) {
+            return null;
+        }
+
+        $rider = $this->relationLoaded('rider') ? $this->getRelation('rider') : $this->rider;
+
+        return $rider?->positionArray();
+    }
+
+    /**
+     * Who is bringing it: a face, a bike, and a score.
+     *
+     * Behind the same stage gate as the phone number and the position, and for
+     * the phone number's reason rather than the position's. The tracking view
+     * is public by UUID and that link is meant to be forwarded, so anything
+     * left in this payload after the handover is readable by everyone who was
+     * ever sent it, permanently. A photograph of a rider's face is the single
+     * most personal thing this application could leave there.
+     *
+     * That the gate also makes the feature *work* is a coincidence worth
+     * noting: a customer needs to know what the rider looks like and what they
+     * are riding in exactly the window where the answer is on its way to them,
+     * and has no use for either once the food is on the table.
+     *
+     * Null for an order a shop handed to somebody it knows — no `rider_id`, no
+     * account, nothing to describe. The client keeps drawing what it drew
+     * before there were rider accounts at all.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function riderProfileForCustomer(): ?array
+    {
+        if (! in_array($this->delivery_stage, self::RIDER_CONTACTABLE_STAGES, true)) {
+            return null;
+        }
+
+        $rider = $this->relationLoaded('rider') ? $this->getRelation('rider') : $this->rider;
+
+        return $rider?->toPublicArray();
+    }
+
+    /**
+     * The two fixed ends of the trip: the shop, and the door.
+     *
+     * Both go to the customer. The shop's address and coordinates are already
+     * public on its storefront, and the destination is the customer's own
+     * address — neither is a disclosure, and without them a live map is a dot
+     * moving across an empty city.
+     *
+     * @return array<string, mixed>
+     */
+    public function routeEndpointsArray(): array
+    {
+        $store = $this->relationLoaded('store') ? $this->getRelation('store') : $this->store;
+
+        return [
+            'pickup' => [
+                'name' => $store?->name,
+                'address' => $store?->address,
+                'lat' => $store?->lat !== null ? (float) $store->lat : null,
+                'lng' => $store?->lng !== null ? (float) $store->lng : null,
+            ],
+            'dropoff' => [
+                'address' => $this->delivery_address,
+                'lat' => $this->delivery_lat !== null ? (float) $this->delivery_lat : null,
+                'lng' => $this->delivery_lng !== null ? (float) $this->delivery_lng : null,
+            ],
+        ];
+    }
+
+    /**
      * The customer's own view of an order: enough to track it, nothing that
      * would matter if the link were forwarded.
      *
@@ -124,15 +286,23 @@ class Order extends Model
      */
     public function toTrackedArray(): array
     {
-        $this->loadMissing('items');
+        // The rider is loaded for the position, the store for the pickup pin.
+        // Both are needed by the map on the tracking page and neither is worth
+        // a second round trip to fetch.
+        $this->loadMissing('items', 'rider', 'store', 'discounts');
 
         return [
             'orderId' => $this->id,
+            // Which shop to message about it. Not a disclosure: the store's id
+            // is already in its public image URL.
+            'storeId' => $this->store_id,
             'ticketNumber' => $this->ticket_number,
             'status' => $this->order_status,
             'paymentStatus' => $this->payment_status,
             'paymentMethod' => $this->payment_method,
             'subtotalCents' => $this->subtotal_cents,
+            'discountCents' => (int) $this->discount_cents,
+            'discountLabel' => $this->discountLabel(),
             'taxCents' => $this->tax_cents,
             'deliveryFeeCents' => $this->delivery_fee_cents,
             'totalCents' => $this->total_cents,
@@ -140,7 +310,10 @@ class Order extends Model
             'deliveryAddress' => $this->delivery_address,
             'deliveryStage' => $this->delivery_stage,
             'riderName' => $this->rider_name,
-            'riderPhone' => $this->rider_phone,
+            'riderPhone' => $this->riderPhoneForCustomer(),
+            'riderPosition' => $this->riderPositionForCustomer(),
+            'riderProfile' => $this->riderProfileForCustomer(),
+            'route' => $this->routeEndpointsArray(),
             'placedAt' => $this->created_at?->toIso8601String(),
             'items' => $this->items->map(fn ($item) => [
                 'productId' => $item->product_id ?? '',

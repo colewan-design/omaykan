@@ -70,7 +70,7 @@ class DemoSellerSeeder extends Seeder
     /**
      * @return array{categories: array<int, array<string, mixed>>, products: array<int, array<string, mixed>>}
      */
-    private function loadCatalog(): array
+    protected function loadCatalog(): array
     {
         $path = database_path('seeders/data/demo-catalog.json');
 
@@ -92,11 +92,11 @@ class DemoSellerSeeder extends Seeder
     /**
      * The coffee shop repeats DatabaseSeeder's org, store code and owner email
      * on purpose — those are the lookup keys, so it adopts the existing rows
-     * (pairing code 123456 included) instead of standing up a second tenant.
+     * instead of standing up a second tenant.
      *
      * @return array<int, array<string, mixed>>
      */
-    private function sellers(): array
+    protected function sellers(): array
     {
         return [
             [
@@ -108,7 +108,6 @@ class DemoSellerSeeder extends Seeder
                 'address' => '12 Session Road, Baguio City',
                 'lat' => 16.4123,
                 'lng' => 120.5960,
-                'pairingCode' => '123456',
                 'owner' => [
                     'name' => 'Admin User',
                     'username' => 'admin',
@@ -124,7 +123,6 @@ class DemoSellerSeeder extends Seeder
                 'address' => 'Magsaysay Avenue, Baguio City',
                 'lat' => 16.4145,
                 'lng' => 120.5931,
-                'pairingCode' => '234567',
                 'owner' => [
                     'name' => 'Grocery Owner',
                     'username' => 'grocery',
@@ -140,7 +138,6 @@ class DemoSellerSeeder extends Seeder
                 'address' => '88 Session Road, Baguio City',
                 'lat' => 16.4110,
                 'lng' => 120.5948,
-                'pairingCode' => '345678',
                 'owner' => [
                     'name' => 'Restaurant Owner',
                     'username' => 'restaurant',
@@ -156,7 +153,6 @@ class DemoSellerSeeder extends Seeder
                 'address' => 'Upper General Luna Road, Baguio City',
                 'lat' => 16.4098,
                 'lng' => 120.5977,
-                'pairingCode' => '456789',
                 'owner' => [
                     'name' => 'Salon Owner',
                     'username' => 'salon',
@@ -170,7 +166,7 @@ class DemoSellerSeeder extends Seeder
      * @param  array<string, mixed>  $seller
      * @return array{0: Organization, 1: Store}
      */
-    private function seedSeller(array $seller): array
+    protected function seedSeller(array $seller): array
     {
         $organization = Organization::query()->firstOrCreate(
             ['slug' => $seller['slug']],
@@ -198,14 +194,6 @@ class DemoSellerSeeder extends Seeder
             ],
         );
 
-        // Sets the bcrypt hash and the discovery lookup key together; assigning
-        // either column directly lets the two drift apart. Only ever set on a
-        // store that has none, so a rotated code survives a re-seed.
-        if ($store->public_store_code === null) {
-            $store->setPairingCode($seller['pairingCode']);
-            $store->save();
-        }
-
         // Backfilled, not just set on create: the coffee shop is adopted from
         // DatabaseSeeder, which predates this column and leaves it null. The
         // shop directory falls back to the raw business_mode slug without it,
@@ -220,7 +208,11 @@ class DemoSellerSeeder extends Seeder
             [
                 'name' => $seller['owner']['name'],
                 'username' => $seller['owner']['username'],
-                'password' => Hash::make('password'),
+                // Every seeded owner gets 'password' unless its entry names
+                // another — SmLocalSeeder does, so a local SM can be given the
+                // same password as the deployed one without that password
+                // being written down in this repository.
+                'password' => Hash::make($seller['owner']['password'] ?? 'password'),
                 'email_verified_at' => now(),
                 'status' => 'active',
             ],
@@ -267,7 +259,7 @@ class DemoSellerSeeder extends Seeder
         return [$organization, $store];
     }
 
-    private function seedRoles(Organization $organization): void
+    protected function seedRoles(Organization $organization): void
     {
         $roles = [
             'admin' => ['name' => 'Admin', 'permissions' => permissionsFor(APP_PAGE_KEYS)],
@@ -298,7 +290,7 @@ class DemoSellerSeeder extends Seeder
     /**
      * @param  array{categories: array<int, array<string, mixed>>, products: array<int, array<string, mixed>>}  $catalog
      */
-    private function seedCatalog(Organization $organization, Store $store, string $businessMode, array $catalog): void
+    protected function seedCatalog(Organization $organization, Store $store, string $businessMode, array $catalog): void
     {
         $products = array_values(array_filter(
             $catalog['products'],

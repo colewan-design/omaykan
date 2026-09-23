@@ -4,8 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "npm run images",
     "dev": "vite",
-    "build": "vue-tsc -b && vite build",
+    "build": "vue-tsc -b && npm run images && vite build && npm run prerender",
+    "build:no-prerender": "vue-tsc -b && npm run images && vite build",
+    "prerender": "node scripts/prerender.mjs",
+    "images": "node scripts/optimize-images.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -27,6 +31,7 @@
     "@vue/test-utils": "^2.4.11",
     "@vue/tsconfig": "^0.9.1",
     "jsdom": "^29.1.1",
+    "sharp": "^0.35.4",
     "typescript": "~6.0.2",
     "vite": "^8.0.12",
     "vitest": "^4.1.11",

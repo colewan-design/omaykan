@@ -131,6 +131,76 @@ anywhere. `/seller/signup` was checked before the deploy and returned exactly
 that. **Curl the new path and read the `<title>`** — the status code will not
 tell you.
 
+#### 3.1.1 Image variants, and the two nginx blocks they need
+
+`npm run build:web` now runs `apps/web/scripts/optimize-images.mjs` before
+Vite. It mirrors every raster under `apps/web/public/` into `public/_opt/` at
+480, 960 and 1440 wide, in both WebP and AVIF, and Vite copies that tree into
+`dist/` with everything else. Nothing about the upload or the swap changes —
+`dist` is just larger on disk and much smaller over the wire.
+
+The markup only ever names the **`.webp`** variants. `srcset` does no format
+negotiation — every candidate in it has to be decodable by whichever browser
+reads it — so AVIF is nginx's job, swapped in for the same URL when the request
+says it can take one. Both blocks below go in the **main** site's server block
+(and, if shop subdomains are to get the same treatment, in §6a's too).
+
+```nginx
+# /_opt/…/x-960.webp → /_opt/…/x-960.avif, for requests that accept AVIF.
+# Two maps because the second reads the first; nginx resolves them lazily.
+map $uri $uri_avif {
+    default                        $uri;
+    "~^(?<stem>/_opt/.+)\.webp$"   "${stem}.avif";
+}
+map $http_accept $image_candidate {
+    default                        $uri;
+    "~*image/avif"                 $uri_avif;
+}
+```
+
+```nginx
+location ^~ /_opt/ {
+    # Vary is not optional: without it a proxy or CDN will hand AVIF bytes to
+    # a browser that asked for WebP, and the image renders as nothing.
+    add_header Vary "Accept";
+    add_header Cache-Control "public, stale-while-revalidate=86400";
+    expires 7d;
+    # The .avif first, the .webp if that file is not there.
+    try_files $image_candidate $uri =404;
+}
+```
+
+**`image/avif` may not be in your `mime.types`.** nginx takes the response's
+content type from the extension of the file `try_files` lands on, and older
+builds do not know `.avif`, so it goes out as `application/octet-stream` and
+the browser refuses it. Check, and add it in `http {}` if it is missing:
+
+```bash
+grep -r avif /etc/nginx/mime.types || echo 'types { image/avif avif; }  # add to http {}'
+```
+
+**Seven days, not a year, and not `immutable`.** `/assets/` can be immutable
+because Vite content-hashes those filenames. These are not hashed — the whole
+point of the named-slot photographs (FdHero, HighlandBanner, StoriesBand) is
+that swapping the file at `/storefront/hero.webp` changes the picture with no
+code change, and `_opt` names follow the source. An immutable year would strand
+everyone who had already loaded the old one. Seven days with
+`stale-while-revalidate` keeps repeat visits instant and lets a replaced
+photograph propagate on its own.
+
+**After the swap, check a variant actually serves both ways:**
+
+```bash
+curl -sI https://omaykan.com/_opt/storefront/hero-960.webp | grep -i 'content-type\|content-length'
+curl -sI -H 'Accept: image/avif,image/webp,*/*' \
+  https://omaykan.com/_opt/storefront/hero-960.webp | grep -i 'content-type\|content-length\|vary'
+```
+
+The second should come back `image/avif`, `Vary: Accept`, and noticeably
+smaller. If it returns the same bytes as the first, the maps are not in the
+right server block; if it returns `application/octet-stream`, it is the
+`mime.types` line above.
+
 ### 3.2 Backend
 
 ```bash
@@ -798,6 +868,43 @@ falls back to the demo catalog, which is itself empty unless
 every `.env*`**, so it is not in the repository. `apps/web/.env.production.example`
 is committed alongside it as the reproducible record — keep the two in step, and
 treat a blank tenant slug as a release blocker.
+
+### The build now renders the public pages, and needs an API to do it
+
+`npm run build` runs `scripts/prerender.mjs` after `vite build`. It serves the
+fresh `dist` with `vite preview`, loads the public pages in headless Chromium,
+and writes the rendered DOM back over the HTML entries — `/`, `/landing`,
+`/about`, `/seller/signup` and `/rider`. Without it those files are empty
+shells: a crawler that does not run JavaScript sees no content and no links on
+any page of the site. It also writes `dist/sitemap.xml`, with a `/shop/<slug>`
+entry per shop read from `/api/stores`.
+
+This makes the build depend on a reachable API holding the tenant baked into
+the bundle:
+
+```bash
+PRERENDER_API_BASE=https://omaykan.com npm run build --workspace web
+```
+
+It defaults to `http://127.0.0.1:8000`. **The prerender refuses to write a page
+that rendered an empty shelf.** It has to: `landing/main.ts` installs a demo
+repository and `loadStorefrontCatalog` swallows a failed catalog request, so a
+storefront pointed at a tenant the API does not have renders a complete,
+convincing page with no real products in it — and prerendering would bake that
+into a file and ship it. A build that stops with
+
+```
+rendered 0 products (need 10) from an otherwise complete page
+```
+
+is that check working; the tenant in `.env.production` does not match a shop the
+API knows. `npm run build:no-prerender` ships the shells if a release must go
+out without it.
+
+The prerendered listing is a snapshot taken at build time and goes stale until
+the next deploy. That is the trade: it is what puts the shelves in front of a
+crawler. Live visitors see current data the moment Vue mounts over it.
+
 
 After any frontend deploy, confirm the call actually resolves:
 

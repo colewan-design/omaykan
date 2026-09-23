@@ -1,8 +1,7 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import { setPosRepository } from '@pos/core/services/runtime'
-import { fetchStores } from '@pos/web/commerce/api'
-import { setStorefrontContext } from '@pos/web/commerce/context'
+import { applyShopBySlug } from '@pos/web/commerce/shopSwitch'
 import LandingPage from './LandingPage.vue'
 import { createDemoPosRepository } from './demoRepository'
 import '@pos/core/styles/tokens.css'
@@ -30,26 +29,7 @@ setPosRepository(createDemoPosRepository())
  * would render an empty shop with no explanation.
  */
 async function resolveShop(): Promise<void> {
-  const slug = new URLSearchParams(window.location.search).get('shop')
-  if (slug === null || slug === '') return
-
-  try {
-    const stores = await fetchStores()
-    const match = stores.find((store) => store.orgSlug === slug)
-    if (!match) return
-
-    setStorefrontContext({
-      orgSlug: match.orgSlug,
-      storeCode: match.storeCode,
-      storeAddress: match.address,
-      businessMode: match.businessMode as Parameters<typeof setStorefrontContext>[0]['businessMode'],
-      storeLat: match.lat,
-      storeLng: match.lng,
-    })
-  } catch {
-    // Directory unreachable: fall through to the env tenant rather than
-    // showing nothing at all.
-  }
+  await applyShopBySlug(new URLSearchParams(window.location.search).get('shop') ?? '')
 }
 
 resolveShop().finally(() => {

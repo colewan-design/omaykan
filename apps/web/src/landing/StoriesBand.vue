@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ArrowRight } from '@lucide/vue'
 import MountainMark from './MountainMark.vue'
+import { SIZES, srcSet } from '@pos/web/ui/responsiveImg'
 
 // The redesign's full-bleed band under the shelves: the people behind the
 // counters on the left, why buying from them matters on the right, and a
@@ -23,7 +24,14 @@ const PEOPLE_IMAGE = '/storefront/people.webp'
 
     <div class="sfstory__grid">
       <div class="sfstory__people">
-        <img class="sfstory__img" :src="PEOPLE_IMAGE" alt="" loading="lazy" />
+        <img
+          class="sfstory__img"
+          :src="PEOPLE_IMAGE"
+          :srcset="srcSet(PEOPLE_IMAGE)"
+          :sizes="SIZES.half"
+          alt=""
+          loading="lazy"
+        />
         <div class="sfstory__shade" aria-hidden="true"></div>
 
         <div class="sfstory__copy">
@@ -82,7 +90,7 @@ const PEOPLE_IMAGE = '/storefront/people.webp'
 /* Full-bleed out of the page's padded column: the band runs edge to edge
    the way the hero does. */
 .sfstory {
-  margin: 8px calc(-1 * var(--fd-gutter)) 56px;
+  margin: 8px var(--fd-bleed) 56px;
 }
 
 .sfstory__grid {
@@ -121,6 +129,9 @@ const PEOPLE_IMAGE = '/storefront/people.webp'
   position: relative;
   z-index: 1;
   max-width: 420px;
+  /* The gutter, not the inset: this copy sits in the band's own left panel,
+     which is narrower than the measure, so aligning it to the page column
+     would crush it against the photograph beside it. */
   padding: 40px 24px 40px calc(var(--fd-gutter) + 24px);
 }
 

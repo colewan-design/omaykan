@@ -17,6 +17,7 @@ import {
   UserRound,
   UsersRound,
 } from '@lucide/vue'
+import { SIZES, srcSet } from '@pos/web/ui/responsiveImg'
 
 const stories = [
   { name: 'Balili Highland Farm', kind: 'Farm produce', location: 'La Trinidad, Benguet', image: '/about/market-community.webp', href: '/?shop=balili-highland-farm' },
@@ -52,7 +53,7 @@ const stories = [
           </div>
         </div>
         <div class="hero__media">
-          <img src="/hero-merchant-redesign.webp" alt="A smiling Filipina market seller at her fresh produce stall">
+          <img src="/hero-merchant-redesign.webp" :srcset="srcSet('/hero-merchant-redesign.webp')" :sizes="SIZES.half" alt="A smiling Filipina market seller at her fresh produce stall" fetchpriority="high">
           <div class="hero__scribble" aria-hidden="true">Small sellers.<br>Bigger tomorrows.</div>
           <blockquote><span class="quote-mark">“</span><p>Omaykan helps local shops reach more customers — without losing what makes them local.</p><footer>Built for Filipino businesses</footer></blockquote>
         </div>
@@ -64,15 +65,15 @@ const stories = [
         <header class="section-heading"><p class="eyebrow">Built for every kind of seller</p><h2>A storefront, a register, and riders.</h2><p>Everything you need to run and grow your business — online, in store, and for delivery.</p></header>
         <div class="solution-grid">
           <article class="solution-card">
-            <div class="solution-card__media"><img src="/card-shop-online.webp" alt="The Omaykan storefront on a phone"><span class="media-label"><Store :size="15" /> Your store is live!</span></div>
+            <div class="solution-card__media"><img src="/card-shop-online.webp" :srcset="srcSet('/card-shop-online.webp')" :sizes="SIZES.card" alt="The Omaykan storefront on a phone" loading="lazy"><span class="media-label"><Store :size="15" /> Your store is live!</span></div>
             <div class="solution-card__body"><span class="icon-box"><ShoppingCart :size="22" /></span><h3>Your shop, online</h3><p>Get your own beautiful storefront where customers can browse, order, and pay — on any device.</p><a href="#register">Learn more <ArrowRight :size="14" /></a></div>
           </article>
           <article class="solution-card">
-            <div class="solution-card__media"><img src="/card-register.webp" alt="A seller using a counter register"></div>
+            <div class="solution-card__media"><img src="/card-register.webp" :srcset="srcSet('/card-register.webp')" :sizes="SIZES.card" alt="A seller using a counter register" loading="lazy"></div>
             <div class="solution-card__body"><span class="icon-box"><MonitorSmartphone :size="22" /></span><h3>A register for the counter</h3><p>Ring up sales in store with a simple, powerful POS. Your online and offline sales stay in sync.</p><a href="#register">Learn more <ArrowRight :size="14" /></a></div>
           </article>
           <article class="solution-card">
-            <div class="solution-card__media solution-card__media--rider"><img src="/card-riders.webp" alt="A rider ready for a delivery"></div>
+            <div class="solution-card__media solution-card__media--rider"><img src="/card-riders.webp" :srcset="srcSet('/card-riders.webp')" :sizes="SIZES.card" alt="A rider ready for a delivery" loading="lazy"></div>
             <div class="solution-card__body"><span class="icon-box"><Bike :size="22" /></span><h3>Riders on demand</h3><p>Let customers order for delivery. We connect you with trusted local riders in your area.</p><a href="#register">Learn more <ArrowRight :size="14" /></a></div>
           </article>
         </div>
@@ -118,7 +119,7 @@ const stories = [
     <section id="stories" class="section section--stories">
       <div class="container">
         <div class="stories-heading"><div><p class="eyebrow">Real businesses. Real growth.</p><h2>Already selling on Omaykan.</h2><p>Meet local entrepreneurs who are reaching more customers and growing their business.</p></div><a href="/">See more stores <ArrowRight :size="14" /></a></div>
-        <div class="stories-grid"><a v-for="story in stories" :key="story.name" class="story-card" :href="story.href"><img :src="story.image" alt=""><div><h3>{{ story.name }}</h3><p>{{ story.kind }}</p><small><MapPin :size="12" /> {{ story.location }}</small><span>View storefront <ArrowRight :size="13" /></span></div></a></div>
+        <div class="stories-grid"><a v-for="story in stories" :key="story.name" class="story-card" :href="story.href"><img :src="story.image" :srcset="srcSet(story.image)" :sizes="SIZES.card" alt="" loading="lazy"><div><h3>{{ story.name }}</h3><p>{{ story.kind }}</p><small><MapPin :size="12" /> {{ story.location }}</small><span>View storefront <ArrowRight :size="13" /></span></div></a></div>
       </div>
     </section>
 

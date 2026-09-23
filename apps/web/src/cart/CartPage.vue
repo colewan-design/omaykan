@@ -24,6 +24,7 @@ import { useSavedProducts } from '@pos/web/commerce/favorites'
 import { useCheckout } from '@pos/web/commerce/checkout'
 import { ORG_SLUG } from '@pos/web/commerce/context'
 import { DELIVERY_BASE_FEE_CENTS } from '@pos/web/commerce/delivery'
+import { SIZES, srcSet } from '@pos/web/ui/responsiveImg'
 
 // The cart as a page, in the highland redesign: a photographic banner, the
 // lines on the left with a tick beside each, the order summary on the right,
@@ -186,7 +187,13 @@ function search(term: string) {
     <main class="cartpg-main">
       <!-- ── The banner ────────────────────────────────────────────────── -->
       <section class="cartpg-hero">
-        <img class="cartpg-hero__img" src="/storefront/hero.webp" alt="" />
+        <img
+          class="cartpg-hero__img"
+          src="/storefront/hero.webp"
+          :srcset="srcSet('/storefront/hero.webp')"
+          :sizes="SIZES.full"
+          alt=""
+        />
         <div class="cartpg-hero__shade" aria-hidden="true"></div>
         <div class="cartpg-hero__loom" aria-hidden="true">
           <span class="sf-weave-v"></span>

@@ -36,24 +36,60 @@ a {
 }
 
 /*
- * Every section runs the full width of the window rather than sitting in a
- * centred column, so this gutter is the only thing holding content off the
- * edges. Global rather than scoped because the header, footer, landing page
- * and about page all have to line up on the same value.
+ * Two values decide where content sits, and every section has to agree on
+ * both or nothing lines up.
+ *
+ * `--fd-gutter` is the minimum breathing room at the window edge — it is what
+ * holds content off the glass on a narrow screen, where there is no room to
+ * centre anything.
+ *
+ * `--fd-inset` is the horizontal padding sections actually use. On a wide
+ * screen it grows past the gutter to centre the content in a column
+ * `--fd-measure` wide; on a narrow one the `max()` collapses back to the
+ * gutter and nothing changes. Backgrounds still run edge to edge, because it
+ * is padding rather than a width on the section itself: the hero photograph,
+ * the green header and the footer all keep their full bleed while their
+ * contents line up with each other.
+ *
+ * Use `--fd-inset` for a section's horizontal padding, and `--fd-gutter` only
+ * where you genuinely mean the window edge.
+ *
+ * 1320px is not a new number — it is what the header row was already
+ * centring on while every other section sat at a flat gutter, which is why
+ * the logo did not line up with the headline beneath it at 1920px.
+ *
+ * Global rather than scoped because the header, footer, landing page and
+ * about page all have to line up on the same value.
  */
 .fd {
   --fd-gutter: 28px;
+  --fd-measure: 1320px;
+  /* `100%` rather than `100vw`: vw includes the scrollbar, which would push
+     content a few pixels off-centre and can force a horizontal overflow. */
+  --fd-inset: max(var(--fd-gutter), calc((100% - var(--fd-measure)) / 2));
+  /*
+   * For a section that has to break out of the centred column and touch both
+   * window edges — the woven stories band does. Negating `--fd-inset` does
+   * not work from in there: its `100%` resolves against the column, which is
+   * exactly `--fd-measure` wide, so the inset computes back down to the bare
+   * gutter and the band stops short of the edge by the whole margin.
+   *
+   * This is the one place vw is unavoidable, since nothing inside the column
+   * knows how wide the window is. It overhangs by the scrollbar width, which
+   * is why `body` sets `overflow-x: hidden` above.
+   */
+  --fd-bleed: calc(50% - 50vw);
 
-  --sf-forest: #1f2e25;
-  --sf-forest-deep: #17231c;
-  --sf-forest-soft: #2b3f33;
+  --sf-forest: #164b34;
+  --sf-forest-deep: #0d3424;
+  --sf-forest-soft: #245c43;
   --sf-cream: #ffffff;
   --sf-paper: #ffffff;
-  --sf-sand: #eeeeee;
-  --sf-sand-deep: #dedede;
-  --sf-clay: #b4532a;
-  --sf-clay-deep: #93401d;
-  --sf-gold: #d9a35b;
+  --sf-sand: #f3f5f1;
+  --sf-sand-deep: #dfe4dc;
+  --sf-clay: #e9683b;
+  --sf-clay-deep: #cf542c;
+  --sf-gold: #f0a94b;
   /* The one green that is not chrome: "in stock", the aisle eyebrow over a
      product title, the tick on a trust note. Forest is too dark to read as a
      signal at 13px and reads as furniture wherever the header already is. */
@@ -62,7 +98,7 @@ a {
   --sf-ink: #231d18;
   --sf-muted: #6f665c;
   --sf-faint: #9a9086;
-  --sf-rule: #e5e5e5;
+  --sf-rule: #e1e7e2;
 
   --sf-serif: 'Libre Caslon Text', Georgia, 'Times New Roman', serif;
   --sf-script: 'Caveat', 'Segoe Script', cursive;

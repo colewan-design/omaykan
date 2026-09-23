@@ -28,6 +28,7 @@ const steps = [
 <template>
   <section class="fd-how" aria-labelledby="fd-how-title">
     <h2 id="fd-how-title" class="fd-how__title">How Omaykan works</h2>
+    <p class="fd-how__intro">From local stores to your doorstep in just a few steps.</p>
 
     <ol class="fd-how__steps">
       <li v-for="(step, i) in steps" :key="step.title" class="fd-how__step">
@@ -42,17 +43,23 @@ const steps = [
 <style scoped>
 .fd-how {
   margin: 8px 0 52px;
-  padding: 30px 32px;
+  padding: 30px 0 14px;
   border-radius: 14px;
-  background: var(--sf-sand);
+  background: linear-gradient(180deg, #fbfaf7 0%, #fff 100%);
 }
 
 .fd-how__title {
-  margin: 0 0 22px;
+  margin: 0 0 4px;
   font-size: 1.5rem;
   font-weight: 800;
   letter-spacing: -0.03em;
   color: var(--sf-ink);
+}
+
+.fd-how__intro {
+  margin: 0 0 20px;
+  font-size: 13.5px;
+  color: var(--sf-muted);
 }
 
 .fd-how__steps {
@@ -68,14 +75,18 @@ const steps = [
 /* The rule between steps is the sequence made visible; it stops at the last
    one so the row does not look like it continues off the edge. */
 .fd-how__step { position: relative; min-width: 0; }
+.fd-how__step {
+  padding: 22px;
+  border: 1px solid var(--sf-rule);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(20, 56, 39, 0.045);
+}
 .fd-how__step:not(:last-child)::after {
   content: '';
   position: absolute;
   top: 19px;
-  left: 50px;
-  right: -28px;
-  height: 1.5px;
-  background: var(--sf-rule);
+  display: none;
 }
 
 .fd-how__n {
@@ -85,8 +96,8 @@ const steps = [
   height: 38px;
   margin-bottom: 14px;
   border-radius: 999px;
-  background: var(--sf-forest);
-  color: var(--sf-gold);
+  background: #e9683b;
+  color: #fff;
   font-size: 17px;
   font-weight: 800;
 }

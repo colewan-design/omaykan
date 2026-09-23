@@ -3,10 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Omaykan — The POS for Modern Hospitality</title>
+    <title>Omaykan — Shop Baguio & La Trinidad markets from home</title>
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" href="/icon.png" />
     <link rel="apple-touch-icon" href="/icon.png" />
+
+    <!-- The front page's largest paint. See the same block in landing.html for
+         why this is here and what has to stay in step with it. -->
+    <link
+      rel="preload"
+      as="image"
+      href="/_opt/storefront/hero-1440.webp"
+      imagesrcset="/_opt/storefront/hero-480.webp 480w, /_opt/storefront/hero-960.webp 960w, /_opt/storefront/hero-1440.webp 1440w"
+      imagesizes="100vw"
+      fetchpriority="high"
+    />
+
     <!-- Caveat is the script face on the delivery section's hero badge. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -15,6 +27,24 @@
     <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&family=Nunito:wght@800;900&display=swap" rel="stylesheet" />
   </head>
   <body>
+    <!-- A crawler that does not run scripts sees only the empty mount div
+         below, and reports the page as having no outgoing links. The build
+         prerenders the public entries (scripts/prerender.mjs), but this is
+         what stands if a page is served unprerendered, and it is what a
+         visitor with scripting off gets instead of a blank screen. -->
+    <noscript>
+      <nav aria-label="Omaykan" class="noscript-nav">
+        <p>Omaykan needs JavaScript to browse and order. The site is here:</p>
+        <ul>
+          <li><a href="/">Shops and products</a></li>
+          <li><a href="/about">Our story</a></li>
+          <li><a href="/seller/signup">Sell with us</a></li>
+          <li><a href="/rider">Ride with Omaykan</a></li>
+          <li><a href="/account">Your account</a></li>
+          <li><a href="/cart">Your cart</a></li>
+        </ul>
+      </nav>
+    </noscript>
     <div id="landing-app"></div>
     <script type="module" src="/src/landing/main.ts"></script>
   </body>

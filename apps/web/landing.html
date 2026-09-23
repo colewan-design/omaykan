@@ -3,33 +3,52 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Omaykan — Free Point of Sale for Coffee Shops, Grocers & Restaurants</title>
+    <title>Omaykan — Shop Local in Baguio &amp; La Trinidad</title>
     <meta
       name="description"
-      content="Omaykan turns a tablet into a real point-of-sale register for coffee shops, grocery stores, and restaurants — offline-capable, with live analytics and flexible payments. Free during early access."
+      content="Shop fresh produce, neighborhood stores, and local market sellers across Baguio and La Trinidad, delivered to your door."
     />
     <link rel="canonical" href="https://omaykan.com/" />
 
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Omaykan" />
-    <meta property="og:title" content="Omaykan — Free Point of Sale for Coffee Shops, Grocers & Restaurants" />
+    <meta property="og:title" content="Omaykan — Shop Local in Baguio &amp; La Trinidad" />
     <meta
       property="og:description"
-      content="One app, three businesses. Omaykan becomes a different point-of-sale depending on whether you run a café, a grocery, or a restaurant. Checkout in under 10 seconds."
+      content="Discover fresh local products, neighborhood stores, and market sellers near you — all in one community marketplace."
     />
     <meta property="og:url" content="https://omaykan.com/" />
-    <meta property="og:image" content="https://omaykan.com/hero.png" />
+    <meta property="og:image" content="https://omaykan.com/storefront/hero.webp" />
 
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Omaykan — Free Point of Sale for Coffee Shops, Grocers & Restaurants" />
+    <meta name="twitter:title" content="Omaykan — Shop Local in Baguio &amp; La Trinidad" />
     <meta
       name="twitter:description"
-      content="One app, three businesses. Checkout in under 10 seconds, works offline, free during early access."
+      content="Fresh local goods and neighborhood stores from Baguio and La Trinidad, delivered to your door."
     />
 
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" href="/icon.png" />
     <link rel="apple-touch-icon" href="/icon.png" />
+
+    <!-- The front page's largest paint is FdHero's photograph. Without this
+         the browser cannot see it until the bundle has downloaded, parsed and
+         mounted Vue — the image request queues behind all of it. The
+         candidates and `sizes` must stay in step with FdHero.vue, or the
+         browser preloads one file and the <img> then asks for another.
+
+         A deep link into a product or an aisle (`/?product=…`) is served this
+         same HTML and does not render the hero, so it pays for a preload it
+         never uses. The bare front page is the overwhelmingly common entry
+         and the one whose LCP is measured, so the trade runs this way. -->
+    <link
+      rel="preload"
+      as="image"
+      href="/_opt/storefront/hero-1440.webp"
+      imagesrcset="/_opt/storefront/hero-480.webp 480w, /_opt/storefront/hero-960.webp 960w, /_opt/storefront/hero-1440.webp 1440w"
+      imagesizes="100vw"
+      fetchpriority="high"
+    />
 
     <script type="application/ld+json">
       {
@@ -40,56 +59,26 @@
         "logo": "https://omaykan.com/icon.png"
       }
     </script>
-    <script type="application/ld+json">
-      {
-        "@context": "https://schema.org",
-        "@type": "FAQPage",
-        "mainEntity": [
-          {
-            "@type": "Question",
-            "name": "Is Omaykan really free?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Yes — Omaykan is free for the entire early access period. There's no trial countdown and no credit card required to get started."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Does Omaykan work without an internet connection?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Yes. Omaykan is local-first: the register keeps taking orders and charging customers while offline, then syncs automatically once you're back online."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "What kind of business is Omaykan built for?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Omaykan adapts its layout and catalog structure to three business modes: Coffee Shop, Grocery Store, and Restaurant. Pick the one that matches your business and the register reconfigures automatically."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "What hardware do I need to run Omaykan?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Any modern tablet, phone, or laptop with a web browser. No proprietary terminal or dedicated hardware is required to start selling."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "What payment methods does Omaykan support?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Cash, card, and e-wallet payments are all supported at checkout, with change calculated automatically."
-            }
-          }
-        ]
-      }
-    </script>
   </head>
   <body>
+    <!-- A crawler that does not run scripts sees only the empty mount div
+         below, and reports the page as having no outgoing links. The build
+         prerenders the public entries (scripts/prerender.mjs), but this is
+         what stands if a page is served unprerendered, and it is what a
+         visitor with scripting off gets instead of a blank screen. -->
+    <noscript>
+      <nav aria-label="Omaykan" class="noscript-nav">
+        <p>Omaykan needs JavaScript to browse and order. The site is here:</p>
+        <ul>
+          <li><a href="/">Shops and products</a></li>
+          <li><a href="/about">Our story</a></li>
+          <li><a href="/seller/signup">Sell with us</a></li>
+          <li><a href="/rider">Ride with Omaykan</a></li>
+          <li><a href="/account">Your account</a></li>
+          <li><a href="/cart">Your cart</a></li>
+        </ul>
+      </nav>
+    </noscript>
     <div id="landing-app"></div>
     <script type="module" src="/src/landing/main.ts"></script>
   </body>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ArrowRight, BadgeCheck, HandCoins, Store } from '@lucide/vue'
+import { ArrowRight, Heart, Leaf, Truck } from '@lucide/vue'
 import MountainMark from './MountainMark.vue'
+import { SIZES, srcSet } from '@pos/web/ui/responsiveImg'
 
 // The front page's opening: a full-bleed photograph with the pitch set over
 // its left side, in the highland redesign's serif.
@@ -18,28 +19,38 @@ const HERO_IMAGE = '/storefront/hero.webp'
 
 /** Three things that are true of every order, not taglines. */
 const promises = [
-  { icon: Store, label: 'Real shops in your city' },
-  { icon: BadgeCheck, label: 'The same price as the counter' },
-  { icon: HandCoins, label: 'Cash or GCash on arrival' },
+  { icon: Leaf, label: 'Fresh from local sellers' },
+  { icon: Truck, label: 'Delivered to your home' },
+  { icon: Heart, label: 'A stronger local community' },
 ]
 </script>
 
 <template>
   <section class="sfhero">
-    <img class="sfhero__img" :src="HERO_IMAGE" alt="" fetchpriority="high" />
+    <!-- The page's largest paint. landing.html and index.html preload the
+         same candidate set, so the request starts from the HTML rather than
+         waiting for this component to mount. -->
+    <img
+      class="sfhero__img"
+      :src="HERO_IMAGE"
+      :srcset="srcSet(HERO_IMAGE)"
+      :sizes="SIZES.full"
+      alt=""
+      fetchpriority="high"
+    />
     <div class="sfhero__scrim" aria-hidden="true"></div>
 
     <div class="sfhero__inner">
       <div class="sfhero__copy">
         <!-- Where, before anything else. The banner has to answer "is this
              even my city?" in the first glance. -->
-        <p class="sf-eyebrow sfhero__eyebrow">Local shops of Baguio &amp; La Trinidad</p>
+        <p class="sf-eyebrow sfhero__eyebrow">Local markets. Real people.</p>
 
         <h1 class="sfhero__title">Shop the market, from&nbsp;home.</h1>
 
         <p class="sfhero__sub">
-          Groceries, sari-sari stores, wet market sellers and local shops near you — delivered at
-          the price they charge at the counter.
+          Fresh produce, local favorites, and neighborhood stores from Baguio and La Trinidad —
+          delivered to your door.
         </p>
 
         <!-- Two audiences land here, and each gets a next step: the shopper the
@@ -49,7 +60,7 @@ const promises = [
             Start shopping
             <ArrowRight :size="18" :stroke-width="2" />
           </a>
-          <a href="/seller/signup" class="sfhero__ghost">Sell on Omaykan</a>
+          <a href="#shops" class="sfhero__ghost">Explore local stores</a>
         </div>
 
         <ul class="sfhero__promises">
@@ -61,10 +72,9 @@ const promises = [
       </div>
 
       <p class="sfhero__script" aria-hidden="true">
-        More than a market.<br />
-        A neighbour,<br />
-        a counter,<br />
-        a brighter tomorrow.
+        Same local heart.<br />
+        A brighter<br />
+        tomorrow.
       </p>
 
       <p class="sfhero__sign" aria-hidden="true">
@@ -113,7 +123,7 @@ const promises = [
   align-items: center;
   gap: 32px;
   width: 100%;
-  padding: clamp(40px, 5vw, 64px) var(--fd-gutter) clamp(36px, 4vw, 52px);
+  padding: clamp(40px, 5vw, 64px) var(--fd-inset) clamp(36px, 4vw, 52px);
 }
 
 .sfhero__eyebrow { color: rgba(255, 255, 255, 0.85); }
@@ -160,13 +170,17 @@ const promises = [
 .sfhero__btn:focus-visible { outline: 2px solid var(--sf-gold); outline-offset: 3px; }
 
 .sfhero__ghost {
+  display: inline-flex;
+  align-items: center;
+  min-height: 46px;
+  padding: 0 24px;
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  border-radius: 6px;
   color: var(--sf-paper);
   font-size: 15px;
   font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 4px;
 }
-.sfhero__ghost:hover { color: var(--sf-gold); }
+.sfhero__ghost:hover { border-color: #fff; background: rgba(255, 255, 255, 0.12); color: #fff; }
 
 .sfhero__promises {
   display: flex;
@@ -186,7 +200,7 @@ const promises = [
   font-weight: 600;
   line-height: 1.3;
 }
-.sfhero__promises svg { flex-shrink: 0; }
+.sfhero__promises svg { flex-shrink: 0; color: #a7db48; }
 
 .sfhero__script {
   justify-self: end;
@@ -202,7 +216,7 @@ const promises = [
 
 .sfhero__sign {
   position: absolute;
-  right: var(--fd-gutter);
+  right: var(--fd-inset);
   bottom: 22px;
   display: flex;
   flex-direction: column;

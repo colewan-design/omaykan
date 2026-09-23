@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import MountainMark from './MountainMark.vue'
 import { productArt } from './productArt'
+import { SIZES, srcSet } from '@pos/web/ui/responsiveImg'
 import type { Product } from '@pos/shared/index'
 
 // The art slot of a product tile: the photograph when there is one, and a
@@ -44,6 +45,8 @@ const art = computed(() =>
     v-if="art.kind === 'photo'"
     class="part__photo"
     :src="art.src"
+    :srcset="srcSet(art.src)"
+    :sizes="SIZES.card"
     :alt="product.name"
     loading="lazy"
     @error="broken = true"
@@ -52,7 +55,15 @@ const art = computed(() =>
   <!-- Decorative: the name, the price and the aisle are all already on the
        card, so announcing the stand-in only repeats them. -->
   <div v-else class="part" :class="`part--t${art.tone}`" aria-hidden="true">
-    <img v-if="art.backdrop" class="part__shop" :src="art.backdrop" alt="" loading="lazy" />
+    <img
+      v-if="art.backdrop"
+      class="part__shop"
+      :src="art.backdrop"
+      :srcset="srcSet(art.backdrop)"
+      :sizes="SIZES.thumb"
+      alt=""
+      loading="lazy"
+    />
     <component
       :is="art.kind === 'aisle' ? art.icon : MountainMark"
       v-bind="art.kind === 'aisle' ? { size, strokeWidth: 1.4 } : { size: Math.round(size * 1.4), sun: false }"

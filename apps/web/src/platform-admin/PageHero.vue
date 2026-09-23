@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { SIZES, srcSet } from '@pos/web/ui/responsiveImg'
+
 // The band at the top of every operator screen: the page's name over a strip
 // of highland, with whatever controls the page needs sitting to its right.
 //
@@ -18,7 +20,14 @@ const BANNER = '/storefront/listing-highland.webp'
 
 <template>
   <header class="hero">
-    <img class="hero__img" :src="BANNER" alt="" decoding="async" />
+    <img
+      class="hero__img"
+      :src="BANNER"
+      :srcset="srcSet(BANNER)"
+      :sizes="SIZES.full"
+      alt=""
+      decoding="async"
+    />
     <!-- The scrim, not the photo, is what makes the text legible: a band this
          short crops to a different part of the image at every width, so the
          contrast behind the words cannot be left to the photograph. -->

@@ -1,0 +1,29 @@
+# The storefront is a JavaScript app: a crawler that does not run scripts sees
+# an empty shell on every page. scripts/prerender.mjs writes the rendered HTML
+# back into the public entries at build time, and the sitemap below lists them
+# directly, so discovery never depends on a crawler following links it cannot
+# see.
+
+User-agent: *
+Allow: /
+
+# The counter, the operator portal and the support inbox are staff tools behind
+# a sign-in. Nothing here is public and none of it should be indexed.
+Disallow: /app
+Disallow: /platform-admin
+Disallow: /support-inbox
+
+# One shopper's own state, not pages. Crawling them indexes an empty cart and a
+# sign-in form under every shop's name.
+Disallow: /account
+Disallow: /cart
+Disallow: /checkout
+Disallow: /shop/*/checkout
+
+# The storefront keeps its filters in the query string, so these are the same
+# aisle under hundreds of URLs. The product and shop views are real
+# destinations and stay crawlable.
+Disallow: /*?*category=
+Disallow: /*?*sort=
+
+Sitemap: https://omaykan.com/sitemap.xml

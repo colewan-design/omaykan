@@ -20,6 +20,7 @@ import { useStorefrontCart, type CartLine } from '@pos/web/commerce/cart'
 import { retryStorefrontCatalog, useStorefrontCatalog } from '@pos/web/commerce/catalog'
 import { useCheckout } from '@pos/web/commerce/checkout'
 import { useCustomerAccount } from '@pos/web/commerce/customer'
+import { SIZES, srcSet } from '@pos/web/ui/responsiveImg'
 import { SHOP_ROOT_DOMAIN } from '@pos/web/commerce/shopDomain'
 import ProductArt from '@pos/web/landing/ProductArt.vue'
 import CheckoutForm from '@pos/web/cart/CheckoutForm.vue'
@@ -176,7 +177,16 @@ function reload() {
 
       <template v-else>
         <section class="sco-hero">
-          <img class="sco-hero__img" :src="coverPhoto" alt="" />
+          <!-- The shop's own photo when it has one, the market fallback when
+               it does not. Only the fallback has build-time variants; srcSet
+               returns nothing for an uploaded /api/ photo. -->
+          <img
+            class="sco-hero__img"
+            :src="coverPhoto"
+            :srcset="srcSet(coverPhoto)"
+            :sizes="SIZES.full"
+            alt=""
+          />
           <div class="sco-hero__shade" aria-hidden="true" />
           <div class="sco-hero__copy">
             <p class="sco-hero__eyebrow">{{ placedNow ? 'Thank you' : 'Checkout' }}</p>

@@ -41,6 +41,7 @@ const reasons = [
 <template>
   <section class="fd-why" aria-labelledby="fd-why-title">
     <h2 id="fd-why-title" class="fd-why__title">Why shop through Omaykan?</h2>
+    <p class="fd-why__intro">More than a marketplace — a stronger local community.</p>
 
     <ul class="fd-why__grid">
       <li v-for="reason in reasons" :key="reason.title" class="fd-why__item">
@@ -58,11 +59,17 @@ const reasons = [
 .fd-why { margin: 8px 0 52px; }
 
 .fd-why__title {
-  margin: 0 0 20px;
+  margin: 0 0 4px;
   font-size: 1.5rem;
   font-weight: 800;
   letter-spacing: -0.03em;
   color: var(--sf-ink);
+}
+
+.fd-why__intro {
+  margin: 0 0 20px;
+  font-size: 13.5px;
+  color: var(--sf-muted);
 }
 
 .fd-why__grid {
@@ -76,7 +83,14 @@ const reasons = [
 
 /* No card chrome: four boxes here would read as a fifth and sixth shelf. The
    icon carries the separation instead. */
-.fd-why__item { min-width: 0; }
+.fd-why__item {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--sf-rule);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(20, 56, 39, 0.04);
+}
 
 .fd-why__icon {
   display: grid;

@@ -32,6 +32,26 @@ export const DEMO_ORG_SLUG: string = import.meta.env.VITE_POS_DEMO_ORG_SLUG ?? '
 export let STORE_LAT: number | null = Number(import.meta.env.VITE_POS_STORE_LAT) || null
 export let STORE_LNG: number | null = Number(import.meta.env.VITE_POS_STORE_LNG) || null
 
+/**
+ * The build-time tenant, taken before anything can re-point the bindings
+ * above. Without it a visitor who picks a shop and then presses Back has
+ * nothing to go back to: the default's storeCode, address and pin have been
+ * overwritten by the shop they chose, and only the slug is in the URL.
+ */
+const ENV_CONTEXT = {
+  orgSlug: ORG_SLUG,
+  storeCode: STORE_CODE,
+  storeAddress: STORE_ADDRESS,
+  businessMode: BUSINESS_MODE,
+  storeLat: STORE_LAT,
+  storeLng: STORE_LNG,
+}
+
+/** Point the storefront back at the tenant the bundle was built for. */
+export function resetStorefrontContext(): void {
+  setStorefrontContext(ENV_CONTEXT)
+}
+
 export function setStorefrontContext(ctx: {
   orgSlug: string
   storeCode: string

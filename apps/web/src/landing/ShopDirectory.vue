@@ -8,11 +8,15 @@ import { useDeliveryLocation } from '@pos/web/commerce/deliveryLocation'
 /**
  * The shop list — what turns the landing page from one stall into a market.
  *
- * Picking a shop is a real navigation, not a client-side swap: the catalog
- * composable is a module-level singleton that loads once, so switching tenants
- * in place would mean invalidating it and everything derived from it. A page
- * load costs a moment and gets the whole app — cart scoping included —
- * consistently pointed at one shop.
+ * Picking a shop is a client-side swap. It used to be a real navigation,
+ * because the catalog was a module-level singleton that loaded once and could
+ * not be re-pointed; `reloadStorefrontCatalog` lifted that, and browsing a
+ * market is exactly the case where losing the page on every shop you look at
+ * is worth avoiding.
+ *
+ * The card is still a real `<a href>`. That is what keeps middle-click,
+ * ctrl-click and "copy link address" working, and it is the only version of
+ * this list a crawler ever sees — `onPick` stands aside for all of them.
  */
 
 /**
@@ -20,9 +24,25 @@ import { useDeliveryLocation } from '@pos/web/commerce/deliveryLocation'
  * a marketplace search for "SMJ Grocery" has to be able to answer with a shop,
  * not only with the products that happen to mention it.
  */
-const props = withDefaults(defineProps<{ query?: string }>(), { query: '' })
+const props = withDefaults(
+  defineProps<{
+    query?: string
+    /**
+     * The shop being browsed. Passed in rather than read from `ORG_SLUG`:
+     * that binding is mutated in place when a shop is picked and is not
+     * reactive, so the badge below would stay on the shop the visitor
+     * arrived at. Falls back to it for any caller that does not track one.
+     */
+    current?: string
+  }>(),
+  { query: '', current: '' },
+)
+const emit = defineEmits<{ (e: 'shop', store: StoreSummary): void }>()
 
 const delivery = useDeliveryLocation()
+
+/** Which card wears the "Browsing now" badge. */
+const currentSlug = computed(() => props.current || ORG_SLUG)
 
 const stores = ref<StoreSummary[]>([])
 const loading = ref(true)
@@ -86,6 +106,20 @@ onBeforeUnmount(() => {
  */
 function shopUrl(store: StoreSummary): string {
   return `${window.location.pathname}?shop=${encodeURIComponent(store.orgSlug)}`
+}
+
+/**
+ * Hand the choice to the page instead of letting the browser navigate.
+ *
+ * Every modified click is left alone: a ctrl/cmd click is asking for a new
+ * tab, a shift click for a new window, and a middle click never reaches a
+ * click handler as button 0. Those all want the real href, and get it.
+ */
+function onPick(store: StoreSummary, event: MouseEvent): void {
+  if (event.defaultPrevented) return
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+  event.preventDefault()
+  emit('shop', store)
 }
 
 function distanceLabel(store: StoreSummary): string {
@@ -199,7 +233,8 @@ const brokenImages = reactive(new Set<string>())
         <a
           :href="shopUrl(store)"
           class="shopcard"
-          :class="{ 'shopcard--current': store.orgSlug === ORG_SLUG }"
+          :class="{ 'shopcard--current': store.orgSlug === currentSlug }"
+          @click="onPick(store, $event)"
         >
           <span class="shopcard__art">
             <img
@@ -210,7 +245,7 @@ const brokenImages = reactive(new Set<string>())
               @error="brokenImages.add(keyOf(store))"
             />
             <span v-else class="shopcard__art-fallback" aria-hidden="true">{{ initials(store.name) }}</span>
-            <span v-if="store.orgSlug === ORG_SLUG" class="shopcard__badge">Browsing now</span>
+            <span v-if="store.orgSlug === currentSlug" class="shopcard__badge">Browsing now</span>
           </span>
 
           <span class="shopcard__body">
@@ -287,10 +322,16 @@ const brokenImages = reactive(new Set<string>())
 
 .shops__grid {
   display: grid;
-  /* Wide enough for a photo beside the words — below ~330px the two columns
-     fight and the text sets three words to a line. */
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-  gap: 14px;
+  /*
+   * Five fixed tracks, not `auto-fit`/`minmax`. auto-fit collapses the empty
+   * tracks and lets the remaining cards share the whole row, so a market with
+   * three shops drew three cards half again as wide as a market with six —
+   * the card changed size with the data. A fixed count keeps every card the
+   * same width whatever the list holds, and the column it sits in is itself a
+   * fixed measure, so that width is stable.
+   */
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -303,9 +344,10 @@ const brokenImages = reactive(new Set<string>())
 .shopcard {
   position: relative;
   display: flex;
-  gap: 14px;
+  flex-direction: column;
+  gap: 9px;
   height: 100%;
-  padding: 14px;
+  padding: 6px 6px 10px;
   border: 1px solid var(--sf-rule);
   border-radius: 12px;
   background: var(--sf-paper);
@@ -326,9 +368,9 @@ const brokenImages = reactive(new Set<string>())
 .shopcard__art {
   position: relative;
   flex: 0 0 auto;
-  width: 104px;
+  width: 100%;
   height: 104px;
-  border-radius: 10px;
+  border-radius: 9px;
   overflow: hidden;
   background: var(--sf-sand);
 }
@@ -339,7 +381,7 @@ const brokenImages = reactive(new Set<string>())
   width: 100%;
   height: 100%;
   color: var(--sf-forest);
-  font-size: 26px;
+  font-size: 20px;
   font-weight: 800;
   letter-spacing: 0.02em;
 }
@@ -347,13 +389,14 @@ const brokenImages = reactive(new Set<string>())
 .shopcard__body {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   min-width: 0;
   flex: 1;
+  padding: 0 4px;
 }
 
 .shopcard__name {
-  font-size: 15.5px;
+  font-size: 14px;
   font-weight: 800;
   color: var(--sf-ink);
   overflow: hidden;
@@ -366,8 +409,8 @@ const brokenImages = reactive(new Set<string>())
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
-  font-size: 13px;
+  gap: 5px;
+  font-size: 12px;
   color: var(--sf-muted);
 }
 .shopcard__area { font-weight: 600; }
@@ -381,9 +424,9 @@ const brokenImages = reactive(new Set<string>())
 
 .shopcard__type {
   margin-top: 1px;
-  font-size: 11.5px;
+  font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--sf-forest);
 }
@@ -391,13 +434,13 @@ const brokenImages = reactive(new Set<string>())
 .shopcard__tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
-  margin: 3px 0 1px;
+  gap: 4px;
+  margin: 2px 0 1px;
 }
 .shopcard__tag {
-  padding: 2px 8px;
+  padding: 2px 6px;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.02em;
   white-space: nowrap;
@@ -409,8 +452,8 @@ const brokenImages = reactive(new Set<string>())
 .shopcard__tag--paused { background: #ecebe8; color: #4a4843; }
 
 .shopcard__cats {
-  font-size: 12.5px;
-  line-height: 1.4;
+  font-size: 11.5px;
+  line-height: 1.35;
   color: var(--sf-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -421,10 +464,10 @@ const brokenImages = reactive(new Set<string>())
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   margin-top: auto;
-  padding-top: 10px;
-  font-size: 12.5px;
+  padding-top: 7px;
+  font-size: 11.5px;
   color: var(--sf-muted);
 }
 .shopcard__go { font-weight: 800; color: var(--sf-forest); white-space: nowrap; }
@@ -447,9 +490,27 @@ const brokenImages = reactive(new Set<string>())
   text-align: center;
 }
 
+/*
+ * Below the full measure there is no longer room for five, so the count steps
+ * down rather than the cards shrinking to fit. The breakpoints are where a
+ * track would otherwise fall under about 210px, which is where the name starts
+ * setting to two lines and the footer's "Browse shop" wraps off the row.
+ */
+@media (max-width: 1180px) {
+  .shops__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (max-width: 940px) {
+  .shops__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 700px) {
+  .shops__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 @media (max-width: 520px) {
   .shops__grid { grid-template-columns: 1fr; }
-  .shopcard__art { width: 84px; height: 84px; }
+  .shopcard__art { width: 100%; height: 160px; }
   .shopcard__cats { white-space: normal; }
 }
 

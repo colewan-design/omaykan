@@ -60,6 +60,11 @@ const note = computed(() => {
       <span><strong>Delivery from {{ fromFee }}</strong> — {{ feeDetail }}</span>
     </p>
 
+    <p class="fd-near__store">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l2-5h14l2 5"/><path d="M5 13v7h14v-7"/><path d="M9 20v-5h6v5"/><path d="M3 9a2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 2-2"/></svg>
+      <span><strong>Local stores, one marketplace</strong><br />From market stalls to neighborhood shops</span>
+    </p>
+
     <button type="button" class="fd-near__btn" @click="delivery.openDialog()">
       {{ delivery.isSet.value ? 'Change' : 'Set location' }}
     </button>
@@ -122,6 +127,21 @@ const note = computed(() => {
 .fd-near__fee svg { flex-shrink: 0; color: var(--sf-forest); }
 .fd-near__fee strong { color: var(--sf-ink); font-weight: 800; }
 
+.fd-near__store {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding-left: 16px;
+  border-left: 1px solid var(--sf-rule);
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--sf-muted);
+}
+.fd-near__store svg { flex-shrink: 0; color: var(--sf-forest); }
+.fd-near__store strong { color: var(--sf-ink); font-size: 12.5px; }
+
 .fd-near__btn {
   flex-shrink: 0;
   padding: 10px 20px;
@@ -159,8 +179,13 @@ const note = computed(() => {
     border-left: none;
     border-top: 1px solid var(--sf-rule);
   }
+  .fd-near__store { display: none; }
   .fd-near__title { font-size: 0.98rem; }
   .fd-near__btn { width: 100%; }
+}
+
+@media (max-width: 1040px) {
+  .fd-near__store { display: none; }
 }
 .fd-near__title { font-family: var(--sf-serif); font-weight: 700; letter-spacing: 0; }
 </style>

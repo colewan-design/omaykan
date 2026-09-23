@@ -9,6 +9,24 @@
     <title>Create your store — Omaykan</title>
   </head>
   <body>
+    <!-- A crawler that does not run scripts sees only the empty mount div
+         below, and reports the page as having no outgoing links. The build
+         prerenders the public entries (scripts/prerender.mjs), but this is
+         what stands if a page is served unprerendered, and it is what a
+         visitor with scripting off gets instead of a blank screen. -->
+    <noscript>
+      <nav aria-label="Omaykan" class="noscript-nav">
+        <p>Omaykan needs JavaScript to browse and order. The site is here:</p>
+        <ul>
+          <li><a href="/">Shops and products</a></li>
+          <li><a href="/about">Our story</a></li>
+          <li><a href="/seller/signup">Sell with us</a></li>
+          <li><a href="/rider">Ride with Omaykan</a></li>
+          <li><a href="/account">Your account</a></li>
+          <li><a href="/cart">Your cart</a></li>
+        </ul>
+      </nav>
+    </noscript>
     <div id="onboarding-app"></div>
     <script type="module" src="/src/onboarding/main.ts"></script>
   </body>

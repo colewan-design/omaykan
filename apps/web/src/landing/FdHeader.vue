@@ -6,8 +6,6 @@ import BrandLogo from '@pos/core/components/BrandLogo.vue'
 import { useStorefrontCart } from '@pos/web/commerce/cart'
 import { useStockedCategories, useStorefrontCatalog } from '@pos/web/commerce/catalog'
 import { fetchStores, type StoreSummary } from '@pos/web/commerce/api'
-import { useCustomerAccount } from '@pos/web/commerce/customer'
-import { useUnreadMessages } from '@pos/web/commerce/messages'
 import { useDeliveryLocation } from '@pos/web/commerce/deliveryLocation'
 import { categoryIcon } from '@pos/core/utils/categoryIcons'
 import AddressDialog from './AddressDialog.vue'
@@ -122,21 +120,6 @@ function selectCategory(categoryId: string, event: MouseEvent) {
 }
 
 const cart = useStorefrontCart()
-
-// The Account slot goes to the customer portal and greets whoever is already
-// signed in there, so the storefront and the portal agree about who is
-// looking at them.
-const account = useCustomerAccount()
-const accountFirstName = computed(() => account.account.value?.name.trim().split(/\s+/)[0] ?? '')
-
-// A shop's reply is the one thing on the account side worth interrupting
-// browsing for, so it puts a count on the account link — and while there is
-// something to read, the link goes straight to it.
-const unreadMessages = useUnreadMessages().unread
-const accountHref = computed(() =>
-  account.signedIn.value && unreadMessages.value > 0 ? '/account?section=messages' : '/account',
-)
-const unreadLabel = computed(() => (unreadMessages.value > 9 ? '9+' : String(unreadMessages.value)))
 
 const searchTerm = ref('')
 
@@ -260,7 +243,7 @@ defineExpose({ clear: () => (searchTerm.value = '') })
   <div class="fd-head">
     <header class="fd-bar">
       <a href="/" class="fd-brand" aria-label="Omaykan — home">
-        <BrandLogo variant="dark" :size="20" />
+        <BrandLogo variant="light" :size="23" />
       </a>
 
       <!-- Where you are is what makes this shop list different from a national
@@ -284,7 +267,7 @@ defineExpose({ clear: () => (searchTerm.value = '') })
         <!-- Always a real navigation to the front page's anchor: the shop list
              is only on the front page, and from inside an aisle or a product
              a bare #shops would point at nothing. -->
-        <a href="/#shops" class="fd-link">Shops</a>
+        <a href="/#shop" class="fd-link">Shop</a>
 
         <div v-if="props.categoryNav" ref="menuRoot" class="fd-menu">
           <button
@@ -336,8 +319,10 @@ defineExpose({ clear: () => (searchTerm.value = '') })
           </div>
         </div>
 
-        <a href="/about" class="fd-link">Our story</a>
-        <a href="/seller/signup" class="fd-link fd-link--sell">Sell with us</a>
+        <a href="/#shops" class="fd-link">Stores</a>
+        <a href="/#deals" class="fd-link">Deals</a>
+        <a href="/about" class="fd-link">About</a>
+        <a href="/seller/signup" class="fd-link fd-link--sell">Sell on Omaykan</a>
       </nav>
 
       <form class="fd-search" role="search" @submit.prevent="submitSearch">
@@ -347,8 +332,8 @@ defineExpose({ clear: () => (searchTerm.value = '') })
         <input
           v-model="searchTerm"
           type="search"
-          placeholder="Search products or shops"
-          aria-label="Search products or shops"
+          placeholder="Search for local products, stores, or neighbourhoods…"
+          aria-label="Search for local products, stores, or neighbourhoods"
           autocomplete="off"
           role="combobox"
           aria-autocomplete="list"
@@ -402,26 +387,21 @@ defineExpose({ clear: () => (searchTerm.value = '') })
       </form>
 
       <a
-        :href="accountHref"
-        class="fd-iconlink"
-        :aria-label="
-          account.signedIn.value
-            ? unreadMessages > 0 ? `Your account, ${unreadMessages} unread messages` : 'Your account'
-            : 'Sign in'
-        "
+        href="/account?section=wishlist"
+        class="fd-iconlink fd-iconlink--account"
+        aria-label="Saved items"
       >
         <span class="fd-iconlink__icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-          <span v-if="unreadMessages > 0" class="fd-badge" aria-hidden="true">{{ unreadLabel }}</span>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>
         </span>
         <span class="fd-iconlink__label">
-          {{ account.signedIn.value ? `Hi, ${accountFirstName}` : 'Account' }}
+          Saved
         </span>
       </a>
 
       <a
         :href="props.cartHref"
-        class="fd-iconlink"
+        class="fd-iconlink fd-iconlink--cart"
         :aria-label="cart.itemCount.value > 0 ? `Cart, ${cart.itemCount.value} items` : 'Cart'"
       >
         <span class="fd-iconlink__icon">
@@ -775,5 +755,119 @@ defineExpose({ clear: () => (searchTerm.value = '') })
   .fd-link { padding: 8px 8px; }
   .fd-link--sell { display: none; }
   .fd-catmenu { grid-template-columns: 1fr; }
+}
+
+/* Marketplace header — the reference uses a white navigation deck above a
+   dedicated search row. These final rules intentionally supersede the older
+   single dark-bar layout while retaining its menus and behaviours. */
+.fd-bar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  grid-template-areas:
+    'brand links links account cart'
+    'search search search delivery delivery';
+  gap: 9px 18px;
+  min-height: 0;
+  padding: 12px var(--fd-inset) 13px;
+  border-bottom: 1px solid var(--sf-rule);
+  background: #fff;
+  color: var(--sf-forest);
+  box-shadow: 0 8px 24px rgba(20, 56, 39, 0.06);
+}
+
+.fd-brand { grid-area: brand; }
+.fd-links {
+  grid-area: links;
+  justify-self: start;
+  margin-left: 24px;
+}
+.fd-link {
+  color: #264b39;
+  font-size: 13.5px;
+  font-weight: 650;
+}
+.fd-link:hover,
+.fd-link[aria-expanded='true'] { background: #edf5ef; color: #123f2b; }
+
+.fd-search {
+  grid-area: search;
+  justify-self: end;
+  width: min(920px, 100%);
+  max-width: none;
+  height: 42px;
+  margin: 0;
+  border: 1px solid #dce5df;
+  border-radius: 999px 0 0 999px;
+  background: #fff;
+  box-shadow: 0 3px 12px rgba(20, 56, 39, 0.05);
+}
+.fd-search:focus-within { box-shadow: 0 0 0 3px rgba(30, 111, 72, 0.15); }
+
+.fd-bar__delivery {
+  grid-area: delivery;
+  display: flex;
+  min-width: 220px;
+  height: 42px;
+  margin: 0 0 0 -19px;
+  padding: 5px 18px;
+  border: 1px solid #dce5df;
+  border-left: 0;
+  border-radius: 0 999px 999px 0;
+  background: #f8fbf9;
+  color: #264b39;
+  justify-content: center;
+}
+.fd-bar__delivery:hover { background: #edf5ef; }
+.fd-bar__delivery-label { display: none; }
+.fd-bar__addr { max-width: 190px; font-size: 12.5px; }
+.fd-bar__pin { color: #1e6f48; }
+.fd-bar__caret { color: #6f8478; }
+
+.fd-iconlink { color: #264b39; }
+.fd-iconlink:hover { background: #edf5ef; }
+.fd-iconlink--account { grid-area: account; }
+.fd-iconlink--cart { grid-area: cart; }
+.fd-iconlink__label { display: none; }
+.fd-badge { box-shadow: 0 0 0 2px #fff; }
+
+.fd-catmenu { top: calc(100% + 10px); }
+
+@media (max-width: 1080px) {
+  .fd-bar {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      'brand account cart'
+      'links links links'
+      'search search delivery';
+    gap: 8px 10px;
+  }
+  .fd-links {
+    justify-self: stretch;
+    margin: 0 -8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .fd-links::-webkit-scrollbar { display: none; }
+  .fd-search { order: initial; flex-basis: auto; }
+}
+
+@media (max-width: 700px) {
+  .fd-bar {
+    grid-template-areas:
+      'brand account cart'
+      'search search search'
+      'links links links';
+    padding: 10px var(--fd-gutter) 8px;
+  }
+  .fd-bar__delivery { display: none; }
+  .fd-search {
+    width: 100%;
+    height: 42px;
+    border-radius: 999px;
+  }
+  .fd-links { padding-bottom: 2px; }
+  .fd-link { padding: 7px 9px; font-size: 13px; }
+  .fd-menu { position: static; }
+  .fd-catmenu { top: 100%; left: var(--fd-gutter); right: var(--fd-gutter); width: auto; }
 }
 </style>

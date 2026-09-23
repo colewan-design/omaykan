@@ -131,7 +131,7 @@ function backToTop() {
 
 <style scoped>
 .fd-footer {
-  padding: 48px var(--fd-gutter) 30px;
+  padding: 48px var(--fd-inset) 30px;
   background: var(--sf-forest);
   color: var(--sf-cream);
 }

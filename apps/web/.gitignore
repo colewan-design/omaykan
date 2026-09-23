@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Responsive image variants, rebuilt by scripts/optimize-images.mjs.
+public/_opt
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

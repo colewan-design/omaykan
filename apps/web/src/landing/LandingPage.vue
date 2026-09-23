@@ -2,6 +2,10 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { discountPercent } from '@pos/shared/index'
 import { retryStorefrontCatalog, useStockedCategories, useStorefrontCatalog } from '@pos/web/commerce/catalog'
+import { ORG_SLUG } from '@pos/web/commerce/context'
+import { applyShop, applyShopBySlug, resetShop } from '@pos/web/commerce/shopSwitch'
+import type { StoreSummary } from '@pos/web/commerce/api'
+import { SIZES, srcSet } from '@pos/web/ui/responsiveImg'
 import FdHeader from './FdHeader.vue'
 import DeliveryBand from './DeliveryBand.vue'
 import FdHero from './FdHero.vue'
@@ -12,7 +16,6 @@ import ProductRow from './ProductRow.vue'
 import CategoryListing from './CategoryListing.vue'
 import HighlandBanner from './HighlandBanner.vue'
 import ProductDetail from './ProductDetail.vue'
-import PartnerDialog from './PartnerDialog.vue'
 import ShopDirectory from './ShopDirectory.vue'
 import StoriesBand from './StoriesBand.vue'
 import WhyOmaykan from './WhyOmaykan.vue'
@@ -47,20 +50,38 @@ const products = computed(() => catalog.products.filter((p) => !p.outOfStock))
 // from its menu), a product card is a real link anyone can copy or open in a
 // new tab, and keeping all of it there afterwards is what makes Back walk the
 // browsing back out rather than leaving the site.
-function readUrl(): { q: string; product: string; listing: ListingFilters | null } {
+function readUrl(): { q: string; product: string; shop: string; listing: ListingFilters | null } {
   try {
     const params = new URLSearchParams(window.location.search)
     return {
       q: params.get('q')?.trim() ?? '',
       product: params.get('product')?.trim() ?? '',
+      shop: params.get('shop')?.trim() ?? '',
       listing: readListing(params),
     }
   } catch {
-    return { q: '', product: '', listing: null }
+    return { q: '', product: '', shop: '', listing: null }
   }
 }
 
 const initialUrl = readUrl()
+/**
+ * Which shop the storefront is pointed at, as something Vue can watch.
+ *
+ * `ORG_SLUG` itself is a plain module binding, so it is both mutable and
+ * unreactive: switching shops in place changes it without re-rendering
+ * anything that read it. The directory needs to move its "Browsing now" badge
+ * when that happens, so the slug travels down as a prop from here instead.
+ */
+const activeShop = ref(ORG_SLUG)
+
+/**
+ * Whether `?shop=` belongs in the URL, kept apart from `activeShop` because
+ * the two answer different questions. The env tenant is the default and needs
+ * no parameter; `ORG_SLUG` cannot be compared against to work that out, since
+ * by the time this runs main.ts may already have resolved `?shop=` into it.
+ */
+const shopParam = ref(initialUrl.shop)
 const activeSearch = ref(initialUrl.q)
 const activeProduct = ref(initialUrl.product)
 /** Null on the front page; the listing's aisles, filters, sort and page otherwise. */
@@ -68,6 +89,10 @@ const listing = ref<ListingFilters | null>(initialUrl.listing)
 
 function syncUrl() {
   const params = new URLSearchParams()
+  // First, and before anything else can forget it: every other piece of state
+  // here is scoped to a shop, so a URL that lost `?shop=` would send a
+  // reloading visitor to the same aisle in the wrong shop.
+  if (shopParam.value) params.set('shop', shopParam.value)
   if (listing.value) writeListing(params, listing.value)
   if (activeSearch.value) params.set('q', activeSearch.value)
   if (activeProduct.value) params.set('product', activeProduct.value)
@@ -81,6 +106,46 @@ function applyUrl() {
   activeProduct.value = next.product
   listing.value = next.listing
   if (!next.q) header.value?.clear()
+
+  // Back and Forward across a shop switch. Only the slug survives in the URL,
+  // so the shop has to be looked up again; if it no longer resolves, the
+  // storefront is left pointed where it is rather than emptied.
+  if (next.shop !== shopParam.value) {
+    shopParam.value = next.shop
+    if (next.shop === '') {
+      // No `?shop=` is not "no shop" — it is the tenant the bundle was built
+      // for, which is where Back off a chosen shop has to land.
+      resetShop()
+      activeShop.value = ORG_SLUG
+    } else {
+      void applyShopBySlug(next.shop).then((took) => {
+        if (took) activeShop.value = next.shop
+      })
+    }
+  }
+}
+
+/**
+ * The visitor picked a shop out of the directory.
+ *
+ * No navigation: the context is re-pointed, the shelf re-fetched, and the URL
+ * rewritten in place. The browsing state is cleared with it — an aisle filter
+ * or an open product belongs to the shop it was found in, and carrying either
+ * across would show an empty listing or a product this counter does not sell.
+ */
+function onShop(store: StoreSummary) {
+  if (store.orgSlug === activeShop.value) return
+
+  applyShop(store)
+  activeShop.value = store.orgSlug
+  shopParam.value = store.orgSlug
+
+  activeProduct.value = ''
+  activeSearch.value = ''
+  listing.value = null
+  header.value?.clear()
+
+  syncUrl()
 }
 
 onMounted(() => window.addEventListener('popstate', applyUrl))
@@ -151,16 +216,6 @@ const merchantImage = computed(() => catalog.shop?.imageUrl ?? '')
 
 /** The town on the shop's sign: every product on the listing comes off its shelf. */
 const shopTown = computed(() => townOf(catalog.shop?.address))
-
-/**
- * Every shelf on this page is one shop's stock — the catalog is fetched for a
- * single tenant — so the shop's own name is the truest thing a shelf can be
- * titled with. The redesign calls this row "Featured Products"; nothing here
- * features anything, so it keeps the title that is true.
- */
-const shelfTitle = computed(() =>
-  catalog.shop?.name ? `On the shelves at ${catalog.shop.name}` : 'On the shelves now',
-)
 
 /**
  * The first twelve, not the best-selling twelve: nothing here counts orders.
@@ -326,7 +381,7 @@ function clearSearch() {
                While searching it answers the same query — "SMJ Grocery" has
                to be able to return a shop — and hides itself when the term
                matches no shop. -->
-          <ShopDirectory v-if="onFrontPage" :query="activeSearch" />
+          <ShopDirectory v-if="onFrontPage" :query="activeSearch" :current="activeShop" @shop="onShop" />
 
           <!-- ── One product ──────────────────────────────────────────── -->
           <template v-if="browsingProduct">
@@ -388,17 +443,20 @@ function clearSearch() {
               <button type="button" class="fd-linkbtn" @click="clearSearch">Clear search</button>
             </p>
 
-            <!-- After the shops, before the first shelf: a first-time visitor
-                 sees that the market is real, then learns how to use it. -->
-            <HowItWorks v-if="!activeSearch" />
-
             <ProductRow
-              :title="shelfTitle"
+              title="Featured local products"
+              blurb="Fresh picks from local sellers, ready for delivery."
+              view-all-href="/?category=all"
               :products="popular"
               :category-names="aisleNames"
               :merchant-image-url="merchantImage"
               @select="openProduct"
+              @view-all="onCategory(ALL_AISLES)"
             />
+
+            <!-- Once visitors have seen real shops and products, explain the
+                 short path from choosing a location to receiving an order. -->
+            <HowItWorks v-if="!activeSearch" />
 
             <!-- The redesign's band, right after the first shelf. Not while
                  searching: it is editorial, and a results page is not the
@@ -409,8 +467,8 @@ function clearSearch() {
 
             <ProductRow
               anchor="deals"
-              title="Marked down at the counter"
-              blurb="The shops set these markdowns themselves, and Omaykan takes no percentage of a sale — so the discount reaches you whole."
+              title="Deals and markdowns"
+              blurb="Great finds from local stores, discounted by the shops themselves."
               :products="deals"
               :category-names="aisleNames"
               :merchant-image-url="merchantImage"
@@ -444,7 +502,15 @@ function clearSearch() {
               </div>
 
               <div class="fd-seller__art">
-                <img src="/delivery/fruit-basket.webp" alt="" width="900" height="1125" loading="lazy" />
+                <img
+                  src="/delivery/fruit-basket.webp"
+                  :srcset="srcSet('/delivery/fruit-basket.webp')"
+                  :sizes="SIZES.half"
+                  alt=""
+                  width="900"
+                  height="1125"
+                  loading="lazy"
+                />
               </div>
             </section>
 
@@ -464,9 +530,6 @@ function clearSearch() {
     </main>
 
     <FdFooter />
-
-    <!-- Teleports to body and opens itself once per visitor. -->
-    <PartnerDialog />
 
   </div>
 </template>
@@ -494,7 +557,7 @@ function clearSearch() {
 
 /* ── Layout ──────────────────────────────────────────────────────── */
 .fd-main { background: var(--sf-cream); }
-.fd-wrap { padding: 40px var(--fd-gutter) 72px; }
+.fd-wrap { padding: 40px var(--fd-inset) 72px; }
 
 /* The header is sticky and one row tall on a desktop (74px), three once it
    wraps on a phone, so an un-offset scroll parks the heading underneath it. */
@@ -507,13 +570,14 @@ function clearSearch() {
 /* ── Seller acquisition ──────────────────────────────────────────── */
 .fd-seller {
   display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
+  grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr);
   gap: 44px;
   align-items: center;
   margin-bottom: 56px;
   padding: 40px;
-  border-radius: 10px;
-  background: var(--sf-sand);
+  border: 1px solid #eadfcd;
+  border-radius: 12px;
+  background: linear-gradient(100deg, #fbf6ed 0%, #fff 62%, #eef5e9 100%);
 }
 
 .fd-seller__eyebrow { color: var(--sf-clay); }
@@ -569,6 +633,8 @@ function clearSearch() {
   border-top: 1px solid var(--sf-sand-deep);
   list-style: none;
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 24px;
   gap: 10px;
 }
 .fd-seller__list li {
@@ -582,7 +648,7 @@ function clearSearch() {
 .fd-seller__list svg { flex-shrink: 0; color: var(--sf-forest); }
 
 .fd-seller__art { display: flex; justify-content: center; }
-.fd-seller__art img { width: 100%; max-width: 300px; height: auto; }
+.fd-seller__art img { width: 100%; max-width: 330px; height: auto; filter: drop-shadow(0 18px 24px rgba(35, 68, 45, 0.12)); }
 
 /* ── Responsive ──────────────────────────────────────────────────── */
 @media (max-width: 1080px) {

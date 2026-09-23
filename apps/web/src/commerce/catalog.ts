@@ -89,12 +89,20 @@ const state = reactive<StorefrontCatalogState>({
   closed: false,
 })
 let loadStarted = false
+/**
+ * Guards against an earlier shop's catalog landing after a later one and
+ * overwriting it. Only matters since shops can be switched in place: before
+ * that the load ran once per page load and had nothing to race.
+ */
+let sequence = 0
 
 function runCatalogLoad(): void {
+  const ticket = ++sequence
   state.loading = true
   state.error = ''
   loadStorefrontCatalog()
     .then((catalog) => {
+      if (ticket !== sequence) return
       state.shop = catalog.shop
       state.categories = catalog.categories
       state.products = catalog.products
@@ -111,7 +119,7 @@ function runCatalogLoad(): void {
       if (state.error !== '') loadStarted = false
     })
     .finally(() => {
-      state.loading = false
+      if (ticket === sequence) state.loading = false
     })
 }
 
@@ -132,6 +140,19 @@ export function useStorefrontCatalog(): StorefrontCatalogState {
  */
 export function retryStorefrontCatalog(): void {
   if (state.loading) return
+  loadStarted = true
+  runCatalogLoad()
+}
+
+/**
+ * Point the shelf at whichever shop `setStorefrontContext` now names.
+ *
+ * Unlike `retryStorefrontCatalog`, this runs even while a load is in flight:
+ * that one is fetching the shop the visitor has just navigated away from, and
+ * waiting for it would show them the wrong shelf first. The sequence guard
+ * above drops it when it lands.
+ */
+export function reloadStorefrontCatalog(): void {
   loadStarted = true
   runCatalogLoad()
 }

@@ -1,211 +1,94 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed } from 'vue'
 import { useCustomerAccount } from '@pos/web/commerce/customer'
 
-/**
- * Account prompt above the site chrome, shown once per visitor.
- *
- * Dismissal is remembered under an `sf_` key, the same convention
- * PartnerDialog and the cart already use — the landing page shares an origin
- * with the real app, so anything written here has to be unmistakably
- * marketing state and never collide with POS data.
- *
- * It sits *outside* the sticky header block on purpose: a promo strip that
- * stays pinned eats a row of screen on every scroll of a long grocery shelf,
- * which is the opposite of what a shelf needs. It scrolls away with the page
- * and the chrome sticks on its own, as it did before.
- *
- * What it does not do is promise anything. There is no discount engine, no
- * promo code, and no free-delivery budget in this product — the delivery fee
- * goes to the rider whole — so the offer is the account itself: a saved
- * address, an order you can watch, and a basket you can repeat. Naming a perk
- * we cannot honour at checkout would be a lie the customer finds at the worst
- * possible moment.
- */
-
-// Bumping the suffix re-shows the banner to everyone who dismissed the
-// previous one, which is what changed copy needs.
-const STORAGE_KEY = 'sf_account_invite_v1'
-
 const account = useCustomerAccount()
-
-const dismissed = ref(true)
-
-// Storage throws outright in some privacy modes. A failed read must leave the
-// visitor seeing the site rather than an error, so treat it as "not yet
-// dismissed" and simply skip remembering the answer.
-onMounted(() => {
-  try {
-    dismissed.value = window.localStorage.getItem(STORAGE_KEY) !== null
-  } catch {
-    dismissed.value = false
-  }
+const accountLabel = computed(() => {
+  const firstName = account.account.value?.name.trim().split(/\s+/)[0]
+  return account.signedIn.value && firstName ? `Hi, ${firstName}` : 'Sign in'
 })
-
-/**
- * Hidden while the stored token is still being traded for an account: showing
- * "create an account" to someone who has one, for the moment that resolves,
- * is the same jolt the account page avoids on its own gate.
- */
-const visible = computed(
-  () => !dismissed.value && !account.hydrating.value && !account.signedIn.value,
-)
-
-function dismiss(): void {
-  dismissed.value = true
-  try {
-    window.localStorage.setItem(STORAGE_KEY, new Date().toISOString())
-  } catch {
-    /* nothing to do — the banner simply returns on the next visit */
-  }
-}
 </script>
 
 <template>
-  <aside v-if="visible" class="sfb" aria-label="Create an account">
-    <div class="sfb__inner">
-      <p class="sfb__lead">
-        <strong>New here?</strong>
-        <span class="sfb__pitch">
-          Save your address, follow your order to the door, and reorder your
-          usual in one tap.
-        </span>
-      </p>
+  <aside class="utility" aria-label="Omaykan service links">
+    <div class="utility__inner">
+      <div class="utility__place">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z" />
+        </svg>
+        <strong>Baguio City &amp; La Trinidad</strong>
+        <span class="utility__promise">Delivering fresh local goods to your home</span>
+      </div>
 
-      <a class="sfb__cta" href="/account?mode=register">Create a free account</a>
-
-      <span class="sfb__signin">
-        Already have one? <a href="/account">Sign in</a>
-      </span>
+      <nav class="utility__links" aria-label="Service shortcuts">
+        <a href="/seller/signup">Become a seller</a>
+        <a href="/about#help">Help</a>
+        <a href="/account">Track order</a>
+        <a href="/account">{{ accountLabel }}</a>
+        <a v-if="!account.signedIn.value" class="utility__cta" href="/account?mode=register">
+          Create an account
+        </a>
+      </nav>
     </div>
-
-    <button type="button" class="sfb__x" aria-label="Dismiss" @click="dismiss">
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2.2"
-        stroke-linecap="round"
-        aria-hidden="true"
-      >
-        <path d="M18 6 6 18M6 6l12 12" />
-      </svg>
-    </button>
   </aside>
 </template>
 
 <style scoped>
-/* Lime on near-black: the same pair the cart badge and the active category
-   underline already use, so the strip reads as part of the chrome rather than
-   a third-party ad pasted above it. */
-.sfb {
-  position: relative;
+.utility {
+  background: #123f2b;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.utility__inner {
+  min-height: 38px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 var(--fd-gutter);
-  background: #eeeeee;
-  color: #231d18;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 0 var(--fd-inset);
+  font-size: 12px;
 }
 
-.sfb__inner {
-  flex: 1;
-  min-width: 0;
+.utility__place,
+.utility__links {
   display: flex;
   align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  /* Room for the close button so centred copy is never overlapped by it. */
-  padding: 10px 28px 10px 0;
 }
 
-.sfb__lead {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.4;
-}
+.utility__place { gap: 7px; }
+.utility__place svg { color: #f0a94b; }
+.utility__promise { margin-left: 12px; color: rgba(255, 255, 255, 0.65); }
 
-.sfb__lead strong {
-  font-weight: 800;
+.utility__links { gap: 0; }
+.utility__links a {
+  padding: 5px 10px;
+  color: inherit;
+  font-weight: 600;
+  white-space: nowrap;
 }
+.utility__links a + a { border-left: 1px solid rgba(255, 255, 255, 0.18); }
+.utility__links a:hover { color: #fff; text-decoration: underline; text-underline-offset: 3px; }
 
-.sfb__pitch {
-  margin-left: 6px;
-}
-
-.sfb__cta {
-  flex-shrink: 0;
-  padding: 7px 16px;
+.utility__links .utility__cta {
+  margin-left: 10px;
+  padding: 6px 14px;
+  border: 0;
   border-radius: 999px;
-  background: #1f2e25;
+  background: #e9683b;
   color: #fff;
-  font-size: 13.5px;
-  font-weight: 700;
   text-decoration: none;
-  white-space: nowrap;
+}
+.utility__cta:hover { background: #d9582f; }
+
+@media (max-width: 840px) {
+  .utility__promise,
+  .utility__links a:not(:last-child):not(:nth-last-child(2)) { display: none; }
+  .utility__inner { min-height: 36px; }
 }
 
-.sfb__cta:hover {
-  background: #17231c;
-}
-
-.sfb__signin {
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.sfb__signin a {
-  color: #231d18;
-  font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-/* Absolute so it pins to the strip's right edge without being pulled into the
-   centred group when the copy wraps. */
-.sfb__x {
-  position: absolute;
-  top: 50%;
-  right: 10px;
-  transform: translateY(-50%);
-  display: grid;
-  place-items: center;
-  /* A 32px box around a 16px glyph: the close control is the one thing here a
-     phone user is most likely to aim at, and it has to be hittable. */
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: none;
-  border-radius: 999px;
-  background: transparent;
-  color: #231d18;
-  cursor: pointer;
-}
-
-.sfb__x:hover {
-  background: rgba(35, 29, 24, 0.12);
-}
-
-@media (max-width: 760px) {
-  .sfb__inner {
-    justify-content: flex-start;
-    gap: 6px 12px;
-    padding: 9px 34px 9px 0;
-  }
-
-  .sfb__lead {
-    font-size: 13px;
-  }
-
-  /* The full pitch is three lines on a phone and pushes the shelves off the
-     first screen. The offer survives in the button, which is the part that
-     has to stay. */
-  .sfb__pitch,
-  .sfb__signin {
-    display: none;
-  }
+@media (max-width: 520px) {
+  .utility__inner { justify-content: center; }
+  .utility__links { display: none; }
+  .utility__place { font-size: 11.5px; }
 }
 </style>

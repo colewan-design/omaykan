@@ -165,8 +165,21 @@ function toggleSaved(event: Event) {
   display: grid;
   grid-template-rows: auto 1fr auto auto;
   align-content: start;
+  height: 100%;
+  padding: 8px;
+  border: 1px solid var(--sf-rule);
+  border-radius: 10px;
+  background: #fff;
   color: inherit;
   text-decoration: none;
+  box-shadow: 0 6px 18px rgba(20, 56, 39, 0.035);
+  transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
+}
+
+.fdcard:hover {
+  transform: translateY(-2px);
+  border-color: #cbd9d0;
+  box-shadow: 0 12px 26px rgba(20, 56, 39, 0.09);
 }
 
 .fdcard__art {
@@ -348,6 +361,7 @@ function toggleSaved(event: Event) {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .fdcard, .fdcard:hover { transition: none; transform: none; }
   .fdcard__art :deep(.part__photo),
   .fdcard:hover .fdcard__art :deep(.part__photo),
   .fdcard:hover .fdcard__art :deep(.part__mark) { transition: none; transform: none; }

@@ -16,6 +16,7 @@ import FdHeader from '@pos/web/landing/FdHeader.vue'
 import FdFooter from '@pos/web/landing/FdFooter.vue'
 import { vReveal } from '@pos/web/landing/reveal'
 import { supportMailto } from '@pos/shared/index'
+import { SIZES, srcSet } from '@pos/web/ui/responsiveImg'
 
 // The page someone opens when they want to know who they would be dealing
 // with. Built to the approved About mockup: a tab strip, a split hero, then
@@ -205,6 +206,8 @@ const RIDER_BENEFITS = [
             >
               <img
                 :src="step.image"
+                :srcset="srcSet(step.image)"
+                :sizes="SIZES.card"
                 :alt="step.alt"
                 :width="step.width"
                 :height="step.height"
@@ -272,6 +275,8 @@ const RIDER_BENEFITS = [
           v-reveal
           class="ab-parity__img"
           src="/about/market-community.webp"
+          :srcset="srcSet('/about/market-community.webp')"
+          :sizes="SIZES.half"
           alt="A busy Baguio market filled with locally grown produce"
           width="1672"
           height="941"
@@ -309,6 +314,8 @@ const RIDER_BENEFITS = [
             v-reveal="60"
             class="ab-tri__img ab-tri__img--seller"
             src="/about/shop-owner.webp"
+            :srcset="srcSet('/about/shop-owner.webp')"
+            :sizes="SIZES.half"
             alt="A local sari-sari store owner standing proudly in his shop"
             width="1536"
             height="1024"
@@ -338,7 +345,15 @@ const RIDER_BENEFITS = [
           </div>
 
           <div class="ab-cta__art" aria-hidden="true">
-            <img src="/about/market-community.webp" alt="" width="1672" height="941" loading="lazy" />
+            <img
+              src="/about/market-community.webp"
+              :srcset="srcSet('/about/market-community.webp')"
+              :sizes="SIZES.half"
+              alt=""
+              width="1672"
+              height="941"
+              loading="lazy"
+            />
           </div>
         </div>
       </section>
@@ -362,6 +377,8 @@ const RIDER_BENEFITS = [
             v-reveal="60"
             class="ab-tri__img ab-tri__img--rider"
             src="/about/rider-city.webp"
+            :srcset="srcSet('/about/rider-city.webp')"
+            :sizes="SIZES.half"
             alt="A local delivery rider overlooking Baguio City"
             width="1536"
             height="1024"
@@ -399,7 +416,15 @@ const RIDER_BENEFITS = [
             <!-- Holds the illustration's space and its one piece of real
                  content until the artwork itself is wired in. -->
             <div class="ab-home__art" role="img" aria-label="Baguio and La Trinidad, where Omaykan is starting">
-              <img src="/about/deliver-locally.webp" alt="" width="1672" height="941" loading="lazy" />
+              <img
+                src="/about/deliver-locally.webp"
+                :srcset="srcSet('/about/deliver-locally.webp')"
+                :sizes="SIZES.half"
+                alt=""
+                width="1672"
+                height="941"
+                loading="lazy"
+              />
               <span class="ab-home__pin"><MapPin :size="28" :stroke-width="2" /></span>
               <span class="ab-home__place">Baguio<br />&amp; La Trinidad</span>
             </div>
@@ -439,10 +464,12 @@ const RIDER_BENEFITS = [
 .ab-band--mint { background: #f1f7f3; }
 .ab-band--mint-pale { background: #f7fbf8; }
 
+/* The same column the header, footer and landing page centre on — as
+   padding rather than a width, so the bands behind it keep their full bleed.
+   It was a 1280px column against the header's 1320px, with its own 32px on
+   top, so the copy never lined up with the logo above it. */
 .ab-wrap {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 0 32px;
+  padding: 0 var(--fd-inset);
 }
 
 /* ── Tab strip ─────────────────────────────────────────────────────── */
@@ -821,7 +848,11 @@ const RIDER_BENEFITS = [
 .ab-cta__art {
   position: relative;
   align-self: stretch;
-  margin-right: -32px;
+  /* Bleeds past the column into the page inset. Clamped to the inset itself:
+     it used to escape a fixed 32px of padding, and once that padding became
+     variable the bare -32px overshot the window on any width where the inset
+     is smaller, which is every width below 1384px. */
+  margin-right: calc(-1 * min(32px, var(--fd-inset)));
   overflow: hidden;
 }
 .ab-cta__art::after {

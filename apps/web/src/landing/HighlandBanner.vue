@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { SIZES, srcSet } from '@pos/web/ui/responsiveImg'
+
 // The strip of highland across the top of the aisle listing, where the listing
 // redesign puts a photograph of terraced mountains.
 //
@@ -20,7 +22,15 @@ const BANNER_IMAGE = '/storefront/listing-highland.webp'
 <template>
   <!-- Decorative: the listing's own <h1> names what is below it. -->
   <div class="hlb" aria-hidden="true">
-    <img class="hlb__img" :src="BANNER_IMAGE" alt="" decoding="async" fetchpriority="high" />
+    <img
+      class="hlb__img"
+      :src="BANNER_IMAGE"
+      :srcset="srcSet(BANNER_IMAGE)"
+      :sizes="SIZES.full"
+      alt=""
+      decoding="async"
+      fetchpriority="high"
+    />
   </div>
 </template>
 

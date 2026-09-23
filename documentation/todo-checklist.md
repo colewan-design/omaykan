@@ -84,7 +84,7 @@ Checked in the code; the audit could not open these pages signed out.
 - [ ] **Gift cards** — codes are saved only in the browser (`sf_gift_cards`) and labelled "applies at checkout". Checkout never reads them and there is no backend. Hide the page or build redemption
 - [ ] **Refer a friend** — the code is a hash of the email, made in the browser. The page says "their first order carries your code", but nothing reads `?ref=` and there is no backend for it, so no referral is ever recorded. Hide the page or build tracking
 - [ ] **Help, Privacy and Terms all link to `/about`** — in `MerchantHeader.vue` and `MerchantFooter.vue`. There are no privacy-policy or terms pages
-- [ ] **Shopper homepage tab title reads "The POS for Modern Hospitality"** — `index.html` serves the shopper storefront under the seller pitch's title, and `/shop/<slug>` gets the same title
+- [x] **Shopper homepage tab title read "The POS for Modern Hospitality"** — `index.html` served the shopper storefront under the seller pitch's title. Retitled to the shopper line it actually shows; `/shop/<slug>` already sets its own from the shop name in `ShopPage.vue` (2026-09-23)
 
 ### Order process — seller confirms and sets the delivery fee
 

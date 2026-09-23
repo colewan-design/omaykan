@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { ArrowRight, ChevronRight } from '@lucide/vue'
 import { useStockedCategories, useStorefrontCatalog } from '@pos/web/commerce/catalog'
+import { SIZES, srcSet } from '@pos/web/ui/responsiveImg'
 
 // "Shop by Category", as picture tiles.
 //
@@ -48,7 +49,10 @@ function open(categoryId: string, event: MouseEvent) {
 <template>
   <section v-if="tiles.length > 0" id="categories" class="sfcats" aria-labelledby="sfcats-title">
     <div class="sfcats__head">
-      <h2 id="sfcats-title" class="sf-h2">Shop by Category</h2>
+      <div>
+        <h2 id="sfcats-title" class="sf-h2">Shop by Category</h2>
+        <p class="sfcats__sub">Explore local goods from our community of sellers.</p>
+      </div>
       <button
         v-if="tiles.length > INITIAL"
         type="button"
@@ -65,7 +69,15 @@ function open(categoryId: string, event: MouseEvent) {
     <ul id="sfcats-grid" class="sfcats__grid">
       <li v-for="tile in shown" :key="tile.id">
         <a class="sfcat" :href="`/?category=${encodeURIComponent(tile.id)}`" @click="open(tile.id, $event)">
-          <img v-if="tile.cover" class="sfcat__img" :src="tile.cover" alt="" loading="lazy" />
+          <img
+            v-if="tile.cover"
+            class="sfcat__img"
+            :src="tile.cover"
+            :srcset="srcSet(tile.cover)"
+            :sizes="SIZES.card"
+            alt=""
+            loading="lazy"
+          />
           <span class="sfcat__shade" aria-hidden="true"></span>
           <span class="sfcat__text">
             <span class="sfcat__name">{{ tile.name }}</span>
@@ -89,6 +101,12 @@ function open(categoryId: string, event: MouseEvent) {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 16px;
+}
+
+.sfcats__sub {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  color: var(--sf-muted);
 }
 
 .sfcats__grid {

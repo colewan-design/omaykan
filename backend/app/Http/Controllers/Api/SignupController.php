@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Services\GoogleIdentity;
 use App\Services\GoogleIdentityException;
 use App\Services\GoogleIdentityVerifier;
+use App\Services\ShopSubdomain;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -40,19 +41,6 @@ use Illuminate\Validation\ValidationException;
 class SignupController extends Controller
 {
     private const BUSINESS_MODES = ['coffee-shop', 'grocery', 'restaurant', 'nail-salon'];
-
-    /**
-     * The slug is also the shop's subdomain — `<slug>.omaykan.com` — so it has
-     * to be one DNS label, and never one of the platform's own hosts. Keep this
-     * list in step with RESERVED_SHOP_SUBDOMAINS in packages/shared.
-     */
-    private const RESERVED_SLUGS = [
-        'www', 'api', 'app', 'admin', 'mail', 'smtp', 'imap', 'pop', 'ftp', 'cdn',
-        'static', 'assets', 'shop', 'shops', 'store', 'stores', 'rider', 'riders',
-        'seller', 'sellers', 'help', 'support', 'status', 'blog', 'docs', 'dev',
-        'staging', 'test', 'demo', 'platform', 'dashboard', 'account', 'cart',
-        'checkout', 'reverb', 'ws', 'omaykan',
-    ];
 
     /** A DNS label is 63 at most; this leaves room for a "-50" suffix. */
     private const SLUG_BASE_MAX = 59;
@@ -272,6 +260,10 @@ class SignupController extends Controller
      *
      * Cut to fit a DNS label, and a name that comes out as a reserved host —
      * a shop called "App" — is never handed out bare: it starts suffixed.
+     *
+     * The slug is also the shop's subdomain, `<slug>.omaykan.com`, so what may
+     * stand as one is ShopSubdomain's to say — the same class the shop's own
+     * page reads a request's hostname with.
      */
     private function uniqueSlug(string $businessName): string
     {
@@ -279,7 +271,7 @@ class SignupController extends Controller
         $candidate = $base;
 
         for ($attempt = 2; $attempt <= 50; $attempt++) {
-            if (in_array($candidate, self::RESERVED_SLUGS, true)) {
+            if (ShopSubdomain::isReserved($candidate)) {
                 $candidate = "{$base}-{$attempt}";
 
                 continue;

@@ -557,7 +557,7 @@ async function handleCloseShift() {
   gap: 0.75rem;
   padding: 0.85rem 1rem;
   border-radius: 1rem;
-  background: rgba(148, 163, 184, 0.09);
+  background: var(--fill);
 }
 
 .shift-log__row p {
@@ -596,12 +596,26 @@ async function handleCloseShift() {
 
 /* Seller POS utility header */
 .register-topbar {
+  /*
+   * The bar paints with the till's tokens — RegisterPage declares a green-tinted
+   * set of them on .register-page-stack, and hands them back to the app's own in
+   * dark. It used to hold its light values literally instead (a white bar, mint
+   * chips, deep-green ink), which is why it stayed white on a black page.
+   *
+   * These two are all that is left: a shadow whose colour has to change with the
+   * scheme rather than its geometry, and the two hues that are this bar's own
+   * rather than any token's. Dark values at the foot of this file.
+   */
+  --topbar-shadow: 0 4px 18px rgba(4, 71, 58, 0.035);
+  --topbar-menu-shadow: 0 16px 32px rgba(3, 54, 45, 0.14);
+  --topbar-dot: #36a95d;
+  --topbar-danger: #b33d3d;
   gap: 24px;
   min-height: 78px;
   padding: 10px 26px;
   border-radius: 0;
-  background: rgba(255, 255, 255, 0.97);
-  box-shadow: 0 4px 18px rgba(4, 71, 58, 0.035);
+  background: var(--bg-elevated);
+  box-shadow: var(--topbar-shadow);
 }
 
 .register-topbar__mobile-menu {
@@ -609,10 +623,10 @@ async function handleCloseShift() {
   width: 40px;
   height: 40px;
   place-items: center;
-  border: 1px solid #dbe7e4;
+  border: 1px solid var(--separator);
   border-radius: 12px;
-  background: white;
-  color: #10201d;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
 }
 
 .register-topbar__brand {
@@ -642,7 +656,7 @@ async function handleCloseShift() {
 }
 
 .register-topbar__brand strong {
-  color: #073d35;
+  color: var(--accent);
   font-size: 20px;
   font-weight: 800;
   line-height: 22px;
@@ -650,7 +664,7 @@ async function handleCloseShift() {
 }
 
 .register-topbar__brand small {
-  color: #61726d;
+  color: var(--text-secondary);
   font-size: 12px;
   font-weight: 600;
   line-height: 15px;
@@ -661,7 +675,7 @@ async function handleCloseShift() {
   justify-content: flex-start;
   gap: 0;
   min-width: 0;
-  color: #273330;
+  color: var(--text-primary);
   font-size: 14px;
   font-weight: 600;
   overflow: hidden;
@@ -672,9 +686,9 @@ async function handleCloseShift() {
   gap: 9px;
   min-height: 43px;
   padding: 0 14px;
-  border: 1px solid #e0e8e6;
+  border: 1px solid var(--separator);
   border-radius: 0;
-  background: #fff;
+  background: var(--bg-elevated);
 }
 
 .register-topbar__date {
@@ -683,7 +697,7 @@ async function handleCloseShift() {
 }
 
 .register-topbar__time {
-  border-left-color: #edf2f0;
+  border-left-color: var(--fill);
   border-radius: 0 12px 12px 0;
 }
 
@@ -701,25 +715,25 @@ async function handleCloseShift() {
   gap: 9px;
   min-height: 42px;
   padding: 0 14px;
-  border: 1px solid #d9e8e3;
+  border: 1px solid var(--separator);
   border-radius: 12px;
-  background: #f3faf7;
-  color: #104f42;
+  background: var(--fill);
+  color: var(--accent);
   font-size: 14px;
 }
 
 .register-topbar__status--active {
-  color: #0b5345;
+  color: var(--accent);
 }
 
 .register-topbar__dot {
-  background: #36a95d;
-  box-shadow: 0 0 0 4px rgba(54, 169, 93, 0.09);
+  background: var(--topbar-dot);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--topbar-dot) 12%, transparent);
 }
 
 .register-topbar__dot--active {
-  background: #36a95d;
-  box-shadow: 0 0 0 4px rgba(54, 169, 93, 0.09);
+  background: var(--topbar-dot);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--topbar-dot) 12%, transparent);
 }
 
 .register-topbar__end-shift {
@@ -729,9 +743,9 @@ async function handleCloseShift() {
   gap: 10px;
   padding: 0 18px;
   border: 0;
-  border-left: 1px solid #e1e9e7;
+  border-left: 1px solid var(--separator);
   background: transparent;
-  color: #14201e;
+  color: var(--text-primary);
   font-size: 14px;
   font-weight: 700;
   white-space: nowrap;
@@ -749,7 +763,7 @@ async function handleCloseShift() {
   padding: 0 4px 0 0;
   border: 0;
   background: transparent;
-  color: #20312d;
+  color: var(--text-primary);
 }
 
 .register-topbar__user span {
@@ -758,8 +772,8 @@ async function handleCloseShift() {
   height: 40px;
   place-items: center;
   border-radius: 50%;
-  background: #06483c;
-  color: white;
+  background: var(--accent);
+  color: var(--accent-text-on);
   font-size: 13px;
   font-weight: 700;
 }
@@ -771,10 +785,10 @@ async function handleCloseShift() {
   z-index: 40;
   min-width: 150px;
   padding: 7px;
-  border: 1px solid #dde8e5;
+  border: 1px solid var(--separator);
   border-radius: 12px;
-  background: white;
-  box-shadow: 0 16px 32px rgba(3, 54, 45, 0.14);
+  background: var(--bg-elevated);
+  box-shadow: var(--topbar-menu-shadow);
 }
 
 .register-topbar__user-menu button {
@@ -787,16 +801,16 @@ async function handleCloseShift() {
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: #20312d;
+  color: var(--text-primary);
   font-size: 13px;
 }
 
 .register-topbar__user-menu button:hover {
-  background: #f1f7f5;
+  background: var(--fill);
 }
 
 .register-topbar__user-menu .register-topbar__user-menu-danger {
-  color: #b33d3d;
+  color: var(--topbar-danger);
 }
 
 /* This header spans the shell's content column, not the viewport: with the nav
@@ -828,5 +842,35 @@ async function handleCloseShift() {
   .register-topbar__end-shift { display: none; }
   .register-topbar__status { padding: 0 10px; }
   .register-topbar__status svg { display: none; }
+}
+
+/*
+ * Dark. Only the four values that cannot come from a token: two shadows, whose
+ * faint green tint disappears against a dark page and has to become plain
+ * black, and the two hues this bar owns — the shift dot and the sign-out item,
+ * both a little muted for a light bar and too dim on a dark one.
+ *
+ * Three selectors for the three ways dark is reached, written plainly rather
+ * than through :global(); RegisterPage.vue's dark block carries the full note
+ * on why. Keep the two blocks here in step.
+ */
+[data-theme='dark'] .register-topbar,
+[data-color-theme='nocturne'] .register-topbar,
+[data-color-theme='reserve'] .register-topbar,
+[data-color-theme='harbor'] .register-topbar,
+[data-color-theme='mono'] .register-topbar {
+  --topbar-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+  --topbar-menu-shadow: 0 16px 32px rgba(0, 0, 0, 0.55);
+  --topbar-dot: var(--success);
+  --topbar-danger: var(--danger);
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme='light']) .register-topbar {
+    --topbar-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+    --topbar-menu-shadow: 0 16px 32px rgba(0, 0, 0, 0.55);
+    --topbar-dot: var(--success);
+    --topbar-danger: var(--danger);
+  }
 }
 </style>

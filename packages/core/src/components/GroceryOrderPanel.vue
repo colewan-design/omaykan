@@ -198,8 +198,14 @@ async function openPayment() {
   height: 44px;
   border-radius: var(--radius-md);
   overflow: hidden;
+  /* Mixed into the card rather than into white: this plate sits behind a
+     product photo, and a white mix keeps it pale whatever the scheme says. */
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, white), color-mix(in srgb, var(--fill) 70%, white)),
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--accent) 12%, var(--bg-elevated)),
+      color-mix(in srgb, var(--fill) 70%, var(--bg-elevated))
+    ),
     var(--bg-elevated);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 8%, var(--separator));
 }
@@ -240,13 +246,29 @@ async function openPayment() {
 }
 
 .order-panel {
+  /*
+   * The basket paints with the till's tokens. RegisterPage declares a
+   * green-tinted set of them on .register-page-stack for light and hands them
+   * back to the app's own for dark, so everything below follows the scheme
+   * without this file knowing which one is on.
+   *
+   * It used to hold the light values literally — white card, mint chips,
+   * deep-green ink — which is what left the basket a white column on a black
+   * page. What is left here are the values no token carries: two shadows that
+   * have to go black rather than green-tinted in dark, and the two reds this
+   * panel uses for its remove affordances. Dark values at the foot of the file.
+   */
+  --panel-shadow: 0 8px 28px rgba(6, 63, 52, 0.045);
+  --checkout-shadow: 0 8px 16px rgba(5, 96, 73, 0.17);
+  --panel-danger: #ef5e53;
+  --panel-danger-muted: #ba4b4b;
   gap: 11px;
   padding: 16px 18px 18px;
-  border: 1px solid rgba(220, 232, 229, 0.92);
+  border: 1px solid var(--separator);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.96);
-  color: #17211f;
-  box-shadow: 0 8px 28px rgba(6, 63, 52, 0.045);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: var(--panel-shadow);
 }
 
 .order-panel__header {
@@ -265,13 +287,13 @@ async function openPayment() {
   width: 42px;
   height: 42px;
   border-radius: 12px;
-  background: #eaf5f1;
-  color: #0a5f4d;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
 }
 
 .order-panel__title h2 {
   margin: 0;
-  color: #15201d;
+  color: var(--text-primary);
   font-size: 20px;
   font-weight: 750;
   line-height: 1.15;
@@ -280,7 +302,7 @@ async function openPayment() {
 
 .order-panel__title p {
   margin: 4px 0 0;
-  color: #74807d;
+  color: var(--text-secondary);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -293,10 +315,10 @@ async function openPayment() {
   justify-content: space-between;
   gap: 9px;
   padding: 0 12px;
-  border: 1px solid #d8e7e3;
+  border: 1px solid var(--separator);
   border-radius: 11px;
-  background: #f1f8f5;
-  color: #134c40;
+  background: var(--fill);
+  color: var(--accent);
   font-size: 12px;
 }
 
@@ -312,9 +334,9 @@ async function openPayment() {
   align-items: center;
   gap: 8px;
   padding: 8px;
-  border: 1px solid #dce8e5;
+  border: 1px solid var(--separator);
   border-radius: 11px;
-  background: #f8fbfa;
+  background: var(--fill);
 }
 
 .order-panel__customer-editor :deep(.acselect) {
@@ -326,8 +348,8 @@ async function openPayment() {
   padding: 0 12px;
   border: 0;
   border-radius: 9px;
-  background: #0a624f;
-  color: white;
+  background: var(--accent);
+  color: var(--accent-text-on);
   font-size: 12px;
   font-weight: 700;
 }
@@ -338,7 +360,7 @@ async function openPayment() {
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
-  color: #7b8784;
+  color: var(--text-tertiary);
   font-size: 12px;
 }
 
@@ -346,7 +368,7 @@ async function openPayment() {
   padding: 0;
   border: 0;
   background: transparent;
-  color: #ba4b4b;
+  color: var(--panel-danger-muted);
   font-size: 11px;
 }
 
@@ -362,17 +384,17 @@ async function openPayment() {
   align-content: center;
   gap: 8px;
   margin: auto 0;
-  border: 1px dashed #cfdfda;
-  background: #f6faf8;
-  color: #75827e;
+  border: 1px dashed var(--separator);
+  background: var(--fill);
+  color: var(--text-secondary);
 }
 
 .order-lines .empty-state svg {
-  color: #2f806b;
+  color: var(--accent);
 }
 
 .order-lines .empty-state strong {
-  color: #26332f;
+  color: var(--text-primary);
   font-size: 14px;
 }
 
@@ -387,21 +409,21 @@ async function openPayment() {
   min-height: 80px;
   align-items: center;
   padding: 8px;
-  border: 1px solid #e2eae8;
+  border: 1px solid var(--separator);
   border-radius: 12px;
-  background: #fff;
+  background: var(--bg-elevated);
 }
 
 .order-line:last-child {
-  border-bottom: 1px solid #e2eae8;
+  border-bottom: 1px solid var(--separator);
 }
 
 .order-line__thumb {
   width: 58px;
   height: 58px;
   border-radius: 10px;
-  background: #f5f8f7;
-  box-shadow: inset 0 0 0 1px #edf1f0;
+  background: var(--fill);
+  box-shadow: inset 0 0 0 1px var(--separator);
 }
 
 .order-line__thumb img {
@@ -414,7 +436,7 @@ async function openPayment() {
 .order-line__name {
   display: -webkit-box;
   overflow: hidden;
-  color: #1c2724;
+  color: var(--text-primary);
   font-size: 12px;
   font-weight: 700;
   line-height: 1.25;
@@ -424,31 +446,31 @@ async function openPayment() {
 
 .order-line__meta {
   margin-top: 5px;
-  color: #7a8582;
+  color: var(--text-secondary);
   font-size: 10px;
 }
 
 .stepper {
-  border: 1px solid #dae4e1;
+  border: 1px solid var(--separator);
   border-radius: 9px;
 }
 
 .stepper button {
   width: 30px;
   min-height: 31px;
-  color: #25332f;
+  color: var(--text-primary);
 }
 
 .stepper span {
   min-width: 28px;
   min-height: 31px;
-  border-color: #e1e8e6;
-  color: #1d2926;
+  border-color: var(--separator);
+  color: var(--text-primary);
   font-size: 12px;
 }
 
 .order-line__total {
-  color: #15201d;
+  color: var(--text-primary);
   font-size: 14px;
   font-weight: 750;
   text-align: right;
@@ -461,8 +483,8 @@ async function openPayment() {
   place-items: center;
   border: 0;
   border-radius: 9px;
-  background: #fff6f4;
-  color: #ef5e53;
+  background: color-mix(in srgb, var(--panel-danger) 12%, transparent);
+  color: var(--panel-danger);
 }
 
 .discount-row {
@@ -473,8 +495,8 @@ async function openPayment() {
   padding: 0 13px;
   border: 0;
   border-radius: 11px;
-  background: #f5f8f7;
-  color: #26322f;
+  background: var(--fill);
+  color: var(--text-primary);
   font-size: 13px;
 }
 
@@ -490,8 +512,8 @@ async function openPayment() {
   height: 31px;
   place-items: center;
   border-radius: 9px;
-  background: #e8f4f0;
-  color: #11624f;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
   font-style: normal;
 }
 
@@ -503,12 +525,12 @@ async function openPayment() {
 }
 
 .totals-row {
-  color: #5e6b68;
+  color: var(--text-secondary);
   font-size: 13px;
 }
 
 .totals-row strong {
-  color: #1c2724;
+  color: var(--text-primary);
   font-size: 13px;
 }
 
@@ -517,18 +539,18 @@ async function openPayment() {
   align-items: center;
   margin-top: 3px;
   padding-top: 8px;
-  border-top: 1px solid #d9e3e0;
+  border-top: 1px solid var(--separator);
 }
 
 .totals-row--grand span {
-  color: #15201d;
+  color: var(--text-primary);
   font-size: 17px;
   font-weight: 750;
   text-transform: none;
 }
 
 .total-amount {
-  color: #075c49 !important;
+  color: var(--accent) !important;
   font-size: 31px !important;
   font-weight: 800;
   letter-spacing: -0.03em;
@@ -539,7 +561,7 @@ async function openPayment() {
 }
 
 .order-panel__payment-label {
-  color: #74807d;
+  color: var(--text-secondary);
   font-size: 12px;
 }
 
@@ -548,9 +570,9 @@ async function openPayment() {
   min-height: 47px;
   gap: 9px;
   padding: 0 11px;
-  border: 1px solid #dce6e3;
+  border: 1px solid var(--separator);
   border-radius: 11px;
-  color: #17624f;
+  color: var(--accent);
 }
 
 .order-panel__payment-method {
@@ -563,7 +585,7 @@ async function openPayment() {
   padding: 0;
   border: 0;
   background: transparent;
-  color: #1b2724;
+  color: var(--text-primary);
   font-size: 13px;
   font-weight: 650;
 }
@@ -574,11 +596,14 @@ async function openPayment() {
   align-items: center;
   gap: 8px;
   border-radius: 11px;
-  background: linear-gradient(135deg, #066049, #087458);
-  color: white;
+  /* Pressed first, then the accent: that is the direction the hand-picked pair
+     ran in, dark green into lighter. It holds when the tokens flip, because
+     dark's accent is the lighter of its pair too. */
+  background: linear-gradient(135deg, var(--accent-pressed), var(--accent));
+  color: var(--accent-text-on);
   font-size: 16px;
   font-weight: 750;
-  box-shadow: 0 8px 16px rgba(5, 96, 73, 0.17);
+  box-shadow: var(--checkout-shadow);
 }
 
 @media (max-width: 1420px) {
@@ -598,5 +623,50 @@ async function openPayment() {
   .stepper { grid-column: 2; justify-self: start; }
   .order-line__total { grid-column: 3; grid-row: 1; }
   .order-line__remove { grid-column: 3; }
+}
+
+/*
+ * Dark. Only the four this panel owns: two shadows whose green tint is
+ * invisible against a dark page and has to be plain black, and the two reds,
+ * which are muted for a white card and too dim on a dark one — both become the
+ * app's own danger colour there.
+ *
+ * Three selectors for the three ways dark is reached, written plainly rather
+ * than through :global(); RegisterPage.vue's dark block carries the full note.
+ * Keep the two blocks here in step.
+ */
+[data-theme='dark'] .order-panel,
+[data-color-theme='nocturne'] .order-panel,
+[data-color-theme='reserve'] .order-panel,
+[data-color-theme='harbor'] .order-panel,
+[data-color-theme='mono'] .order-panel {
+  --panel-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  --checkout-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
+  --panel-danger: var(--danger);
+  --panel-danger-muted: var(--danger);
+}
+
+/* Line thumbnails are blended `multiply` so a product's white backdrop drops
+   into the row. On a dark row that drives the photo to black instead — see the
+   longer note in GroceryProductGrid.vue. */
+[data-theme='dark'] .order-line__thumb img,
+[data-color-theme='nocturne'] .order-line__thumb img,
+[data-color-theme='reserve'] .order-line__thumb img,
+[data-color-theme='harbor'] .order-line__thumb img,
+[data-color-theme='mono'] .order-line__thumb img {
+  mix-blend-mode: normal;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme='light']) .order-panel {
+    --panel-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+    --checkout-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
+    --panel-danger: var(--danger);
+    --panel-danger-muted: var(--danger);
+  }
+
+  html:not([data-theme='light']) .order-line__thumb img {
+    mix-blend-mode: normal;
+  }
 }
 </style>

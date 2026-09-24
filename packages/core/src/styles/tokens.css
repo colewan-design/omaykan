@@ -31,6 +31,18 @@
   --success: #34c759;
   --warning: #ff9500;
   --danger: #ff3b30;
+  /*
+   * The deeper red that error *text* is set in — --danger itself is tuned to
+   * be a fill, and is too bright to read as a sentence on a pale card.
+   *
+   * It is declared here because seven places already ask for it —
+   * `var(--danger-600, #b42318)` in PaymentSheet, TrackOrderPanel,
+   * SettleOnlinePaymentSheet, CustomersPage and app.css — and nothing ever
+   * defined it. Every one of them was therefore pinned to that literal
+   * fallback, which reads 6.6:1 on white and 2.1:1 on a dark sheet. The light
+   * value below is that same literal, so nothing moves in light.
+   */
+  --danger-600: #b42318;
   --bg-base: #f2f2f7;
   --bg-surface: rgba(255, 255, 255, 0.88);
   --bg-elevated: #ffffff;
@@ -99,6 +111,9 @@
     --success: #30d158;
     --warning: #ff9f0a;
     --danger: #ff453a;
+    /* Lighter than --danger here, not deeper: on a dark card the readable
+       direction is up. 5.0:1 on --bg-elevated. */
+    --danger-600: #ff6b61;
     --bg-base: #000000;
     --bg-surface: rgba(28, 28, 30, 0.82);
     --bg-elevated: #2c2c2e;
@@ -112,7 +127,13 @@
     --tag-1-blue: #3987e5;
     --tag-2-aqua: #199e70;
     --tag-3-yellow: #c98500;
-    --tag-4-green: #008300;
+    /* Lightened, unlike its light twin: every other hue here was retuned for a
+       dark card and this one was left at its light value, where it reads 3.6:1
+       against the register's product cards while the rest of the set sits
+       between 4.5 and 5.8. Same hue (120°), enough lightness to make 5.2:1 —
+       and still 39° off the aqua beside it, which is what keeps two categories
+       from looking like one. */
+    --tag-4-green: #12a012;
     --tag-5-violet: #9085e9;
     --tag-6-red: #e66767;
     --tag-7-magenta: #d55181;
@@ -128,6 +149,8 @@
   --success: #30d158;
   --warning: #ff9f0a;
   --danger: #ff453a;
+  /* Lighter than --danger here — see the note in the media-query block above. */
+  --danger-600: #ff6b61;
   --bg-base: #000000;
   --bg-surface: rgba(28, 28, 30, 0.82);
   --bg-elevated: #2c2c2e;
@@ -141,7 +164,8 @@
   --tag-1-blue: #3987e5;
   --tag-2-aqua: #199e70;
   --tag-3-yellow: #c98500;
-  --tag-4-green: #008300;
+  /* Lightened — see the note on the same line in the media-query block above. */
+  --tag-4-green: #12a012;
   --tag-5-violet: #9085e9;
   --tag-6-red: #e66767;
   --tag-7-magenta: #d55181;
@@ -472,6 +496,11 @@
   --success: #4fd1b0;
   --warning: #d9a458;
   --danger: #e0584f;
+  /* These four moods are dark whatever Appearance says, so they sit outside
+     the base dark block and need their own error-text red. Lifted off --danger
+     rather than picked, which keeps each mood's hue and clears 4.5:1 on its
+     own background — the darkest of them, reserve, is the one that sets 62%. */
+  --danger-600: color-mix(in srgb, var(--danger) 62%, white);
   --bg-base: #0d1521;
   --bg-surface: rgba(24, 34, 47, 0.92);
   --bg-elevated: #18222f;
@@ -495,6 +524,7 @@
   --success: #5fa66b;
   --warning: #a8823d;
   --danger: #7a2433;
+  --danger-600: color-mix(in srgb, var(--danger) 62%, white);
   --bg-base: #0e0e0e;
   --bg-surface: rgba(28, 28, 28, 0.92);
   --bg-elevated: #1c1c1c;
@@ -516,6 +546,7 @@
   --success: #4fae6e;
   --warning: #d9a441;
   --danger: #e07a5f;
+  --danger-600: color-mix(in srgb, var(--danger) 62%, white);
   --bg-base: #1a2228;
   --bg-surface: rgba(34, 44, 50, 0.92);
   --bg-elevated: #222c32;
@@ -538,6 +569,7 @@
   --success: #6fbe86;
   --warning: #b8a06a;
   --danger: #c75c52;
+  --danger-600: color-mix(in srgb, var(--danger) 62%, white);
   --bg-base: #0a0a0a;
   --bg-surface: rgba(30, 30, 30, 0.92);
   --bg-elevated: #1e1e1e;

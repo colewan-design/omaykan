@@ -135,10 +135,22 @@ function handlePrintReceipt() {
 
 <style scoped>
 .register-page-stack {
-  --pos-green: #05634f;
-  --pos-green-dark: #034b3e;
-  --pos-mint: #eef7f5;
-  --pos-border: #dce8e5;
+  /*
+   * The till wears its own green-tinted palette rather than the app's grey
+   * one — mint canvas, white panels, deep-green accent — and it does that by
+   * re-declaring the platform tokens right here. Everything inside then picks
+   * them up without knowing this page is special: the order panel, the product
+   * grid, and app.css's .surface-panel all just read var(--bg-surface).
+   *
+   * Which is exactly why this page had no dark mode. Every value below is a
+   * light one and nothing ever swapped them, so with the app in dark the till
+   * came back a mint sheet under white panels — while the ink it inherited from
+   * the shell stayed the dark theme's near-white. #f5f5f7 text on #eef8f5.
+   *
+   * The dark block at the foot of this file hands all of them back.
+   */
+  --register-canvas: #eef8f5;
+  --register-shadow: 0 18px 50px rgba(5, 80, 63, 0.06);
   --accent: #06634f;
   --accent-pressed: #044d3e;
   --accent-text-on: #ffffff;
@@ -158,8 +170,8 @@ function handlePrintReceipt() {
   overflow: hidden;
   border: 1px solid var(--separator);
   border-radius: 20px;
-  background: #eef8f5;
-  box-shadow: 0 18px 50px rgba(5, 80, 63, 0.06);
+  background: var(--register-canvas);
+  box-shadow: var(--register-shadow);
 }
 
 .register-workspace {
@@ -405,6 +417,73 @@ function handlePrintReceipt() {
     gap: 2px;
     font: var(--type-subhead);
     font-weight: 600;
+  }
+}
+
+/*
+ * Dark — where the till stops speaking for the app's palette.
+ *
+ * `inherit` rather than a second copy of tokens.css's dark values: a custom
+ * property set to inherit takes its parent's computed value, and the parent
+ * chain ends at :root, so each of these goes back to whatever the active theme
+ * says for dark. There is nothing here to drift out of step when that file
+ * changes, and the four themeable moods (ember, matcha, casa, bloom, grove)
+ * get their own dark accents through it rather than this page's green.
+ *
+ * Dark is reached three ways, and a selector list cannot straddle a media
+ * query — the same note stands over the dark block in OrdersPage.vue:
+ *
+ *   - Appearance = Dark stamps [data-theme='dark'] on <html>;
+ *   - Appearance = System stamps nothing and leans on prefers-color-scheme;
+ *   - nocturne/reserve/harbor/mono are fixed dark moods, dark whatever
+ *     Appearance says, so they match outside the media query and without the
+ *     :not([data-theme='light']) guard the other two need.
+ *
+ * Written plainly, NOT as :global(...). Vue's scoped transform keeps only what
+ * is inside :global() and throws the rest of the selector away, so
+ * `:global([data-theme='dark']) .register-page-stack` would compile down to a
+ * rule on <html> — whose variables then lose to the light ones declared on
+ * .register-page-stack itself. That is the bug that kept OrdersPage light.
+ *
+ * Keep the two blocks in step.
+ */
+[data-theme='dark'] .register-page-stack,
+[data-color-theme='nocturne'] .register-page-stack,
+[data-color-theme='reserve'] .register-page-stack,
+[data-color-theme='harbor'] .register-page-stack,
+[data-color-theme='mono'] .register-page-stack {
+  /* A plane lifted just off the app's background, so the panels inside it —
+     which paint with --bg-surface — still read as sitting on top of something. */
+  --register-canvas: color-mix(in srgb, var(--bg-elevated) 40%, var(--bg-base));
+  --register-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+  --accent: inherit;
+  --accent-pressed: inherit;
+  --accent-text-on: inherit;
+  --bg-base: inherit;
+  --bg-surface: inherit;
+  --bg-elevated: inherit;
+  --fill: inherit;
+  --text-primary: inherit;
+  --text-secondary: inherit;
+  --text-tertiary: inherit;
+  --separator: inherit;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme='light']) .register-page-stack {
+    --register-canvas: color-mix(in srgb, var(--bg-elevated) 40%, var(--bg-base));
+    --register-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    --accent: inherit;
+    --accent-pressed: inherit;
+    --accent-text-on: inherit;
+    --bg-base: inherit;
+    --bg-surface: inherit;
+    --bg-elevated: inherit;
+    --fill: inherit;
+    --text-primary: inherit;
+    --text-secondary: inherit;
+    --text-tertiary: inherit;
+    --separator: inherit;
   }
 }
 </style>

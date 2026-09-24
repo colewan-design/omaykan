@@ -148,13 +148,25 @@ function categoryNameFor(categoryId: string) {
 
 <style scoped>
 .reg-catalog-panel {
+  /*
+   * The shelf paints with the till's tokens — RegisterPage declares a
+   * green-tinted set on .register-page-stack for light and hands them back to
+   * the app's own for dark. This file used to hold those light values
+   * literally, which is what kept the catalog a white sheet on a black page.
+   *
+   * What is left are the three shadows: tinted green for a light card, plain
+   * black for a dark one. Dark values at the foot of the file.
+   */
+  --grid-shadow: 0 8px 28px rgba(6, 63, 52, 0.045);
+  --grid-button-shadow: 0 5px 12px rgba(7, 93, 73, 0.15);
+  --card-shadow: 0 4px 12px rgba(10, 54, 46, 0.025);
   gap: 0;
   margin: 0;
   padding: 0;
-  border: 1px solid rgba(220, 232, 229, 0.9);
+  border: 1px solid var(--separator);
   border-radius: 17px;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 8px 28px rgba(6, 63, 52, 0.045);
+  background: var(--bg-surface);
+  box-shadow: var(--grid-shadow);
 }
 
 .reg-category-row {
@@ -189,9 +201,9 @@ function categoryNameFor(categoryId: string) {
   justify-content: center;
   gap: 4px;
   padding: 9px 8px;
-  border: 1px solid #e6ecea;
+  border: 1px solid var(--separator);
   border-radius: 12px;
-  background: #f7faf9;
+  background: var(--fill);
   text-align: center;
   scroll-snap-align: start;
 }
@@ -202,7 +214,7 @@ function categoryNameFor(categoryId: string) {
   flex: none;
   border-radius: 10px;
   background: transparent;
-  color: #53635f;
+  color: var(--text-secondary);
 }
 
 .reg-category-tab__copy {
@@ -217,25 +229,25 @@ function categoryNameFor(categoryId: string) {
 }
 
 .reg-category-tab__count {
-  color: #71807c;
+  color: var(--text-secondary);
   font-size: 11px;
   font-weight: 500;
   text-transform: lowercase;
 }
 
 .reg-category-tab.active {
-  border-color: #8fc5b6;
-  background: #f2faf7;
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
 }
 
 .reg-category-tab.active .reg-category-tab__icon {
-  background: #dff2ec;
-  color: #086550;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
   box-shadow: none;
 }
 
 .reg-category-tab.active .reg-category-tab__label {
-  color: #18221f;
+  color: var(--text-primary);
 }
 
 .reg-category-next {
@@ -245,15 +257,15 @@ function categoryNameFor(categoryId: string) {
   width: 42px;
   height: 42px;
   padding: 0;
-  border: 1px solid #d9e6e2;
+  border: 1px solid var(--separator);
   border-radius: 50%;
-  background: #fff;
-  color: #31564d;
+  background: var(--bg-elevated);
+  color: var(--accent);
 }
 
 .reg-category-next:hover {
-  background: #edf7f4;
-  color: #086550;
+  background: var(--fill);
+  color: var(--accent);
 }
 
 .reg-search-row {
@@ -270,11 +282,11 @@ function categoryNameFor(categoryId: string) {
   min-height: 56px;
   margin: 0;
   padding: 0 17px;
-  border: 1px solid #dbe5e3;
+  border: 1px solid var(--separator);
   border-right: 0;
   border-radius: 13px 0 0 13px;
-  background: #fff;
-  color: #5e6c69;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
   cursor: text;
 }
 
@@ -293,12 +305,12 @@ function categoryNameFor(categoryId: string) {
   min-width: 64px;
   align-items: center;
   justify-content: center;
-  border: 1px solid #dbe5e3;
-  border-left: 1px solid #cadbd6;
+  border: 1px solid var(--separator);
+  border-left: 1px solid var(--separator);
   border-radius: 0 13px 13px 0;
-  background: linear-gradient(145deg, #0b725b, #055541);
-  color: white;
-  box-shadow: 0 5px 12px rgba(7, 93, 73, 0.15);
+  background: linear-gradient(145deg, var(--accent), var(--accent-pressed));
+  color: var(--accent-text-on);
+  box-shadow: var(--grid-button-shadow);
 }
 
 .product-grid {
@@ -307,23 +319,23 @@ function categoryNameFor(categoryId: string) {
   gap: 10px;
   padding: 0 16px 16px;
   scrollbar-width: thin;
-  scrollbar-color: #b7c9c4 transparent;
+  scrollbar-color: var(--text-tertiary) transparent;
 }
 
 .product-card {
   height: 100%;
   min-height: 0;
-  border: 1px solid #e3eae8;
+  border: 1px solid var(--separator);
   border-radius: 13px;
-  background: #fff;
-  box-shadow: 0 4px 12px rgba(10, 54, 46, 0.025);
+  background: var(--bg-elevated);
+  box-shadow: var(--card-shadow);
 }
 
 .product-card__art.grocery-art {
   aspect-ratio: auto;
   height: 49%;
   min-height: 108px;
-  background: linear-gradient(180deg, #fbfcfc 0%, #f4f7f6 100%);
+  background: linear-gradient(180deg, var(--bg-elevated) 0%, var(--fill) 100%);
 }
 
 .product-card__art img {
@@ -340,7 +352,7 @@ function categoryNameFor(categoryId: string) {
 .product-card__qty {
   top: 7px;
   left: 7px;
-  background: #07644f;
+  background: var(--accent);
 }
 
 .grocery-meta {
@@ -357,7 +369,7 @@ function categoryNameFor(categoryId: string) {
   display: -webkit-box;
   min-height: 35px;
   overflow: hidden;
-  color: #1e2825;
+  color: var(--text-primary);
   font-size: 14px;
   font-weight: 700;
   line-height: 1.25;
@@ -368,7 +380,10 @@ function categoryNameFor(categoryId: string) {
 .product-card__tag {
   max-width: 100%;
   padding: 3px 9px;
-  background: color-mix(in srgb, var(--tag) 14%, white);
+  /* Mixed into the card, not into white: against a dark card a white mix is a
+     pale chip with a dark-theme tag colour on it, which is the one combination
+     neither palette was tuned for. */
+  background: color-mix(in srgb, var(--tag) 14%, var(--bg-elevated));
   color: var(--tag);
   font-size: 11px;
   font-weight: 700;
@@ -384,7 +399,7 @@ function categoryNameFor(categoryId: string) {
 }
 
 .product-card__price {
-  color: #111b19;
+  color: var(--text-primary);
   font-size: 16px;
   font-weight: 800;
 }
@@ -401,8 +416,8 @@ function categoryNameFor(categoryId: string) {
   flex: none;
   place-items: center;
   border-radius: 50%;
-  background: #e5f3ef;
-  color: #07624e;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
   box-shadow: none;
 }
 
@@ -432,5 +447,48 @@ function categoryNameFor(categoryId: string) {
   .reg-search-row { padding-inline: 12px; }
   .reg-scan-button { min-width: 50px; }
   .product-grid { grid-auto-rows: 220px; padding-inline: 12px; }
+}
+
+/*
+ * Dark: the shadows, and the one thing on this page that a palette cannot fix.
+ *
+ * Product photos are blended `multiply` so the white box most of them are shot
+ * on drops into the card. Multiply against a dark card does the opposite — it
+ * drives the whole photo towards black and the shelf goes blank. Normal blend
+ * puts the white box back, which is worse-looking and far better than an empty
+ * grid.
+ *
+ * Three selectors for the three ways dark is reached, written plainly rather
+ * than through :global(); RegisterPage.vue's dark block carries the full note.
+ * Keep the two blocks here in step.
+ */
+[data-theme='dark'] .reg-catalog-panel,
+[data-color-theme='nocturne'] .reg-catalog-panel,
+[data-color-theme='reserve'] .reg-catalog-panel,
+[data-color-theme='harbor'] .reg-catalog-panel,
+[data-color-theme='mono'] .reg-catalog-panel {
+  --grid-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  --grid-button-shadow: 0 5px 12px rgba(0, 0, 0, 0.5);
+  --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+[data-theme='dark'] .product-card__art img,
+[data-color-theme='nocturne'] .product-card__art img,
+[data-color-theme='reserve'] .product-card__art img,
+[data-color-theme='harbor'] .product-card__art img,
+[data-color-theme='mono'] .product-card__art img {
+  mix-blend-mode: normal;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme='light']) .reg-catalog-panel {
+    --grid-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+    --grid-button-shadow: 0 5px 12px rgba(0, 0, 0, 0.5);
+    --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  }
+
+  html:not([data-theme='light']) .product-card__art img {
+    mix-blend-mode: normal;
+  }
 }
 </style>

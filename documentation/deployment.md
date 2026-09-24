@@ -1102,13 +1102,15 @@ on every subdomain, and every other path 302s to the main site. Pre-edit nginx: 
 to undo, remove the `sites-enabled/omaykan-shops` symlink and reload.
 
 **How it works.** A subdomain serves `shop.html` at `/`, which reads the shop
-from the host. It serves nothing else of the site: every other page, the cart
+from the host — through Laravel since §6a.1, so that the file carries the shop's
+own name and photo for the crawlers that never run it. It serves nothing else of the site: every other page, the cart
 included, redirects to `omaykan.com`, because sign-in, Google sign-in (Google
 refuses wildcard origins) and checkout live there. Checkout carries the basket
 across in the link (`/cart?basket=…`, see `apps/web/src/commerce/basketHandoff.ts`).
 The build needs `VITE_SHOP_ROOT_DOMAIN=omaykan.com` in `.env.production`.
 Signup never gives out a slug that cannot be a subdomain (reserved names such as
-`app` and `api`, or longer than 63 characters); see `SignupController::RESERVED_SLUGS`.
+`app` and `api`, or longer than 63 characters); see `App\Services\ShopSubdomain`,
+which is also what reads a slug back off a request's hostname.
 
 **1. Certificate.** A wildcard needs a DNS-01 challenge, so it cannot be issued
 by the `nginx`/`webroot` plugins this box uses today. DNS is on Hostinger
@@ -1181,6 +1183,101 @@ location ~ ^/shop/[^/]+/checkout/?$ { try_files /checkout.html =404; }
 **3. Build** with `VITE_SHOP_ROOT_DOMAIN=omaykan.com` in `.env.production`, and
 after any frontend deploy check a shop subdomain's `<title>` names the shop
 once the page has loaded — the static HTML's own title is just "Shop".
+
+### 6a.1 Link previews — a shop's card when its address is pasted
+
+**Not yet deployed.** Built 2026-09-24.
+
+A shop subdomain served one static file, identical for every shop: title "Shop
+— Omaykan", a generic description, no `og:` tags. The shop's name and photo
+only appear once Vue has run and asked `GET /api/stores` which shop this host
+is. Every link-preview crawler — facebookexternalhit, Twitterbot, Slackbot,
+Discordbot, LinkedInBot, WhatsApp, Viber — reads the HTML and runs nothing, so
+pasting a shop's link produced no card, or the same blank card for every shop
+on the platform.
+
+`ShopShellController` now answers `/` on a shop host: it reads the slug off the
+hostname, looks the shop up under the same conditions `GET /stores` applies, and
+stamps that shop's title, description and photo into the same built `shop.html`
+before sending it. The page a visitor gets is unchanged — same bundle, and Vue
+still resolves the shop itself. **An unknown slug, a suspended shop, or a shop
+with an empty shelf gets the file untouched**, exactly what nginx served before,
+so nothing here can turn a working storefront into a redirect or a 404.
+
+**1. nginx.** One location in `sites-available/omaykan-shops`, plus a fallback:
+
+```nginx
+# Was: location = / { try_files /shop.html =404; }
+location = / {
+    root /var/www/omaykan/backend/public;
+    fastcgi_intercept_errors on;
+    error_page 500 502 503 504 = @static_shell;
+    try_files /__shop_shell /index.php$is_args$args;
+}
+
+# If PHP is down or misconfigured, shops keep working the way they did
+# before this section existed: the static file, with a generic preview.
+location @static_shell {
+    root /var/www/omaykan/web;
+    try_files /shop.html =404;
+}
+```
+
+`/__shop_shell` is a path that never exists, so try_files falls through to its
+last argument, which is a URI and therefore an internal redirect into the
+`location ~ ^/index\.php(/|$)` block already in that file.
+
+**Do not write `try_files /index.php =404;`.** A try_files argument that is not
+the last one and matches a real file is served as *static content* — that hands
+out the PHP source of the front controller. The PHP path must be last.
+
+**2. Environment.** Two new settings in `backend/.env` (`config/shops.php`):
+
+```
+SHOP_ROOT_DOMAIN=omaykan.com
+# WEB_ROOT=/var/www/omaykan/web   # the default is ../web, already correct here
+```
+
+`SHOP_ROOT_DOMAIN` blank — the default — means no host is read as a shop and
+every request to `/` gets the framework's welcome page, which is what this route
+did before. So **set it in the same deploy that changes nginx**, or shop
+subdomains serve the Laravel welcome page instead of the storefront. Run
+`php8.3 artisan config:clear` after editing.
+
+**3. Order.** Backend first (route + config), then nginx. Between the two, the
+new route exists and nothing reaches it.
+
+**4. Check**, with the shop's name in place of the example:
+
+```bash
+# What Facebook actually receives. Expect the shop's name in <title> and
+# og:title, one <meta name="description">, and the bundle's script tag intact.
+curl -sA 'facebookexternalhit/1.1' https://nenas-market-stall.omaykan.com/ \
+  | grep -E 'og:|twitter:|<title>|shop-.*\.js'
+
+# The image it will then fetch: 200, an image/* type, sane dimensions.
+curl -sI 'https://omaykan.com/api/stores/12/image?v=ab12cd34'
+
+# An unknown shop still gets the page, not an error.
+curl -so /dev/null -w '%{http_code}\n' https://nobody-here.omaykan.com/
+```
+
+Then the validators, which are the only proof that counts:
+[Facebook's debugger](https://developers.facebook.com/tools/debug),
+[Twitter/X](https://cards-dev.twitter.com/validator),
+[LinkedIn](https://www.linkedin.com/post-inspector/), and a paste into Viber or
+Messenger.
+
+**Cards are cached twice over.** Laravel keeps the stamped HTML for six hours
+per shop, keyed on the shop's row, the shell's mtime and the controller's own —
+so a shop that changes its name or photo refreshes by itself. Facebook is the
+slow one: it keeps a scraped page for days, and no header here shortens that. An
+owner who renames their shop needs someone to re-scrape the URL in the Sharing
+Debugger before the old card goes away.
+
+**What is deliberately not in a card:** whether the shop is open. A paused shop
+still gets its preview, because Facebook would go on showing "not taking orders"
+for days after it reopened.
 
 ---
 

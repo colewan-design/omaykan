@@ -21,9 +21,9 @@ use App\Models\PosRole;
  * Signup creates no role rows. They appear only once an owner saves the roles
  * screen, so a fresh shop has none, and its roles are whatever the till ships
  * with. DEFAULTS is that list. **Keep it in step with `defaultRoles` in
- * packages/shared/src/index.ts** — same idea as RESERVED_SLUGS in
- * SignupController, and for the same reason: two copies of one rule, in two
- * languages, with nothing but this comment keeping them honest.
+ * packages/shared/src/index.ts** — same idea as ShopSubdomain::RESERVED, and
+ * for the same reason: two copies of one rule, in two languages, with nothing
+ * but this comment keeping them honest.
  */
 class RolePermissions
 {

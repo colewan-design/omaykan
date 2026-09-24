@@ -328,6 +328,12 @@ export interface CreateOnlineOrderFulfillment {
   method: 'pickup' | 'delivery'
   address?: string
   /**
+   * How the rider finds the door — "green gate beside the sari-sari store".
+   * Optional: an address that needs no landmark should not be made to invent
+   * one, and an order never fails for the want of it.
+   */
+  landmark?: string
+  /**
    * Optional drop-off coordinates, sent when the customer shares their
    * location. The API recomputes the fee from these rather than trusting the
    * client's quote.

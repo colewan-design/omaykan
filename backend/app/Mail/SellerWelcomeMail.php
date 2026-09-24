@@ -9,7 +9,7 @@ use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 
 /**
- * Sent to a merchant the moment their store exists, from the info@ mailbox.
+ * Sent to a merchant the moment their store exists, from the support@ mailbox.
  *
  * Carries no credential of any kind. It was written that way when signup
  * issued a shop-wide pairing code — email is a durable, forwardable,

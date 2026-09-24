@@ -122,6 +122,7 @@ class PlatformAdminController extends Controller
             return [
                 'organizationSlug' => $organization->slug,
                 'organizationName' => $organization->name,
+                'createdAt' => $organization->created_at?->toIso8601String(),
                 'suspended' => (bool) $organization->suspended,
                 // What the till and the storefront will actually do, computed
                 // by the same method they call. `suspended` and the subscription
@@ -132,6 +133,7 @@ class PlatformAdminController extends Controller
                     'name' => $store->name,
                     'businessMode' => $store->business_mode,
                     'businessTypeLabel' => $this->businessTypeLabelFor($store),
+                    'imageUrl' => StoreImageController::urlFor($store),
                     // The branch slug, not a credential. The shop-wide pairing
                     // code that used to sit here was retired with device
                     // pairing; staff sign in as themselves now.

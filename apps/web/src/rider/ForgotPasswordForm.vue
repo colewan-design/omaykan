@@ -61,7 +61,7 @@ async function submit() {
       <p class="rdr-flash rdr-flash--ok" style="margin: 0">{{ sent }}</p>
       <p class="rdr-field__hint" style="margin: 14px 0 0">
         Check the spam folder before asking again — the mail comes from
-        info@omaykan.com.
+        support@omaykan.com.
       </p>
     </div>
 

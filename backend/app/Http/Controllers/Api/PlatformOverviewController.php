@@ -20,19 +20,20 @@ use Illuminate\Support\Carbon;
  */
 class PlatformOverviewController extends Controller
 {
-    /** Days of history behind the dashboard's line. A month, near enough. */
-    private const WINDOW_DAYS = 30;
-
     public function __invoke(Request $request, PlatformInsights $insights): JsonResponse
     {
+        $validated = $request->validate([
+            'days' => ['sometimes', 'integer', 'in:7,30,90'],
+        ]);
+        $days = (int) ($validated['days'] ?? 30);
         $to = Carbon::now()->endOfDay();
-        $from = $to->copy()->subDays(self::WINDOW_DAYS - 1)->startOfDay();
+        $from = $to->copy()->subDays($days - 1)->startOfDay();
 
         return response()->json([
             'window' => [
                 'from' => $from->toDateString(),
                 'to' => $to->toDateString(),
-                'days' => self::WINDOW_DAYS,
+                'days' => $days,
             ],
             'headline' => $insights->headline($from, $to),
             'series' => $insights->dailySeries($from, $to),

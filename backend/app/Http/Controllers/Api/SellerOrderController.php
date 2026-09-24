@@ -373,6 +373,7 @@ class SellerOrderController extends Controller
             'guestContact' => $guest,
             'fulfillmentMethod' => $order->fulfillment_method,
             'deliveryAddress' => $order->delivery_address,
+            'deliveryLandmark' => $order->delivery_landmark,
             'deliveryStage' => $order->delivery_stage,
             'riderName' => $order->rider_name,
             'riderPhone' => $order->rider_phone,

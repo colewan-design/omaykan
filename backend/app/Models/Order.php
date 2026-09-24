@@ -35,6 +35,7 @@ class Order extends Model
         'payment_method',
         'fulfillment_method',
         'delivery_address',
+        'delivery_landmark',
         'delivery_lat',
         'delivery_lng',
         'delivery_distance_km',
@@ -264,6 +265,7 @@ class Order extends Model
             ],
             'dropoff' => [
                 'address' => $this->delivery_address,
+                'landmark' => $this->delivery_landmark,
                 'lat' => $this->delivery_lat !== null ? (float) $this->delivery_lat : null,
                 'lng' => $this->delivery_lng !== null ? (float) $this->delivery_lng : null,
             ],
@@ -308,6 +310,7 @@ class Order extends Model
             'totalCents' => $this->total_cents,
             'fulfillmentMethod' => $this->fulfillment_method,
             'deliveryAddress' => $this->delivery_address,
+            'deliveryLandmark' => $this->delivery_landmark,
             'deliveryStage' => $this->delivery_stage,
             'riderName' => $this->rider_name,
             'riderPhone' => $this->riderPhoneForCustomer(),

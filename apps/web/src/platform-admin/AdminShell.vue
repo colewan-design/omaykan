@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { ChevronDown, LogOut, type LucideIcon, Menu, Search, X } from '@lucide/vue'
+import { Bell, ChevronDown, LogOut, type LucideIcon, Menu, Search, X } from '@lucide/vue'
 import type { Operator } from './api'
 
 // The frame every operator screen sits in: the green rail down the left, the
@@ -94,7 +94,6 @@ function submitSearch() {
       <p class="shell__creed">
         Higher&nbsp;Communities,<br />Brighter&nbsp;Tomorrows
       </p>
-      <div class="sf-weave shell__weave" aria-hidden="true"></div>
     </aside>
 
     <div v-if="drawerOpen" class="shell__scrim" @click="drawerOpen = false"></div>
@@ -111,10 +110,15 @@ function submitSearch() {
           <input
             v-model="searchTerm"
             type="search"
-            placeholder="Search orders, products, people…"
+            placeholder="Search orders, sellers, products, customers…"
             aria-label="Search the marketplace"
           />
         </form>
+
+        <button type="button" class="shell__alerts" aria-label="Notifications">
+          <Bell :size="18" :stroke-width="1.8" aria-hidden="true" />
+          <span aria-hidden="true"></span>
+        </button>
 
         <div class="shell__account">
           <button
@@ -272,11 +276,6 @@ function submitSearch() {
   line-height: 1.45;
 }
 
-.shell__weave {
-  flex: none;
-  opacity: 0.85;
-}
-
 .shell__scrim {
   display: none;
 }
@@ -316,7 +315,36 @@ function submitSearch() {
 
 .shell__account {
   position: relative;
+}
+
+.shell__alerts {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
   margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--sf-ink);
+  cursor: pointer;
+}
+
+.shell__alerts:hover {
+  background: var(--sf-sand);
+}
+
+.shell__alerts span {
+  position: absolute;
+  top: 6px;
+  right: 7px;
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid var(--sf-paper);
+  border-radius: 50%;
+  background: #ef4936;
 }
 
 .shell__chip {

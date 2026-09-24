@@ -282,6 +282,8 @@ export interface DeliveryAssignment extends DeliveryOffer {
   deliveryStage: DeliveryStage
   acceptedAt: string | null
   deliveryAddress: string | null
+  /** How to find the door once the address has got the rider to the street. */
+  deliveryLandmark: string | null
   deliveryLat: number | null
   deliveryLng: number | null
   customerName: string | null

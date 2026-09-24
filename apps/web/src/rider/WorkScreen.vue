@@ -320,6 +320,11 @@ onMounted(() => void load())
           <p class="rdr-job__line">
             <MapPin :size="13" :stroke-width="1.8" />
             {{ job.deliveryAddress || job.dropoffArea || 'address from the shop' }}
+            <!-- On the board as well as the detail screen: this is the screen a
+                 rider actually has open on the way there. -->
+            <template v-if="job.deliveryLandmark">
+              <br><span class="rdr-job__landmark">{{ job.deliveryLandmark }}</span>
+            </template>
           </p>
         </div>
 

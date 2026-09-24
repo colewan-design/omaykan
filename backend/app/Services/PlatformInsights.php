@@ -84,6 +84,18 @@ class PlatformInsights
 
         $orders = $this->orderCount($from, $to);
         $previousOrders = $this->orderCount($previousFrom, $previousTo);
+        $averageOrderValue = $orders > 0 ? (int) round($sales / $orders) : 0;
+        $previousAverageOrderValue = $previousOrders > 0 ? (int) round($previousSales / $previousOrders) : 0;
+        $customersServed = $this->paidOrders()
+            ->whereBetween('created_at', [$from, $to])
+            ->whereNotNull('customer_account_id')
+            ->distinct()
+            ->count('customer_account_id');
+        $previousCustomersServed = $this->paidOrders()
+            ->whereBetween('created_at', [$previousFrom, $previousTo])
+            ->whereNotNull('customer_account_id')
+            ->distinct()
+            ->count('customer_account_id');
 
         return [
             'salesCents' => $sales,
@@ -98,12 +110,10 @@ class PlatformInsights
                 'stores',
                 fn ($q) => $q->where('status', 'active'),
             )->count(),
-            'averageOrderValueCents' => $orders > 0 ? (int) round($sales / $orders) : 0,
-            'customersServed' => $this->paidOrders()
-                ->whereBetween('created_at', [$from, $to])
-                ->whereNotNull('customer_account_id')
-                ->distinct()
-                ->count('customer_account_id'),
+            'averageOrderValueCents' => $averageOrderValue,
+            'averageOrderValueChangePercent' => $this->changePercent($averageOrderValue, $previousAverageOrderValue),
+            'customersServed' => $customersServed,
+            'customersServedChangePercent' => $this->changePercent($customersServed, $previousCustomersServed),
         ];
     }
 
@@ -268,6 +278,77 @@ class PlatformInsights
             'label' => $this->townFrom((string) $row->label),
             'cents' => (int) $row->orders,
         ]));
+    }
+
+    /** Repeat shoppers among paid customer accounts active in this window. */
+    public function returningCustomers(Carbon $from, Carbon $to): array
+    {
+        $current = $this->paidOrders()
+            ->whereBetween('created_at', [$from, $to])
+            ->whereNotNull('customer_account_id')
+            ->distinct()
+            ->pluck('customer_account_id');
+
+        $total = $current->count();
+        $returning = $total === 0 ? 0 : $this->paidOrders()
+            ->whereIn('customer_account_id', $current)
+            ->where('created_at', '<', $from)
+            ->distinct()
+            ->count('customer_account_id');
+
+        return [
+            'customers' => $returning,
+            'total' => $total,
+            'percent' => $total > 0 ? round(($returning / $total) * 100, 1) : 0,
+        ];
+    }
+
+    /** The products that contributed the most settled revenue in the window. */
+    public function topProducts(Carbon $from, Carbon $to): array
+    {
+        return OrderItem::query()
+            ->join('orders', 'orders.id', '=', 'order_items.order_id')
+            ->leftJoin('products', 'products.id', '=', 'order_items.product_id')
+            ->whereNull('orders.deleted_at')
+            ->where('orders.payment_status', self::PAID)
+            ->whereBetween('orders.created_at', [$from, $to])
+            ->groupBy('order_items.product_id', 'order_items.product_name')
+            ->orderByDesc('revenue_cents')
+            ->limit(5)
+            ->get([
+                'order_items.product_id',
+                DB::raw('coalesce(max(products.name), order_items.product_name) as label'),
+                DB::raw("max(nullif(products.image_url, '')) as image_url"),
+                DB::raw('sum(order_items.line_total_cents) as revenue_cents'),
+                DB::raw('sum(order_items.quantity) as quantity'),
+            ])
+            ->map(fn ($row) => [
+                'id' => $row->product_id,
+                'label' => (string) $row->label,
+                'imageUrl' => $row->image_url,
+                'revenueCents' => (int) $row->revenue_cents,
+                'quantity' => (float) $row->quantity,
+            ])
+            ->all();
+    }
+
+    /** Order volume by local hour, including zeroes so the bar axis is stable. */
+    public function ordersByHour(Carbon $from, Carbon $to): array
+    {
+        $counts = array_fill(0, 24, 0);
+
+        Order::query()
+            ->whereBetween('created_at', [$from, $to])
+            ->get(['created_at'])
+            ->each(function (Order $order) use (&$counts) {
+                $hour = (int) $order->created_at->copy()->setTimezone(config('app.timezone', 'UTC'))->format('G');
+                $counts[$hour]++;
+            });
+
+        return collect($counts)->map(fn ($value, $hour) => [
+            'hour' => (int) $hour,
+            'orders' => $value,
+        ])->values()->all();
     }
 
     /**

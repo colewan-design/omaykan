@@ -30,6 +30,7 @@ const props = defineProps<{
   /** Named in the tooltip beside the number, e.g. "in sales". */
   measure: string
   height?: number
+  emptyMessage?: string
 }>()
 
 const W = 720
@@ -215,7 +216,7 @@ const empty = computed(() => props.points.every((point) => point.value === 0))
       <small>{{ axisDate(hovered.date) }}</small>
     </div>
 
-    <p v-if="empty" class="trend__empty">Nothing recorded in this window yet.</p>
+    <p v-if="empty && emptyMessage !== ''" class="trend__empty">{{ emptyMessage ?? 'Nothing recorded in this window yet.' }}</p>
   </div>
 </template>
 

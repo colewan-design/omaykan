@@ -91,6 +91,11 @@ class OnlineOrderController extends Controller
 
             'fulfillment.method' => ['required', Rule::in(['pickup', 'delivery'])],
             'fulfillment.address' => ['nullable', 'string', 'max:500', 'required_if:fulfillment.method,delivery'],
+            // How the rider finds the door, beside the address that names the
+            // street. Optional on purpose — plenty of addresses need no
+            // landmark, and an order must never fail for want of one. Absent
+            // for pickup, and from any client that predates the field.
+            'fulfillment.landmark' => ['nullable', 'string', 'max:200'],
             // A malformed pair must not silently fall through to the flat-fee
             // path — that would let a caller dodge the distance surcharge by
             // sending only one coordinate.
@@ -333,6 +338,11 @@ class OnlineOrderController extends Controller
             'completed_at' => null,
             'fulfillment_method' => $fulfillment['method'],
             'delivery_address' => $isDelivery ? trim($fulfillment['address']) : null,
+            // Whitespace alone is not a landmark. Stored as null rather than
+            // '' so "has a landmark" is one check everywhere downstream.
+            'delivery_landmark' => $isDelivery
+                ? (trim($fulfillment['landmark'] ?? '') ?: null)
+                : null,
             'delivery_lat' => $isDelivery && isset($fulfillment['lat']) ? $fulfillment['lat'] : null,
             'delivery_lng' => $isDelivery && isset($fulfillment['lng']) ? $fulfillment['lng'] : null,
             'delivery_distance_km' => $deliveryDistanceKm,

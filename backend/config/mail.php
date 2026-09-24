@@ -117,8 +117,11 @@ return [
         // packages/shared/src/index.ts, and it is where replies go instead;
         // see 'reply_to' below. Splitting the two means the mailbox we send
         // through can change without moving the address printed all over the
-        // app and the marketing site.
-        'address' => env('MAIL_FROM_ADDRESS', 'info@omaykan.com'),
+        // app and the marketing site. They are the same mailbox today — the
+        // default matches production, so an environment that sets only the
+        // SMTP credentials sends as the account it authenticates with rather
+        // than as an address the host will refuse.
+        'address' => env('MAIL_FROM_ADDRESS', 'support@omaykan.com'),
         'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Omaykan')),
     ],
 
@@ -154,6 +157,6 @@ return [
     |
     */
 
-    'alerts_to' => env('MAIL_ALERTS_ADDRESS', 'info@omaykan.com'),
+    'alerts_to' => env('MAIL_ALERTS_ADDRESS', 'support@omaykan.com'),
 
 ];

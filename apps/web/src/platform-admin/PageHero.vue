@@ -1,40 +1,16 @@
 <script setup lang="ts">
-import { SIZES, srcSet } from '@pos/web/ui/responsiveImg'
-
-// The band at the top of every operator screen: the page's name over a strip
-// of highland, with whatever controls the page needs sitting to its right.
-//
-// The photograph is the same file the storefront's aisle listing uses. That is
-// deliberate rather than lazy — it is already in the browser's cache for
-// anyone who has looked at the shop, it is the one image on this site that is
-// unmistakably the Cordillera, and pointing both at one path means a new
-// photograph replaces it in both places at once.
-
 defineProps<{
   title: string
   subtitle?: string
+  eyebrow?: string
 }>()
-
-const BANNER = '/storefront/listing-highland.webp'
 </script>
 
 <template>
   <header class="hero">
-    <img
-      class="hero__img"
-      :src="BANNER"
-      :srcset="srcSet(BANNER)"
-      :sizes="SIZES.full"
-      alt=""
-      decoding="async"
-    />
-    <!-- The scrim, not the photo, is what makes the text legible: a band this
-         short crops to a different part of the image at every width, so the
-         contrast behind the words cannot be left to the photograph. -->
-    <div class="hero__scrim" aria-hidden="true"></div>
-
     <div class="hero__inner">
       <div class="hero__copy">
+        <p v-if="eyebrow" class="hero__eyebrow">{{ eyebrow }}</p>
         <h1 class="hero__title">{{ title }}</h1>
         <p v-if="subtitle" class="hero__sub">{{ subtitle }}</p>
       </div>
@@ -49,43 +25,35 @@ const BANNER = '/storefront/listing-highland.webp'
 <style scoped>
 .hero {
   position: relative;
-  margin: var(--adm-gutter) var(--adm-gutter) 0;
-  border-radius: var(--adm-radius);
+  margin: 12px var(--adm-gutter) 0;
   overflow: hidden;
-  background: var(--sf-forest);
-  isolation: isolate;
-}
-
-.hero__img,
-.hero__scrim {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.hero__img {
-  object-fit: cover;
-  object-position: 50% 58%;
-}
-
-.hero__scrim {
-  background: linear-gradient(100deg, rgba(23, 35, 28, 0.92) 12%, rgba(23, 35, 28, 0.58) 58%, rgba(23, 35, 28, 0.3) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--adm-radius);
+  background: #12382b;
 }
 
 .hero__inner {
-  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   justify-content: space-between;
   gap: 14px;
-  min-height: 104px;
+  min-height: 124px;
   padding: 20px 22px;
+  box-sizing: border-box;
 }
 
 .hero__copy {
   min-width: 0;
+}
+
+.hero__eyebrow {
+  margin: 0 0 5px;
+  color: rgba(237, 247, 240, 0.72);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
 }
 
 .hero__title {
@@ -99,8 +67,8 @@ const BANNER = '/storefront/listing-highland.webp'
 
 .hero__sub {
   margin: 6px 0 0;
-  max-width: 56ch;
-  color: rgba(246, 241, 232, 0.86);
+  max-width: 66ch;
+  color: rgba(246, 250, 247, 0.82);
   font-size: 13.5px;
   line-height: 1.45;
 }
@@ -113,12 +81,7 @@ const BANNER = '/storefront/listing-highland.webp'
 }
 
 @media (max-width: 560px) {
-  .hero {
-    margin: 16px 16px 0;
-  }
-
-  .hero__inner {
-    padding: 16px;
-  }
+  .hero { margin: 16px 16px 0; }
+  .hero__inner { padding: 16px; }
 }
 </style>

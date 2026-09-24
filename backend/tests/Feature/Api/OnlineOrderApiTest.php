@@ -253,6 +253,89 @@ class OnlineOrderApiTest extends TestCase
             ->assertJsonPath('deliveryFeeCents', 4900);
     }
 
+    // -- The landmark ---------------------------------------------------------
+
+    /**
+     * How a rider finds the door, kept out of the address that names the
+     * street. Stored as its own column so the two are not one string by the
+     * time anybody has to read them apart.
+     */
+    public function test_a_delivery_landmark_is_stored_beside_the_address(): void
+    {
+        $this->seed();
+        Event::fake([OrderPlaced::class]);
+
+        $this->postJson('/api/online-orders', $this->payload([
+            'fulfillment' => [
+                'method' => 'delivery',
+                'address' => 'Loakan, Baguio City',
+                'landmark' => 'Green gate beside the sari-sari store',
+            ],
+        ]))->assertCreated();
+
+        $order = Order::query()->firstOrFail();
+        $this->assertSame('Loakan, Baguio City', $order->delivery_address);
+        $this->assertSame('Green gate beside the sari-sari store', $order->delivery_landmark);
+    }
+
+    /** Optional, and an order must never fail for the want of one. */
+    public function test_a_delivery_without_a_landmark_is_accepted_and_stores_null(): void
+    {
+        $this->seed();
+        Event::fake([OrderPlaced::class]);
+
+        $this->postJson('/api/online-orders', $this->payload([
+            'fulfillment' => ['method' => 'delivery', 'address' => '12 Leonard Wood Road'],
+        ]))->assertCreated();
+
+        $this->assertNull(Order::query()->firstOrFail()->delivery_landmark);
+    }
+
+    /** Whitespace is not a landmark. Null, so "has one" is a single check. */
+    public function test_a_blank_landmark_is_stored_as_null(): void
+    {
+        $this->seed();
+        Event::fake([OrderPlaced::class]);
+
+        $this->postJson('/api/online-orders', $this->payload([
+            'fulfillment' => [
+                'method' => 'delivery',
+                'address' => '12 Leonard Wood Road',
+                'landmark' => '   ',
+            ],
+        ]))->assertCreated();
+
+        $this->assertNull(Order::query()->firstOrFail()->delivery_landmark);
+    }
+
+    /** A pickup order has no door to find, so it keeps no landmark either. */
+    public function test_a_pickup_order_keeps_no_landmark(): void
+    {
+        $this->seed();
+        Event::fake([OrderPlaced::class]);
+
+        $this->postJson('/api/online-orders', $this->payload([
+            'fulfillment' => ['method' => 'pickup', 'landmark' => 'Green gate'],
+        ]))->assertCreated();
+
+        $this->assertNull(Order::query()->firstOrFail()->delivery_landmark);
+    }
+
+    public function test_an_overlong_landmark_is_rejected(): void
+    {
+        $this->seed();
+
+        $this->postJson('/api/online-orders', $this->payload([
+            'fulfillment' => [
+                'method' => 'delivery',
+                'address' => '12 Leonard Wood Road',
+                'landmark' => str_repeat('a', 201),
+            ],
+        ]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('fulfillment.landmark');
+    }
+
     public function test_address_outside_the_delivery_radius_is_rejected(): void
     {
         $this->seed();

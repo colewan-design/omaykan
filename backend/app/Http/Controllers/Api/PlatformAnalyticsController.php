@@ -45,6 +45,9 @@ class PlatformAnalyticsController extends Controller
             'series' => $insights->dailySeries($from, $to),
             'salesByCategory' => $insights->salesByCategory($from, $to),
             'ordersByLocation' => $insights->ordersByLocation($from, $to),
+            'returningCustomers' => $insights->returningCustomers($from, $to),
+            'topProducts' => $insights->topProducts($from, $to),
+            'ordersByHour' => $insights->ordersByHour($from, $to),
         ]);
     }
 }

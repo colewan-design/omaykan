@@ -21,6 +21,7 @@ const {
   email,
   fulfillmentMethod,
   deliveryAddress,
+  deliveryLandmark,
   paymentMethod,
   addressChoice,
   locating,
@@ -113,6 +114,20 @@ const pickupAddress = computed(() => catalog.shop?.address || STORE_ADDRESS)
             @input="addressChoice = ''"
           />
         </label>
+
+        <!-- Its own field rather than more address. Optional, and said so on
+             the label: plenty of addresses need no landmark, and a required
+             one would only collect "n/a". -->
+        <label class="ckf-field">
+          <span>Landmark <span class="ckf-optional">optional</span></span>
+          <input
+            v-model="deliveryLandmark"
+            type="text"
+            maxlength="200"
+            placeholder="Green gate beside the sari-sari store"
+          >
+        </label>
+        <p class="ckf-hint">Anything that helps the rider find you — a shop, a gate, a colour.</p>
 
         <button type="button" class="ckf-locate" :disabled="locating" @click="checkout.useMyLocation()">
           <Crosshair :size="15" :stroke-width="2" />
@@ -209,6 +224,16 @@ const pickupAddress = computed(() => catalog.shop?.address || STORE_ADDRESS)
 }
 
 .ckf-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* Inside the label, so "optional" reads as part of the question rather than as
+   a second line of hint under it. Lighter than the label it sits in. */
+.ckf-optional {
+  display: inline;
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--sf-muted);
+}
 
 .ckf-hint { margin: 6px 0 0; font-size: 13px; line-height: 1.5; color: var(--sf-muted); }
 .ckf-warn { margin: 6px 0 0; font-size: 13px; font-weight: 600; color: #a05a14; }

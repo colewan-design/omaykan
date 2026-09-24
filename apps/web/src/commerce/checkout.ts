@@ -53,6 +53,12 @@ export function useCheckout(lines: ComputedRef<CartLine[]>) {
   const email = ref('')
   const fulfillmentMethod = ref<'pickup' | 'delivery'>('delivery')
   const deliveryAddress = ref('')
+  /**
+   * How the rider finds the door, kept apart from the address that names the
+   * street. A Baguio address is often a district — "Loakan, Baguio City" — and
+   * what closes the last fifty metres is the thing beside it.
+   */
+  const deliveryLandmark = ref('')
   const paymentMethod = ref<'cash' | 'ewallet'>('cash')
 
   /** Id of the saved address in use, or '' when typing a one-off one. */
@@ -114,7 +120,13 @@ export function useCheckout(lines: ComputedRef<CartLine[]>) {
     if (!address) return
 
     addressChoice.value = id
-    deliveryAddress.value = [addressLineFor(address), address.notes.trim()].filter(Boolean).join(' — ')
+    deliveryAddress.value = addressLineFor(address)
+    // The saved address's "notes for the rider" is a landmark under another
+    // name — its own form asks for "green gate beside the sari-sari store". It
+    // used to be glued onto the end of the address line with an em dash, which
+    // made one field out of two different things and left the rider reading
+    // directions and an address mixed together. It fills the landmark now.
+    deliveryLandmark.value = address.notes.trim()
     dropLat.value = address.lat
     dropLng.value = address.lng
     locationError.value = ''
@@ -123,6 +135,9 @@ export function useCheckout(lines: ComputedRef<CartLine[]>) {
   function useNewAddress() {
     addressChoice.value = ''
     deliveryAddress.value = ''
+    // Cleared with the address it belonged to. A landmark left behind from a
+    // saved address would point the rider at the wrong street entirely.
+    deliveryLandmark.value = ''
     dropLat.value = null
     dropLng.value = null
     locationError.value = ''
@@ -303,6 +318,10 @@ export function useCheckout(lines: ComputedRef<CartLine[]>) {
         {
           method: fulfillmentMethod.value,
           address: isDelivery.value ? deliveryAddress.value.trim() : undefined,
+          landmark:
+            isDelivery.value && deliveryLandmark.value.trim()
+              ? deliveryLandmark.value.trim()
+              : undefined,
           ...(isDelivery.value && hasDropPin.value ? { lat: dropLat.value!, lng: dropLng.value! } : {}),
         },
         paymentMethod.value,
@@ -357,6 +376,7 @@ export function useCheckout(lines: ComputedRef<CartLine[]>) {
     email,
     fulfillmentMethod,
     deliveryAddress,
+    deliveryLandmark,
     paymentMethod,
     addressChoice,
     locating,

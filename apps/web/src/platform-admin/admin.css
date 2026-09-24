@@ -30,7 +30,7 @@
 
   --sf-serif: 'Libre Caslon Text', Georgia, 'Times New Roman', serif;
 
-  --adm-sidebar: 232px;
+  --adm-sidebar: 214px;
   --adm-radius: 14px;
   --adm-gutter: 26px;
 
@@ -63,6 +63,15 @@
 
   color: var(--sf-ink);
   font-family: var(--font-sans);
+}
+
+/* This entry point does not import the POS app's reset. Keep the admin shell
+   flush to the viewport instead of inheriting the browser's 8px body margin. */
+html,
+body,
+#platform-admin-app {
+  min-height: 100%;
+  margin: 0;
 }
 
 /* ── Surfaces ────────────────────────────────────────────────────────── */

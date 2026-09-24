@@ -135,7 +135,9 @@ export interface Headline {
   activeProducts: number
   activeSellers: number
   averageOrderValueCents: number
+  averageOrderValueChangePercent: number | null
   customersServed: number
+  customersServedChangePercent: number | null
 }
 
 export interface SeriesPoint {
@@ -208,6 +210,15 @@ export interface Analytics {
   series: SeriesPoint[]
   salesByCategory: Breakdown[]
   ordersByLocation: Breakdown[]
+  returningCustomers: { customers: number; total: number; percent: number }
+  topProducts: Array<{
+    id: string | null
+    label: string
+    imageUrl: string | null
+    revenueCents: number
+    quantity: number
+  }>
+  ordersByHour: Array<{ hour: number; orders: number }>
 }
 
 export interface DeliverySettings {
@@ -244,19 +255,27 @@ export interface SellerAdmin {
   uid: string
   username: string
   fullName: string
+  email: string | null
   disabled: boolean
 }
 
 export interface SellerRow {
   organizationSlug: string
   organizationName: string
+  createdAt: string | null
   suspended: boolean
   /**
    * What the till and storefront will actually do — the server's own verdict,
    * computed from `suspended` and the subscription by the same method they call.
    */
   tenantAccess: 'allowed' | 'suspended' | 'unpaid'
-  store: { name: string; businessMode: string; businessTypeLabel?: string; storeCode: string } | null
+  store: {
+    name: string
+    businessMode: string
+    businessTypeLabel?: string
+    storeCode: string
+    imageUrl: string | null
+  } | null
   subscription: {
     status: string
     plan: string
@@ -346,7 +365,7 @@ export const api = {
     }
   },
 
-  overview: () => request<Overview>('/overview'),
+  overview: (days?: number) => request<Overview>('/overview', { query: { days } }),
 
   orders: (query: { q?: string; progress?: Progress | ''; days?: number; page?: number }) =>
     request<{ orders: OrderRow[]; counts: Record<Progress, number>; pagination: Pagination }>('/orders', { query }),

@@ -405,6 +405,12 @@ export interface OrderSummary {
   // Only meaningful for channel: 'online' — in-person orders have neither.
   fulfillmentMethod?: FulfillmentMethod
   deliveryAddress?: string | null
+  /**
+   * How the rider finds the door, kept apart from the address that names the
+   * street. Optional, and absent on every order placed before the field
+   * existed — never assume a delivery has one.
+   */
+  deliveryLandmark?: string | null
   // Delivery only, and only once the seller has acted: the dashboard names a
   // rider and walks the stage forward from there. Null on pickup orders and on
   // anything rung up at the register.
@@ -1392,8 +1398,10 @@ export function categoryTagVar(categoryId: string): string {
 export const STOREFRONT_PATH_PREFIX = '/shop/'
 
 /**
- * Labels that are the platform's, never a shop's. Signup refuses these as
- * slugs too (SignupController::RESERVED_SLUGS) — keep the two lists together.
+ * Labels that are the platform's, never a shop's. The server holds the same
+ * list in `App\Services\ShopSubdomain::RESERVED`, where signup refuses them as
+ * slugs and the shop page reads them off a request's hostname — keep the two
+ * lists together.
  */
 export const RESERVED_SHOP_SUBDOMAINS: readonly string[] = [
   'www', 'api', 'app', 'admin', 'mail', 'smtp', 'imap', 'pop', 'ftp', 'cdn',

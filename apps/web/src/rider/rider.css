@@ -1054,3 +1054,9 @@ body:has(.rdr-apply) { height: 100vh; height: 100svh; overflow: hidden; }
   pointer-events: none;
   opacity: 0.55;
 }
+
+/* The landmark under a job's address. Quieter than the address it follows —
+   the address is what a rider navigates to, this is what they read on arrival. */
+.rdr-job__landmark {
+  color: var(--rdr-muted);
+}

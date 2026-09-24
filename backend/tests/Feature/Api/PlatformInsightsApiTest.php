@@ -120,6 +120,19 @@ class PlatformInsightsApiTest extends TestCase
         $response->assertJsonPath('series.0.salesCents', 0);
     }
 
+    public function test_the_dashboard_accepts_only_supported_date_ranges(): void
+    {
+        $this->asOperator()->getJson('/api/platform-admin/overview?days=7')->assertOk()
+            ->assertJsonPath('window.days', 7)
+            ->assertJsonCount(7, 'series');
+
+        $this->asOperator()->getJson('/api/platform-admin/overview?days=90')->assertOk()
+            ->assertJsonPath('window.days', 90)
+            ->assertJsonCount(90, 'series');
+
+        $this->asOperator()->getJson('/api/platform-admin/overview?days=14')->assertUnprocessable();
+    }
+
     public function test_no_change_percentage_is_reported_when_there_is_nothing_to_compare_with(): void
     {
         $this->makeOrder(paymentStatus: 'paid', totalCents: 1000);
@@ -354,6 +367,21 @@ class PlatformInsightsApiTest extends TestCase
             ->assertJsonCount(7, 'series');
 
         $this->asOperator()->getJson('/api/platform-admin/analytics?days=5')->assertStatus(422);
+    }
+
+    public function test_analytics_includes_top_products_repeat_customers_and_every_hour(): void
+    {
+        $product = $this->makeProduct('Highland Strawberries');
+        $order = $this->makeOrder(paymentStatus: 'paid', totalCents: 49800);
+        $this->makeItem($order, $product, 49800);
+
+        $response = $this->asOperator()->getJson('/api/platform-admin/analytics')->assertOk()
+            ->assertJsonPath('topProducts.0.label', 'Highland Strawberries')
+            ->assertJsonPath('topProducts.0.revenueCents', 49800)
+            ->assertJsonCount(24, 'ordersByHour')
+            ->assertJsonStructure(['returningCustomers' => ['customers', 'total', 'percent']]);
+
+        $this->assertSame(1, collect($response->json('ordersByHour'))->sum('orders'));
     }
 
     // ── Settings ─────────────────────────────────────────────────────────

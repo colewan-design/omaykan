@@ -211,6 +211,11 @@ function smsHref(order: OrderSummary) {
           >{{ deliveryStageLabel(order.deliveryStage ?? 'pending') }}</span>
         </div>
         <p class="delivery-row__meta">{{ order.deliveryAddress || 'No address on the order' }}</p>
+        <!-- Worth a line of its own on the board the shop dispatches from: it
+             is what gets read down the phone to a rider who cannot find it. -->
+        <p v-if="order.deliveryLandmark" class="delivery-row__meta delivery-row__landmark">
+          {{ order.deliveryLandmark }}
+        </p>
 
         <!-- No rider yet. Three ways out of this state and all of them are
              fine: leave it on the platform board for whoever taps first, pick
@@ -436,6 +441,15 @@ function smsHref(order: OrderSummary) {
   margin: 0;
   color: var(--text-secondary);
   font: var(--type-caption);
+}
+
+/* Indented under the address rather than beside it, so the pair reads as one
+   destination and not as two separate facts about the order. */
+.delivery-row__landmark {
+  margin-top: 1px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border-subtle, var(--text-secondary));
+  font-style: italic;
 }
 
 .delivery-chip {

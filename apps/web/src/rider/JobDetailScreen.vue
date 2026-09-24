@@ -161,6 +161,9 @@ const itemCount = computed(() =>
         <MapPin :size="13" :stroke-width="1.8" />
         Deliver to
         <strong>{{ job.deliveryAddress || job.dropoffArea || 'address from the shop' }}</strong>
+        <!-- Under the address, not merged into it: the rider reads the address
+             to get to the street and this to find the door. -->
+        <template v-if="job.deliveryLandmark"><br>{{ job.deliveryLandmark }}</template>
         <template v-if="job.customerName"><br>{{ job.customerName }}</template>
       </p>
 

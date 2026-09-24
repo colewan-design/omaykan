@@ -265,6 +265,8 @@ class RiderDeliveryController extends Controller
             'deliveryStage' => $order->delivery_stage,
             'acceptedAt' => $order->rider_accepted_at?->toIso8601String(),
             'deliveryAddress' => $order->delivery_address,
+            // The rider is the one person this field exists for.
+            'deliveryLandmark' => $order->delivery_landmark,
             'deliveryLat' => $order->delivery_lat !== null ? (float) $order->delivery_lat : null,
             'deliveryLng' => $order->delivery_lng !== null ? (float) $order->delivery_lng : null,
             'customerName' => $guest['name'] ?? null,

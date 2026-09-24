@@ -244,6 +244,23 @@ Then, on the server, before swapping:
   product photos (`product-images/`, see §6b). Skipping this step
   leaves every store record pointing at a file that is no longer there, and the
   shop directory silently falls back to a product photo.
+
+  **Run it again immediately after the swap.** The window between the rsync and
+  the `mv` is one an owner can upload into, and what they upload lands in the
+  release that is still live — the one about to become the backup. That is not
+  hypothetical: on 2026-09-24 a shop replaced its photo at 03:01, between an
+  rsync and a swap minutes apart, and the new backend went live with a row
+  pointing at a file only the backup held. `GET /api/stores/{id}/image` 404s,
+  the directory card falls back to a product photo, and nothing in the deploy
+  output says a word about it. The second pass costs nothing and closes it:
+
+  ```bash
+  rsync -a /var/www/omaykan/backend.bak-<ts>-<label>/storage/app/ \
+           /var/www/omaykan/backend/storage/app/
+  chown -R www-data:www-data /var/www/omaykan/backend/storage
+  diff <(cd <bak>/storage/app && find . -type f | sort) \
+       <(cd /var/www/omaykan/backend/storage/app && find . -type f | sort)
+  ```
 - create `storage/framework/{cache/data,sessions,views}`, `storage/logs`,
   `bootstrap/cache`
 - delete any `bootstrap/cache/config.php` carried over from a build
@@ -1186,7 +1203,13 @@ once the page has loaded — the static HTML's own title is just "Shop".
 
 ### 6a.1 Link previews — a shop's card when its address is pasted
 
-**Not yet deployed.** Built 2026-09-24.
+**Live since 2026-09-24, 03:20 UTC.** All five shops answer their own address
+with their own card; an unknown slug still returns the plain shell at 200, and
+`/index.php` on a shop host is a 404 with no source leaked. Pre-change nginx:
+`/root/pre-shop-previews-20260924-105401.tgz`, and the server block alone at
+`/root/omaykan-shops.before-20260924-105401`. To undo, restore that file and
+reload — the release's own `SHOP_ROOT_DOMAIN` can stay, since nothing routes `/`
+to Laravel without the nginx half.
 
 A shop subdomain served one static file, identical for every shop: title "Shop
 — Omaykan", a generic description, no `og:` tags. The shop's name and photo

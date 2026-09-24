@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Heart, Minus, Plus } from '@lucide/vue'
+import { Heart, Minus, Plus, ShoppingCart } from '@lucide/vue'
 import { formatCurrency, type Product } from '@pos/shared/index'
 import ProductArt from '@pos/web/landing/ProductArt.vue'
 
@@ -42,6 +42,24 @@ const detail = computed(() =>
 const onSale = computed(
   () => (props.product.compareAtPriceCents ?? 0) > props.product.priceCents,
 )
+
+/** How much off, rounded down so the badge never overstates the saving. */
+const discount = computed(() => {
+  const was = props.product.compareAtPriceCents ?? 0
+  if (!onSale.value) return 0
+  return Math.floor(((was - props.product.priceCents) / was) * 100)
+})
+
+/**
+ * "Only 3 left", when the shop has said what counts as low for this item.
+ * Nothing is inferred: both the count and the threshold come off the product,
+ * and anything already at zero never reaches the storefront at all.
+ */
+const lowStock = computed(() => {
+  const { stockQty, lowStockThreshold } = props.product
+  if (stockQty == null || lowStockThreshold == null) return 0
+  return stockQty > 0 && stockQty <= lowStockThreshold ? stockQty : 0
+})
 </script>
 
 <template>
@@ -53,6 +71,10 @@ const onSale = computed(
         :merchant-image-url="merchantImageUrl"
         :size="featured ? 44 : 36"
       />
+      <p v-if="discount > 0 || lowStock > 0" class="mc__badges">
+        <span v-if="discount > 0" class="mc__badge mc__badge--sale">−{{ discount }}%</span>
+        <span v-if="lowStock > 0" class="mc__badge mc__badge--stock">Only {{ lowStock }} left</span>
+      </p>
       <button
         type="button"
         class="mc__favorite"
@@ -82,6 +104,7 @@ const onSale = computed(
           :aria-label="`Add ${product.name} to cart`"
           @click="emit('add', product)"
         >
+          <ShoppingCart class="mc__add-icon" :size="15" :stroke-width="2.2" aria-hidden="true" />
           Add
         </button>
 
@@ -119,6 +142,7 @@ const onSale = computed(
   border-radius: 14px;
   background: #fff;
   box-shadow: 0 7px 18px rgba(32, 45, 37, 0.08);
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
 .mc__art {
@@ -149,6 +173,31 @@ const onSale = computed(
 }
 
 .mc__favorite.is-liked { color: #bd4637; }
+
+.mc__badges {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  max-width: calc(100% - 52px);
+  margin: 0;
+  gap: 5px;
+}
+
+.mc__badge {
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.mc__badge--sale { background: #bd4637; color: #fff; }
+.mc__badge--stock { background: rgba(255, 255, 255, 0.95); color: #8a5a12; }
+.mc__add-icon { flex: 0 0 auto; }
 
 .mc__body {
   display: flex;
@@ -207,8 +256,12 @@ const onSale = computed(
 }
 
 .mc__add {
+  display: inline-flex;
   min-width: 72px;
   min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   padding: 0 14px;
   border: 1px solid #e4ddd2;
   border-radius: 12px;
@@ -270,6 +323,34 @@ const onSale = computed(
   outline-offset: 2px;
 }
 
+/* Desktop: the products are what the page is for, so the cards carry their
+   own weight — a taller photo, readable names, and a filled Add button. */
+@media (min-width: 900px) {
+  .mc { border-radius: 16px; }
+  .mc:hover { border-color: #dbd2c3; box-shadow: 0 12px 26px rgba(32, 45, 37, 0.12); transform: translateY(-2px); }
+  .mc__art { aspect-ratio: 1.42 / 1; border-radius: 15px 15px 8px 8px; }
+  .mc__favorite { top: 10px; right: 10px; width: 34px; height: 34px; }
+  .mc__badges { top: 10px; left: 10px; }
+  .mc__badge { padding: 5px 9px; font-size: 11px; }
+  .mc__body { padding: 13px 14px 14px; }
+  .mc__name { font-size: 15px; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; min-height: 2.5em; }
+  .mc__detail { margin-top: 5px; font-size: 11.5px; }
+  .mc__foot { gap: 10px; padding-top: 12px; }
+  .mc__price { font-size: 17px; }
+  .mc__was { font-size: 12.5px; }
+  .mc__add { min-width: 86px; min-height: 40px; border-color: #e7c9a5; background: #fff8ee; font-size: 13px; }
+  .mc__add:hover { border-color: #da6a18; background: #da6a18; color: #fff; }
+  .mc__step { min-height: 40px; border-radius: 12px; }
+  .mc__step-btn { width: 36px; height: 38px; }
+  .mc__qty { min-width: 22px; font-size: 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mc,
+  .mc__add { transition: none; }
+  .mc:hover { transform: none; }
+}
+
 @media (max-width: 520px) {
   .mc__body { padding: 7px 7px 8px; }
   .mc__name { font-size: 12px; }
@@ -278,6 +359,8 @@ const onSale = computed(
   .mc__detail { display: none; }
   .mc__favorite { top: 5px; right: 5px; width: 28px; height: 28px; }
   .mc__add { min-width: 52px; min-height: 30px; padding-inline: 8px; font-size: 11px; }
+  .mc__add-icon { display: none; }
+  .mc__badge { padding: 3px 7px; font-size: 9.5px; }
   .mc__step { min-height: 30px; }
   .mc__step-btn { width: 22px; height: 28px; }
   .mc__qty { min-width: 12px; font-size: 11px; }

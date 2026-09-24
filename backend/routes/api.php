@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\PlatformCustomerController;
 use App\Http\Controllers\Api\PlatformOrderController;
 use App\Http\Controllers\Api\PlatformOverviewController;
 use App\Http\Controllers\Api\PlatformProductController;
+use App\Http\Controllers\Api\PlatformReportController;
 use App\Http\Controllers\Api\PlatformSettingsController;
 use App\Http\Controllers\Api\RiderAccountController;
 use App\Http\Controllers\Api\RiderAuthController;
@@ -205,6 +206,7 @@ Route::middleware(['auth:platform', 'platform.active', 'throttle:60,1'])->group(
     Route::get('/platform-admin/orders', [PlatformOrderController::class, 'index']);
     Route::get('/platform-admin/products', [PlatformProductController::class, 'index']);
     Route::get('/platform-admin/analytics', PlatformAnalyticsController::class);
+    Route::get('/platform-admin/reports', PlatformReportController::class);
     Route::get('/platform-admin/settings', [PlatformSettingsController::class, 'show']);
     Route::put('/platform-admin/settings', [PlatformSettingsController::class, 'update']);
 

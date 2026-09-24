@@ -56,6 +56,7 @@ class PlatformInsightsApiTest extends TestCase
             '/api/platform-admin/orders',
             '/api/platform-admin/products',
             '/api/platform-admin/analytics',
+            '/api/platform-admin/reports',
             '/api/platform-admin/settings',
         ] as $path) {
             $this->getJson($path)->assertStatus(401);
@@ -419,6 +420,46 @@ class PlatformInsightsApiTest extends TestCase
         $this->asOperator()->putJson('/api/platform-admin/settings', [
             'website' => 'not-a-url',
         ])->assertStatus(422);
+    }
+
+    public function test_reports_reconcile_sales_discounts_tax_and_payment_methods(): void
+    {
+        $cash = $this->makeOrder('paid', 11800, ticket: 'R-1001');
+        $cash->update([
+            'subtotal_cents' => 11000,
+            'discount_cents' => 1000,
+            'tax_cents' => 1800,
+            'payment_method' => 'cash',
+            'business_mode' => 'delivery',
+        ]);
+
+        $gcash = $this->makeOrder('paid', 5600, ticket: 'R-1002');
+        $gcash->update([
+            'subtotal_cents' => 5000,
+            'discount_cents' => 0,
+            'tax_cents' => 600,
+            'payment_method' => 'gcash',
+            'business_mode' => 'pickup',
+        ]);
+
+        $response = $this->asOperator()->getJson('/api/platform-admin/reports?range=today')->assertOk();
+
+        $response
+            ->assertJsonPath('headline.grossSalesCents', 16000)
+            ->assertJsonPath('headline.netSalesCents', 15000)
+            ->assertJsonPath('headline.taxCents', 2400)
+            ->assertJsonPath('headline.discountCents', 1000)
+            ->assertJsonPath('headline.orders', 2)
+            ->assertJsonPath('paymentsByMethod.0.label', 'Cash')
+            ->assertJsonPath('paymentsByMethod.0.value', 11800)
+            ->assertJsonPath('paymentsByMethod.1.label', 'GCash')
+            ->assertJsonCount(2, 'recentTransactions');
+    }
+
+    public function test_reports_accept_only_the_ranges_the_screen_offers(): void
+    {
+        $this->asOperator()->getJson('/api/platform-admin/reports?range=7')->assertOk();
+        $this->asOperator()->getJson('/api/platform-admin/reports?range=quarter')->assertStatus(422);
     }
 
     // ── Fixtures ─────────────────────────────────────────────────────────

@@ -8,6 +8,7 @@ import {
 import {
   BarChart3,
   Bike,
+  ClipboardList,
   LayoutDashboard,
   MessageSquare,
   Package,
@@ -24,6 +25,7 @@ import ProductsView from './views/ProductsView.vue'
 import SellersView from './views/SellersView.vue'
 import CustomersView from './views/CustomersView.vue'
 import AnalyticsView from './views/AnalyticsView.vue'
+import ReportsView from './views/ReportsView.vue'
 import SettingsView from './views/SettingsView.vue'
 import SupportInbox from './SupportInbox.vue'
 import RiderReview from './RiderReview.vue'
@@ -56,6 +58,7 @@ const VIEWS = [
   { key: 'sellers', label: 'Sellers', icon: Store },
   { key: 'customers', label: 'Customers', icon: Users },
   { key: 'analytics', label: 'Analytics', icon: BarChart3 },
+  { key: 'reports', label: 'Reports', icon: ClipboardList },
   { key: 'messages', label: 'Messages', icon: MessageSquare },
   { key: 'riders', label: 'Rider review', icon: Bike },
   { key: 'settings', label: 'Settings', icon: SettingsIcon },
@@ -284,6 +287,7 @@ watch(view, () => {
       <SellersView v-else-if="view === 'sellers'" :search="search" />
       <CustomersView v-else-if="view === 'customers'" :search="search" />
       <AnalyticsView v-else-if="view === 'analytics'" />
+      <ReportsView v-else-if="view === 'reports'" />
       <SettingsView v-else-if="view === 'settings'" :operator="operator" />
 
       <!-- The two screens that predate the shared api module. They own their

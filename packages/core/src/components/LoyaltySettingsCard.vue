@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Award } from '@lucide/vue'
+import { Gift } from '@lucide/vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { formatCurrency } from '@pos/shared/index'
 import type { LoyaltyProgram } from '@pos/data/index'
@@ -82,18 +82,40 @@ onMounted(async () => {
 <template>
   <section v-if="program" class="loyalty-card">
     <div class="loyalty-card__head">
-      <span class="loyalty-card__icon" aria-hidden="true"><Award :size="18" /></span>
+      <span class="loyalty-card__icon" aria-hidden="true"><Gift :size="21" /></span>
       <div class="loyalty-card__copy">
-        <strong>Points {{ program.enabled ? 'are on' : 'are off' }}</strong>
+        <strong>Loyalty points are currently {{ program.enabled ? 'on' : 'off' }}</strong>
         <small v-if="program.enabled">{{ summary }} Only enrolled customers earn.</small>
-        <small v-else>Turn on to let enrolled customers earn points at the counter and spend them as a discount.</small>
+        <small v-else>
+          Turn on loyalty points to reward your customers, encourage repeat purchases, and grow long-term loyalty.
+        </small>
       </div>
-      <button class="secondary-button" type="button" :disabled="saving" @click="save({ enabled: !program.enabled })">
-        {{ program.enabled ? 'Turn off' : 'Turn on' }}
+      <button
+        class="loyalty-card__switch"
+        :class="program.enabled ? 'secondary-button' : 'primary-button'"
+        type="button"
+        :disabled="saving"
+        @click="save({ enabled: !program.enabled })"
+      >
+        {{ program.enabled ? 'Turn off loyalty' : 'Turn on loyalty' }}
       </button>
       <button class="loyalty-card__rules-toggle" type="button" :aria-expanded="open" @click="open = !open">
         {{ open ? 'Hide rules' : 'Rules' }}
       </button>
+
+      <!-- The present on the right is decoration, and says nothing the copy
+           beside it doesn't already say. -->
+      <svg class="loyalty-card__art" viewBox="0 0 132 104" aria-hidden="true" focusable="false">
+        <rect class="loyalty-card__art-box" x="30" y="46" width="72" height="46" rx="6" />
+        <rect class="loyalty-card__art-lid" x="24" y="33" width="84" height="18" rx="5" />
+        <rect class="loyalty-card__art-ribbon" x="60" y="33" width="12" height="59" />
+        <path class="loyalty-card__art-bow" d="M66 33c-4-12-14-17-19-13s-1 13 19 13zm0 0c4-12 14-17 19-13s1 13-19 13z" />
+        <g class="loyalty-card__art-spark">
+          <path d="M113 24l2.4 5.6 5.6 2.4-5.6 2.4-2.4 5.6-2.4-5.6-5.6-2.4 5.6-2.4z" />
+          <path d="M20 16l1.6 3.7 3.7 1.6-3.7 1.6L20 26.6l-1.6-3.7-3.7-1.6 3.7-1.6z" />
+          <path d="M119 66l1.3 3 3 1.3-3 1.3-1.3 3-1.3-3-3-1.3 3-1.3z" />
+        </g>
+      </svg>
     </div>
 
     <form v-if="open" class="loyalty-card__rules" @submit.prevent="saveRules">
@@ -124,43 +146,69 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+/*
+ * A banner, not a settings row: the programme is off in most shops, and this
+ * is the one place that invites turning it on. It tints from the shop's own
+ * accent so a store on another colour theme doesn't get a stray green band.
+ */
 .loyalty-card {
+  position: relative;
   display: grid;
   gap: 12px;
-  padding: 14px 16px;
-  border: 1px solid var(--separator);
-  border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
+  padding: 16px 18px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  border-radius: 15px;
+  background:
+    linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--accent) 9%, var(--bg-elevated)) 0%,
+      color-mix(in srgb, var(--accent) 4%, var(--bg-elevated)) 52%,
+      var(--bg-elevated) 100%
+    );
 }
 
 .loyalty-card__head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 12px;
+  gap: 10px 14px;
 }
 
 .loyalty-card__icon {
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-elevated));
   color: var(--accent);
 }
 
 .loyalty-card__copy {
   display: grid;
   flex: 1;
-  min-width: 200px;
-  gap: 2px;
-  font-size: 13px;
+  min-width: 220px;
+  gap: 3px;
   color: var(--text-primary);
 }
 
+.loyalty-card__copy strong {
+  font: 700 1rem/1.35rem var(--font-sans);
+  letter-spacing: -0.01em;
+}
+
 .loyalty-card__copy small {
+  max-width: 68ch;
   color: var(--text-secondary);
+  font: 400 0.8125rem/1.15rem var(--font-sans);
+}
+
+.loyalty-card__switch {
+  min-height: 40px;
+  padding-inline: 16px;
+  border-radius: 11px;
+  font: 600 0.875rem/1rem var(--font-sans);
 }
 
 .loyalty-card__rules-toggle {
@@ -172,6 +220,25 @@ onMounted(async () => {
   font-weight: 600;
   color: var(--accent);
   cursor: pointer;
+}
+
+.loyalty-card__art {
+  width: 118px;
+  height: 92px;
+  margin: -14px -6px -14px 0;
+  flex: none;
+}
+
+.loyalty-card__art-box    { fill: color-mix(in srgb, var(--accent) 34%, transparent); }
+.loyalty-card__art-lid    { fill: color-mix(in srgb, var(--accent) 52%, transparent); }
+.loyalty-card__art-ribbon,
+.loyalty-card__art-bow    { fill: color-mix(in srgb, var(--accent) 72%, transparent); }
+.loyalty-card__art-spark  { fill: color-mix(in srgb, var(--accent) 40%, transparent); }
+
+@media (max-width: 900px) {
+  .loyalty-card__art {
+    display: none;
+  }
 }
 
 .loyalty-card__rules {

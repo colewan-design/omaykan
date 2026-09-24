@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Organization;
+use App\Models\Payment;
 use App\Models\Product;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
@@ -47,6 +48,9 @@ class PlatformInsights
 
     /** Rows on the dashboard's "recent orders" list. */
     private const RECENT_LIMIT = 5;
+
+    /** Rows on the audit-friendly reports transaction list. */
+    private const REPORT_RECENT_LIMIT = 6;
 
     /** Locations and categories worth drawing before the tail is folded up. */
     private const BREAKDOWN_LIMIT = 7;
@@ -426,6 +430,184 @@ class PlatformInsights
                 'createdAt' => $order->created_at?->toIso8601String(),
             ])
             ->all();
+    }
+
+    /**
+     * Accounting-oriented headline figures for the reports screen.
+     *
+     * Gross is the merchandise subtotal before discounts; net removes those
+     * discounts and excludes tax. Collected is intentionally not presented as
+     * net sales because an order total can also contain tax or delivery fees.
+     */
+    public function reportHeadline(Carbon $from, Carbon $to): array
+    {
+        $length = max(1, $from->diffInDays($to) + 1);
+        $previousTo = $from->copy()->subDay()->endOfDay();
+        $previousFrom = $previousTo->copy()->subDays($length - 1)->startOfDay();
+        $current = $this->reportTotals($from, $to);
+        $previous = $this->reportTotals($previousFrom, $previousTo);
+
+        return [
+            ...$current,
+            'grossSalesChangePercent' => $this->changePercent($current['grossSalesCents'], $previous['grossSalesCents']),
+            'netSalesChangePercent' => $this->changePercent($current['netSalesCents'], $previous['netSalesCents']),
+            'taxChangePercent' => $this->changePercent($current['taxCents'], $previous['taxCents']),
+            'discountChangePercent' => $this->changePercent($current['discountCents'], $previous['discountCents']),
+            'ordersChangePercent' => $this->changePercent($current['orders'], $previous['orders']),
+            'averageOrderValueChangePercent' => $this->changePercent($current['averageOrderValueCents'], $previous['averageOrderValueCents']),
+        ];
+    }
+
+    /** @return array{grossSalesCents:int,netSalesCents:int,collectedCents:int,taxCents:int,discountCents:int,orders:int,averageOrderValueCents:int} */
+    private function reportTotals(Carbon $from, Carbon $to): array
+    {
+        $row = $this->paidOrders()
+            ->whereBetween('created_at', [$from, $to])
+            ->selectRaw('coalesce(sum(subtotal_cents), 0) as gross_cents')
+            ->selectRaw('coalesce(sum(discount_cents), 0) as discount_cents')
+            ->selectRaw('coalesce(sum(tax_cents), 0) as tax_cents')
+            ->selectRaw('coalesce(sum(total_cents), 0) as collected_cents')
+            ->selectRaw('count(*) as orders')
+            ->first();
+
+        $gross = (int) ($row?->gross_cents ?? 0);
+        $discounts = (int) ($row?->discount_cents ?? 0);
+        $orders = (int) ($row?->orders ?? 0);
+        $net = max(0, $gross - $discounts);
+
+        return [
+            'grossSalesCents' => $gross,
+            'netSalesCents' => $net,
+            'collectedCents' => (int) ($row?->collected_cents ?? 0),
+            'taxCents' => (int) ($row?->tax_cents ?? 0),
+            'discountCents' => $discounts,
+            'orders' => $orders,
+            'averageOrderValueCents' => $orders > 0 ? (int) round($net / $orders) : 0,
+        ];
+    }
+
+    /** Net sales after discounts, with a zero for every day in the window. */
+    public function reportSeries(Carbon $from, Carbon $to): array
+    {
+        $rows = $this->paidOrders()
+            ->whereBetween('created_at', [$from, $to])
+            ->groupBy('day')
+            ->get([
+                DB::raw('date(created_at) as day'),
+                DB::raw('sum(subtotal_cents - discount_cents) as cents'),
+            ])
+            ->keyBy(fn ($row) => (string) $row->day);
+
+        $points = [];
+        for ($day = $from->copy()->startOfDay(); $day->lte($to); $day->addDay()) {
+            $key = $day->toDateString();
+            $points[] = ['date' => $key, 'salesCents' => (int) ($rows[$key]->cents ?? 0)];
+        }
+
+        return $points;
+    }
+
+    /** Collected totals grouped by the tender actually recorded for each order. */
+    public function paymentsByMethod(Carbon $from, Carbon $to): array
+    {
+        $totals = [];
+
+        Payment::query()
+            ->join('orders', 'orders.id', '=', 'payments.order_id')
+            ->whereNull('orders.deleted_at')
+            ->where('orders.payment_status', self::PAID)
+            ->whereBetween('orders.created_at', [$from, $to])
+            ->groupBy('payments.payment_method')
+            ->get(['payments.payment_method', DB::raw('sum(payments.amount_cents) as cents')])
+            ->each(function ($row) use (&$totals) {
+                $key = $this->paymentLabel((string) $row->payment_method);
+                $totals[$key] = ($totals[$key] ?? 0) + (int) $row->cents;
+            });
+
+        $this->paidOrders()
+            ->whereBetween('created_at', [$from, $to])
+            ->whereDoesntHave('payments')
+            ->groupBy('payment_method')
+            ->get(['payment_method', DB::raw('sum(total_cents) as cents')])
+            ->each(function ($row) use (&$totals) {
+                $key = $this->paymentLabel((string) ($row->payment_method ?? ''));
+                $totals[$key] = ($totals[$key] ?? 0) + (int) $row->cents;
+            });
+
+        arsort($totals);
+
+        return collect($totals)->map(fn ($cents, $label) => [
+            'label' => $label,
+            'value' => $cents,
+        ])->values()->all();
+    }
+
+    /** Net sales grouped by how the order was fulfilled. */
+    public function salesByBusinessMode(Carbon $from, Carbon $to): array
+    {
+        return $this->paidOrders()
+            ->whereBetween('created_at', [$from, $to])
+            ->groupBy('mode')
+            ->orderByDesc('cents')
+            ->get([
+                DB::raw("coalesce(nullif(business_mode, ''), nullif(fulfillment_method, ''), nullif(order_type, ''), 'unspecified') as mode"),
+                DB::raw('sum(subtotal_cents - discount_cents) as cents'),
+                DB::raw('count(*) as orders'),
+            ])
+            ->map(fn ($row) => [
+                'label' => str((string) $row->mode)->replace('_', ' ')->headline()->toString(),
+                'value' => (int) $row->cents,
+                'orders' => (int) $row->orders,
+            ])
+            ->all();
+    }
+
+    /** Paid order volume by local hour, including zeroes for a stable axis. */
+    public function paidOrdersByHour(Carbon $from, Carbon $to): array
+    {
+        $counts = array_fill(0, 24, 0);
+        $this->paidOrders()->whereBetween('created_at', [$from, $to])->get(['created_at'])
+            ->each(function (Order $order) use (&$counts) {
+                $hour = (int) $order->created_at->copy()->setTimezone(config('app.timezone', 'UTC'))->format('G');
+                $counts[$hour]++;
+            });
+
+        return collect($counts)->map(fn ($orders, $hour) => ['hour' => (int) $hour, 'orders' => $orders])->values()->all();
+    }
+
+    /** The latest paid records inside the selected report window. */
+    public function recentTransactions(Carbon $from, Carbon $to): array
+    {
+        return $this->paidOrders()
+            ->with(['store:id,name', 'payments:id,order_id,payment_method'])
+            ->withCount('items')
+            ->whereBetween('created_at', [$from, $to])
+            ->latest('created_at')
+            ->limit(self::REPORT_RECENT_LIMIT)
+            ->get()
+            ->map(fn (Order $order) => [
+                'id' => $order->id,
+                'ticketNumber' => $order->ticket_number,
+                'storeName' => $order->store?->name,
+                'items' => (int) $order->items_count,
+                'totalCents' => (int) $order->total_cents,
+                'paymentMethod' => $this->paymentLabel((string) ($order->payment_method ?: $order->payments->first()?->payment_method)),
+                'createdAt' => $order->created_at?->toIso8601String(),
+            ])
+            ->all();
+    }
+
+    private function paymentLabel(string $method): string
+    {
+        return match (strtolower(trim($method))) {
+            'cash', 'cod', 'cash_on_delivery' => 'Cash',
+            'gcash' => 'GCash',
+            'maya', 'paymaya' => 'Maya',
+            'card', 'credit_card', 'debit_card' => 'Card',
+            'bank', 'bank_transfer' => 'Bank transfer',
+            'ewallet', 'e-wallet' => 'E-wallet',
+            default => $method !== '' ? str($method)->replace('_', ' ')->headline()->toString() : 'Unspecified',
+        };
     }
 
     /**

@@ -4,6 +4,7 @@ import { computed } from 'vue'
 const props = defineProps<{
   rows: Array<{ label: string; value: number }>
   format: (value: number) => string
+  totalLabel?: string
 }>()
 const colors = ['#195d39', '#75a987', '#df6533', '#efb42b', '#368bd1', '#8d68c9', '#c6a55b']
 const circumference = 314.16
@@ -27,7 +28,7 @@ const segments = computed(() => {
         <circle cx="60" cy="60" r="50" class="donut__track" />
         <circle v-for="segment in segments" :key="segment.label" cx="60" cy="60" r="50" class="donut__segment" :stroke="segment.color" :stroke-dasharray="segment.dasharray" :stroke-dashoffset="segment.dashoffset" />
       </svg>
-      <p><strong>{{ format(total) }}</strong><span>Total sales</span></p>
+      <p><strong>{{ format(total) }}</strong><span>{{ totalLabel ?? 'Total sales' }}</span></p>
     </div>
     <ul>
       <li v-for="segment in segments" :key="segment.label"><i :style="{ background: segment.color }"></i><span>{{ segment.label }}</span><strong>{{ format(segment.value) }}</strong><small>{{ Math.round(segment.percent) }}%</small></li>

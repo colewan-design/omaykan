@@ -221,6 +221,42 @@ export interface Analytics {
   ordersByHour: Array<{ hour: number; orders: number }>
 }
 
+export type ReportRange = 'today' | '7' | '30' | '365' | 'all'
+
+export interface ReportSnapshot {
+  window: { from: string; to: string; range: ReportRange; days: number }
+  headline: {
+    grossSalesCents: number
+    netSalesCents: number
+    collectedCents: number
+    taxCents: number
+    discountCents: number
+    orders: number
+    averageOrderValueCents: number
+    grossSalesChangePercent: number | null
+    netSalesChangePercent: number | null
+    taxChangePercent: number | null
+    discountChangePercent: number | null
+    ordersChangePercent: number | null
+    averageOrderValueChangePercent: number | null
+  }
+  series: Array<{ date: string; salesCents: number }>
+  paymentsByMethod: Breakdown[]
+  salesByBusinessMode: Array<Breakdown & { orders: number }>
+  topProducts: Analytics['topProducts']
+  ordersByHour: Array<{ hour: number; orders: number }>
+  recentTransactions: Array<{
+    id: string
+    ticketNumber: string
+    storeName: string | null
+    items: number
+    totalCents: number
+    paymentMethod: string
+    createdAt: string | null
+  }>
+  sourceNote: string
+}
+
 export interface DeliverySettings {
   baseFeeCents: number
   freeDeliveryOverCents: number
@@ -374,6 +410,8 @@ export const api = {
     request<{ products: ProductRow[]; categories: CategoryTab[]; pagination: Pagination }>('/products', { query }),
 
   analytics: (days: number) => request<Analytics>('/analytics', { query: { days } }),
+
+  report: (range: ReportRange) => request<ReportSnapshot>('/reports', { query: { range } }),
 
   settings: () => request<{ settings: Settings }>('/settings'),
 

@@ -5,14 +5,33 @@ import type { ServerResponse } from 'node:http'
 
 // Serves app.html and landing.html from cleaner public routes in dev and preview.
 function entryRouteAliases(shopRootDomain: string): Plugin {
-  // The signup form is the *seller* one — it asks for a business name and a
-  // business type — so it lives at /seller/signup. /signup redirects there
-  // rather than 404ing: it is the URL the seller Android app opens, and
-  // every link that went out before the move. Production does the same in
-  // nginx; this keeps dev and preview honest about it.
+  /*
+   * Short paths that are not pages of their own.
+   *
+   * `/signup` — the signup form is the *seller* one (it asks for a business
+   * name and a business type), so it lives at /seller/signup. This redirects
+   * rather than 404ing: it is the URL the seller Android app opens, and every
+   * link that went out before the move.
+   *
+   * `/founding` — the founding-seller campaign's short address, the one that
+   * fits on a flyer and inside a QR code. The page itself sits beside the
+   * other seller surface at /seller/founding.
+   *
+   * Production does the same in nginx; this keeps dev and preview honest
+   * about it.
+   */
+  const SHORT_PATHS: Record<string, string> = {
+    '/signup': '/seller/signup',
+    '/founding': '/seller/founding',
+  }
+
   const redirect = (req: { url?: string }, res: ServerResponse) => {
-    if (req.url !== '/signup' && !req.url?.startsWith('/signup?')) return false
-    res.writeHead(301, { Location: req.url.replace('/signup', '/seller/signup') })
+    const url = req.url ?? ''
+    const [pathname] = url.split('?')
+    const target = SHORT_PATHS[pathname ?? '']
+    if (!target) return false
+
+    res.writeHead(301, { Location: url.replace(pathname!, target) })
     res.end()
     return true
   }
@@ -48,6 +67,11 @@ function entryRouteAliases(shopRootDomain: string): Plugin {
 
     if (req.url === '/seller/signup' || req.url?.startsWith('/seller/signup?')) {
       req.url = req.url.replace('/seller/signup', '/signup.html')
+      return
+    }
+
+    if (req.url === '/seller/founding' || req.url?.startsWith('/seller/founding?')) {
+      req.url = req.url.replace('/seller/founding', '/founding.html')
       return
     }
 
@@ -194,6 +218,7 @@ export default defineConfig(({ mode }) => {
           landing: path.resolve(__dirname, 'landing.html'),
           about: path.resolve(__dirname, 'about.html'),
           signup: path.resolve(__dirname, 'signup.html'),
+          founding: path.resolve(__dirname, 'founding.html'),
           account: path.resolve(__dirname, 'account.html'),
           cart: path.resolve(__dirname, 'cart.html'),
           shop: path.resolve(__dirname, 'shop.html'),

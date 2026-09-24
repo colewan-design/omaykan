@@ -71,13 +71,27 @@ const ROUTES = [
   { url: '/landing', file: 'landing.html', minLinks: 20, minText: 2000, minProducts: 10 },
   { url: '/about', file: 'about.html', minLinks: 3, minText: 800 },
   { url: '/seller/signup', file: 'signup.html', minLinks: 1, minText: 400 },
+  // The campaign page is mostly copy, and only its header and footer carry
+  // links, so text is what proves it rendered. The floor is well under what it
+  // actually measures (~3000): innerText does not count a closed <details>, so
+  // the six FAQ answers are invisible to this check, and a floor set just
+  // below today's number would fail the build over an edit to one paragraph.
+  { url: '/seller/founding', file: 'founding.html', minLinks: 5, minText: 1800 },
   // The rider portal is a sign-in card and genuinely has no anchors, so text
   // is the only evidence it rendered.
   { url: '/rider', file: 'rider.html', minLinks: 0, minText: 400 },
 ]
 
-/** Pages a crawler should be told about but that are not prerendered. */
-const EXTRA_SITEMAP_PATHS = ['/about', '/seller/signup', '/rider']
+/**
+ * The static paths in sitemap.xml, besides `/` and the shops.
+ *
+ * Kept separate from ROUTES rather than derived from it: `/` and `/landing`
+ * run the same entry and show the same catalog, so listing both would offer a
+ * crawler two addresses for one page. Everything else here happens to be
+ * prerendered as well, but being in the sitemap and being prerendered are
+ * different decisions — a page can want one without the other.
+ */
+const EXTRA_SITEMAP_PATHS = ['/about', '/seller/signup', '/seller/founding', '/rider']
 
 function isoDate() {
   return new Date().toISOString().slice(0, 10)

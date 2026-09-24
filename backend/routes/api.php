@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\CustomerAuthController;
 use App\Http\Controllers\Api\CustomerConversationController;
 use App\Http\Controllers\Api\CustomerOrderController;
 use App\Http\Controllers\Api\CustomerPaymentMethodController;
+use App\Http\Controllers\Api\FoundingSellerController;
 use App\Http\Controllers\Api\LoyaltyController;
 use App\Http\Controllers\Api\OnlineOrderController;
 use App\Http\Controllers\Api\PayMongoWebhookController;
@@ -152,6 +153,24 @@ Route::post('/webhooks/paymongo', [PayMongoWebhookController::class, 'handle'])
 
 Route::post('/signup', [SignupController::class, 'store'])
     ->middleware('throttle:5,1');
+
+/*
+ * The founding-seller campaign page (`/seller/founding`).
+ *
+ * Public and unauthenticated, because an applicant has no account yet — that
+ * is the whole point of the page. Neither route creates a tenant: `store`
+ * writes one `seller_applications` row for an operator to read, which is why
+ * it can sit on a far looser throttle than `/signup` above.
+ *
+ * `status` is read on every page load, so it is throttled for a browser rather
+ * than for a form: a visitor opening the page twice and a crawler walking it
+ * must not trip a limit on what is effectively a public counter.
+ */
+Route::get('/founding-sellers/status', [FoundingSellerController::class, 'status'])
+    ->middleware('throttle:60,1');
+
+Route::post('/founding-sellers/apply', [FoundingSellerController::class, 'store'])
+    ->middleware('throttle:10,1');
 
 /*
  * The platform operator: the one identity that acts across every tenant.

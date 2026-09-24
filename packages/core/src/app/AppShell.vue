@@ -7,6 +7,7 @@ import TenantAccessNotice from '@pos/core/components/TenantAccessNotice.vue'
 import { useAuthStore } from '@pos/core/stores/auth'
 import { usePosStore } from '@pos/core/stores/pos'
 import { OPEN_APP_NAV } from '@pos/core/app/navDrawer'
+import { orderStatusLabel } from '@pos/shared/index'
 
 const store = usePosStore()
 const auth = useAuthStore()
@@ -14,6 +15,7 @@ const route = useRoute()
 const router = useRouter()
 const navOpen = ref(false)
 const profileOpen = ref(false)
+const notificationsOpen = ref(false)
 const search = ref('')
 const hydratedSessionUserId = ref<string | null | undefined>(undefined)
 
@@ -21,10 +23,34 @@ const showShellChrome = computed(() => route.name !== 'auth' && !!auth.currentUs
 const isRegisterRoute = computed(() => route.name === 'register')
 const canOpenSettings = computed(() => auth.canAccess('settings'))
 const storeName = computed(() => store.settings.businessName || 'Unnamed store')
-const hasNotifications = computed(() =>
-  store.lowStockProducts.length > 0
-  || store.onlineOrders.some((order) => !order.voidedAt && (order.status !== 'served' || order.paymentStatus === 'unpaid')),
+// Orders that still want something done: not voided, and either not yet served
+// or still unpaid. Same test the dot uses, surfaced as a list for the popover.
+const attentionOrders = computed(() =>
+  auth.canAccess('orders')
+    ? store.onlineOrders.filter(
+        (order) => !order.voidedAt && (order.status !== 'served' || order.paymentStatus === 'unpaid'),
+      )
+    : [],
 )
+
+const lowStockItems = computed(() => (auth.canAccess('inventory') ? store.lowStockProducts : []))
+
+const notifications = computed(() => [
+  ...attentionOrders.value.map((order) => ({
+    key: `order-${order.id}`,
+    label: `Order #${order.ticketNumber}`,
+    detail: order.paymentStatus === 'unpaid' ? 'Awaiting payment' : orderStatusLabel(order.status),
+    route: 'orders' as const,
+  })),
+  ...lowStockItems.value.map((product) => ({
+    key: `stock-${product.id}`,
+    label: product.name,
+    detail: product.stockQty === 0 ? 'Out of stock' : `Low stock: ${product.stockQty} left`,
+    route: 'inventory' as const,
+  })),
+])
+
+const hasNotifications = computed(() => notifications.value.length > 0)
 
 async function handleLogout() {
   await auth.logout()
@@ -43,10 +69,29 @@ provide(OPEN_APP_NAV, () => {
 
 function toggleProfileMenu() {
   profileOpen.value = !profileOpen.value
+  if (profileOpen.value) {
+    notificationsOpen.value = false
+  }
 }
 
 function closeProfileMenu() {
   profileOpen.value = false
+}
+
+function toggleNotifications() {
+  notificationsOpen.value = !notificationsOpen.value
+  if (notificationsOpen.value) {
+    profileOpen.value = false
+  }
+}
+
+function closeNotifications() {
+  notificationsOpen.value = false
+}
+
+async function openNotification(name: 'orders' | 'inventory') {
+  closeNotifications()
+  await router.push({ name })
 }
 
 async function goToSettings() {
@@ -66,6 +111,11 @@ function handleDocumentClick(event: MouseEvent) {
   const profileRoot = document.querySelector('[data-profile-menu]')
   if (profileOpen.value && profileRoot && !profileRoot.contains(target)) {
     closeProfileMenu()
+  }
+
+  const notificationsRoot = document.querySelector('[data-notifications-menu]')
+  if (notificationsOpen.value && notificationsRoot && !notificationsRoot.contains(target)) {
+    closeNotifications()
   }
 }
 
@@ -150,14 +200,36 @@ onUnmounted(() => {
           </label>
 
           <div class="workspace-topbar__actions">
-            <button
-              class="workspace-topbar__icon"
-              type="button"
-              :aria-label="hasNotifications ? 'Notifications, attention needed' : 'Notifications'"
-            >
-              <Bell :size="18" />
-              <span v-if="hasNotifications" class="workspace-topbar__notification-dot" aria-hidden="true" />
-            </button>
+            <div class="workspace-topbar__notifications-wrap" data-notifications-menu>
+              <button
+                class="workspace-topbar__icon"
+                type="button"
+                :aria-label="hasNotifications ? 'Notifications, attention needed' : 'Notifications'"
+                :aria-expanded="notificationsOpen"
+                aria-haspopup="menu"
+                @click.stop="toggleNotifications"
+              >
+                <Bell :size="18" />
+                <span v-if="hasNotifications" class="workspace-topbar__notification-dot" aria-hidden="true" />
+              </button>
+              <div v-if="notificationsOpen" class="workspace-topbar__notifications-menu" role="menu">
+                <p class="workspace-topbar__notifications-title">Notifications</p>
+                <template v-if="notifications.length">
+                  <button
+                    v-for="item in notifications"
+                    :key="item.key"
+                    class="workspace-topbar__notification-item"
+                    type="button"
+                    role="menuitem"
+                    @click="openNotification(item.route)"
+                  >
+                    <strong>{{ item.label }}</strong>
+                    <small>{{ item.detail }}</small>
+                  </button>
+                </template>
+                <p v-else class="workspace-topbar__notifications-empty">You're all caught up.</p>
+              </div>
+            </div>
             <div class="workspace-topbar__profile-wrap" data-profile-menu>
               <button
                 class="workspace-topbar__profile"
@@ -368,6 +440,71 @@ onUnmounted(() => {
   border-radius: var(--radius-pill);
   background: var(--danger);
   box-sizing: content-box;
+}
+
+.workspace-topbar__notifications-wrap {
+  position: relative;
+}
+
+.workspace-topbar__notifications-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 288px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--separator);
+  border-radius: 16px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+  display: grid;
+  gap: 4px;
+  z-index: 20;
+}
+
+.workspace-topbar__notifications-title {
+  margin: 0;
+  padding: 6px 10px 2px;
+  color: var(--text-secondary);
+  font: var(--type-footnote);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.workspace-topbar__notification-item {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.workspace-topbar__notification-item:hover {
+  background: var(--fill);
+}
+
+.workspace-topbar__notification-item strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-topbar__notification-item small {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.workspace-topbar__notifications-empty {
+  margin: 0;
+  padding: 12px 10px;
+  color: var(--text-secondary);
+  font: var(--type-subhead);
 }
 
 .workspace-topbar__profile {

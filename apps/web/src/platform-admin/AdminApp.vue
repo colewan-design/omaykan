@@ -289,7 +289,7 @@ watch(view, () => {
       <!-- The two screens that predate the shared api module. They own their
            own markup; the hero above them is what puts them in the shell. -->
       <template v-else-if="view === 'messages'">
-        <PageHero title="Messages" subtitle="Mail sent to support, answered without leaving the portal." />
+        <PageHero title="Messages" subtitle="Support emails from customers, sellers and partners, all handled within the Omaykan portal." />
         <div class="adm-legacy">
           <SupportInbox :token="currentToken()" @session-ended="onSessionEnded" />
         </div>

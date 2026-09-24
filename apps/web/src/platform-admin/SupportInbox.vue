@@ -1,6 +1,21 @@
 <script setup lang="ts">
-import { Mail, MailOpen, RefreshCw, Search } from '@lucide/vue'
-import { computed, ref } from 'vue'
+import {
+  Bike,
+  CheckCheck,
+  ChevronRight,
+  Clock3,
+  Mail,
+  MessageCircle,
+  RefreshCw,
+  Reply,
+  Search,
+  Send,
+  Settings2,
+  SlidersHorizontal,
+  Store,
+  Users,
+} from '@lucide/vue'
+import { computed, nextTick, ref } from 'vue'
 
 const props = defineProps<{ token: string }>()
 const emit = defineEmits<{ (event: 'session-ended', message: string): void }>()
@@ -24,13 +39,8 @@ interface InboxMessage extends InboxSummary {
   inReplyTo: string
 }
 
-function authHeaders(json = true): Record<string, string> {
-  return {
-    ...(json ? { 'Content-Type': 'application/json' } : {}),
-    Accept: 'application/json',
-    Authorization: `Bearer ${props.token}`,
-  }
-}
+type InboxCategory = 'customer' | 'seller' | 'rider' | 'system'
+type InboxFilter = 'all' | 'unread' | 'seller' | 'rider' | 'system'
 
 const loading = ref(false)
 const loadingMessage = ref(false)
@@ -45,31 +55,58 @@ const replySubject = ref('')
 const replyBody = ref('')
 const replyError = ref('')
 const searchQuery = ref('')
-const unreadOnly = ref(false)
+const activeFilter = ref<InboxFilter>('all')
+const sentReplies = ref(0)
+const replySentAt = ref<Date | null>(null)
+const lastSentBody = ref('')
+const replyTextarea = ref<HTMLTextAreaElement | null>(null)
+
+function categoryFor(message: Pick<InboxSummary, 'subject' | 'fromName' | 'fromEmail'>): InboxCategory {
+  const text = `${message.subject} ${message.fromName} ${message.fromEmail}`.toLowerCase()
+  if (/mailer-daemon|no-?reply|system|undeliver/.test(text)) return 'system'
+  if (/rider|delivery|courier/.test(text)) return 'rider'
+  if (/seller|farm|market|shop|store|merchant/.test(text)) return 'seller'
+  return 'customer'
+}
 
 const filteredMessages = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
 
   return messages.value.filter((message) => {
-    const matchesUnread = !unreadOnly.value || !message.isRead || message.id === selectedId.value
-    if (!matchesUnread) return false
+    const category = categoryFor(message)
+    const matchesFilter = activeFilter.value === 'all'
+      || (activeFilter.value === 'unread' && (!message.isRead || message.id === selectedId.value))
+      || activeFilter.value === category
+
+    if (!matchesFilter) return false
     if (!query) return true
 
-    const haystack = [
-      message.subject,
-      message.fromName,
-      message.fromEmail,
-      message.snippet,
-    ]
+    return [message.subject, message.fromName, message.fromEmail, message.snippet]
       .join(' ')
       .toLowerCase()
-
-    return haystack.includes(query)
+      .includes(query)
   })
 })
 
 const selectedSummary = computed(() => messages.value.find((message) => message.id === selectedId.value) ?? null)
 const selectedReplyEmail = computed(() => selected.value?.replyToEmail || selected.value?.fromEmail || '')
+const uniqueSenders = computed(() => new Set(messages.value.map((message) => message.fromEmail.toLowerCase())).size)
+
+const filters = computed(() => ([
+  { id: 'all' as const, label: 'All', count: messages.value.length },
+  { id: 'unread' as const, label: 'Unread', count: unreadCount.value },
+  { id: 'seller' as const, label: 'Sellers', count: messages.value.filter((message) => categoryFor(message) === 'seller').length },
+  { id: 'rider' as const, label: 'Riders', count: messages.value.filter((message) => categoryFor(message) === 'rider').length },
+  { id: 'system' as const, label: 'System', count: messages.value.filter((message) => categoryFor(message) === 'system').length },
+]))
+
+function authHeaders(json = true): Record<string, string> {
+  return {
+    ...(json ? { 'Content-Type': 'application/json' } : {}),
+    Accept: 'application/json',
+    Authorization: `Bearer ${props.token}`,
+  }
+}
 
 function formatDate(value: string | null): string {
   if (!value) return 'Unknown time'
@@ -78,15 +115,34 @@ function formatDate(value: string | null): string {
 
 function formatListDate(value: string | null): string {
   if (!value) return '--'
-
   const date = new Date(value)
   const now = new Date()
-  const sameDay = date.toDateString() === now.toDateString()
-
-  return new Intl.DateTimeFormat('en-PH', sameDay
-    ? { hour: '2-digit', minute: '2-digit' }
+  return new Intl.DateTimeFormat('en-PH', date.toDateString() === now.toDateString()
+    ? { hour: 'numeric', minute: '2-digit' }
     : { month: 'short', day: 'numeric' },
   ).format(date)
+}
+
+function formatSentTime(value: Date): string {
+  return new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short' }).format(value)
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  return (parts.length > 1 ? `${parts[0][0]}${parts.at(-1)?.[0]}` : parts[0]?.slice(0, 2) || 'OM').toUpperCase()
+}
+
+function categoryLabel(message: Pick<InboxSummary, 'subject' | 'fromName' | 'fromEmail'>): string {
+  const category = categoryFor(message)
+  return category.charAt(0).toUpperCase() + category.slice(1)
+}
+
+function categoryIcon(message: Pick<InboxSummary, 'subject' | 'fromName' | 'fromEmail'>) {
+  const category = categoryFor(message)
+  if (category === 'seller') return Store
+  if (category === 'rider') return Bike
+  if (category === 'system') return Settings2
+  return Users
 }
 
 function defaultReplySubject(subject: string): string {
@@ -105,13 +161,8 @@ function handleSessionLoss(message: string) {
 async function loadList(selectMessageId?: string) {
   loading.value = true
   errorMessage.value = ''
-  successMessage.value = ''
 
   try {
-    // POST, not GET: the inbox listing reaches out to IMAP, and the route it
-    // is behind takes its `limit` in a body. It was called as a GET against
-    // `/api/platform/inbox` — wrong verb and wrong prefix — so it 404'd on
-    // every load. See api.ts for how the prefix came to be wrong everywhere.
     const response = await fetch('/api/platform-admin/inbox', {
       method: 'POST',
       headers: authHeaders(),
@@ -122,18 +173,13 @@ async function loadList(selectMessageId?: string) {
     if (response.status === 401 || response.status === 403) {
       handleSessionLoss(data.message || 'Your session has ended. Sign in again.')
     }
-    if (!response.ok) {
-      throw new Error(data.message || data.error || 'Unable to load the support inbox.')
-    }
+    if (!response.ok) throw new Error(data.message || data.error || 'Unable to load the support inbox.')
 
     messages.value = data.messages ?? []
     unreadCount.value = data.unreadCount ?? 0
+    const nextId = selectMessageId || selectedId.value || messages.value[0]?.id
 
-    const nextId = selectMessageId
-      ?? selectedId.value
-      ?? messages.value[0]?.id
-
-    if (nextId) {
+    if (nextId && messages.value.some((message) => message.id === nextId)) {
       await openMessage(nextId)
     } else {
       selectedId.value = ''
@@ -149,36 +195,33 @@ async function loadList(selectMessageId?: string) {
 }
 
 async function openMessage(messageId: string) {
+  const isNewSelection = selectedId.value !== messageId
+  const wasUnread = messages.value.some((message) => message.id === messageId && !message.isRead)
   selectedId.value = messageId
   loadingMessage.value = true
   errorMessage.value = ''
   replyError.value = ''
+  successMessage.value = ''
+  if (isNewSelection) {
+    lastSentBody.value = ''
+    replySentAt.value = null
+  }
 
   try {
-    const response = await fetch(`/api/platform-admin/inbox/${messageId}`, {
-      headers: authHeaders(false),
-    })
+    const response = await fetch(`/api/platform-admin/inbox/${messageId}`, { headers: authHeaders(false) })
     const data = await parseJson(response)
 
     if (response.status === 401 || response.status === 403) {
       handleSessionLoss(data.message || 'Your session has ended. Sign in again.')
     }
-    if (!response.ok) {
-      throw new Error(data.message || data.error || 'Unable to load that message.')
-    }
+    if (!response.ok) throw new Error(data.message || data.error || 'Unable to load that message.')
 
     selected.value = data.message
     replySubject.value = defaultReplySubject(data.message?.subject ?? '')
-
-    messages.value = messages.value.map((message) =>
-      message.id === messageId
-        ? {
-            ...message,
-            isRead: true,
-            snippet: data.message?.snippet ?? message.snippet,
-          }
-        : message,
-    )
+    messages.value = messages.value.map((message) => message.id === messageId
+      ? { ...message, isRead: true, snippet: data.message?.snippet ?? message.snippet }
+      : message)
+    if (wasUnread) unreadCount.value = Math.max(0, unreadCount.value - 1)
   } catch (err) {
     errorMessage.value = err instanceof Error ? err.message : 'Unable to load that message.'
   } finally {
@@ -186,9 +229,19 @@ async function openMessage(messageId: string) {
   }
 }
 
+async function focusComposer() {
+  await nextTick()
+  replyTextarea.value?.focus()
+}
+
+function insertGreeting() {
+  const name = selected.value?.replyToName || selected.value?.fromName || 'there'
+  if (!replyBody.value.trim()) replyBody.value = `Hi ${name},\n\nThank you for reaching out to Omaykan Support. `
+  void focusComposer()
+}
+
 async function sendReply() {
   if (!selected.value) return
-
   const subject = replySubject.value.trim()
   const message = replyBody.value.trim()
 
@@ -212,13 +265,13 @@ async function sendReply() {
     if (response.status === 401 || response.status === 403) {
       handleSessionLoss(data.message || 'Your session has ended. Sign in again.')
     }
-    if (!response.ok) {
-      throw new Error(data.message || data.error || 'Unable to send that reply.')
-    }
+    if (!response.ok) throw new Error(data.message || data.error || 'Unable to send that reply.')
 
+    lastSentBody.value = message
+    replySentAt.value = new Date()
+    sentReplies.value += 1
     successMessage.value = `Reply queued for ${data.to}.`
     replyBody.value = ''
-    await loadList(selected.value.id)
   } catch (err) {
     replyError.value = err instanceof Error ? err.message : 'Unable to send that reply.'
   } finally {
@@ -231,62 +284,60 @@ void loadList()
 
 <template>
   <section class="si-page">
-    <div class="si-shell surface-panel">
-      <header class="si-header">
-        <div class="si-header__copy">
-          <h1 class="si-title">Support Inbox</h1>
-          <p class="si-copy">
-            Read messages sent to support@omaykan.com and reply without leaving the operator portal.
-          </p>
-        </div>
+    <div class="si-stats" aria-label="Inbox overview">
+      <article class="si-stat si-stat--blue">
+        <span class="si-stat__icon"><Mail :size="24" /></span>
+        <div><span>Unread messages</span><strong>{{ unreadCount }}</strong><small>Require your attention</small></div>
+        <ChevronRight :size="18" class="si-stat__arrow" />
+      </article>
+      <article class="si-stat si-stat--green">
+        <span class="si-stat__icon"><MessageCircle :size="24" /></span>
+        <div><span>Open tickets</span><strong>{{ messages.length }}</strong><small>Active conversations</small></div>
+        <ChevronRight :size="18" class="si-stat__arrow" />
+      </article>
+      <article class="si-stat si-stat--amber">
+        <span class="si-stat__icon"><Users :size="24" /></span>
+        <div><span>Active senders</span><strong>{{ uniqueSenders }}</strong><small>People in this inbox</small></div>
+        <ChevronRight :size="18" class="si-stat__arrow" />
+      </article>
+      <article class="si-stat si-stat--mint">
+        <span class="si-stat__icon"><CheckCheck :size="24" /></span>
+        <div><span>Replies sent</span><strong>{{ sentReplies }}</strong><small>This support session</small></div>
+        <ChevronRight :size="18" class="si-stat__arrow" />
+      </article>
+    </div>
 
-        <div class="si-header__actions">
-          <span class="si-counter">{{ unreadCount }} unread</span>
-          <button class="si-refresh" type="button" :disabled="loading" @click="loadList()">
-            <RefreshCw :size="14" :class="{ 'si-spin': loading }" />
-            <span>{{ loading ? 'Refreshing...' : 'Refresh' }}</span>
+    <div class="si-shell">
+      <aside class="si-inbox" aria-label="Support messages">
+        <div class="si-tabs" role="tablist" aria-label="Message filters">
+          <button
+            v-for="filter in filters"
+            :key="filter.id"
+            class="si-tab"
+            :class="{ 'si-tab--active': activeFilter === filter.id }"
+            type="button"
+            role="tab"
+            :aria-selected="activeFilter === filter.id"
+            @click="activeFilter = filter.id"
+          >
+            {{ filter.label }} <span>{{ filter.count }}</span>
           </button>
         </div>
-      </header>
 
-      <p v-if="errorMessage" class="auth-error si-banner si-banner--error">{{ errorMessage }}</p>
-      <p v-else-if="successMessage" class="si-banner si-banner--success">{{ successMessage }}</p>
-
-      <div class="si-toolbar">
-        <label class="si-search" aria-label="Search inbox">
-          <Search :size="15" />
-          <input
-            v-model="searchQuery"
-            type="search"
-            placeholder="Search sender, subject or snippet"
-            autocomplete="off"
-          >
-        </label>
-
-        <button
-          class="si-chip"
-          :class="{ 'si-chip--active': unreadOnly }"
-          type="button"
-          @click="unreadOnly = !unreadOnly"
-        >
-          {{ unreadOnly ? 'Unread only on' : 'Unread only' }}
-        </button>
-
-        <div class="si-toolbar__meta">
-          <span>{{ filteredMessages.length }} shown</span>
-          <span>{{ messages.length }} total</span>
+        <div class="si-toolbar">
+          <label class="si-search" aria-label="Search inbox">
+            <Search :size="18" />
+            <input v-model="searchQuery" type="search" placeholder="Search messages, senders or subjects..." autocomplete="off">
+          </label>
+          <button class="si-filter-button" type="button" title="Show unread messages" aria-label="Show unread messages" @click="activeFilter = activeFilter === 'unread' ? 'all' : 'unread'">
+            <SlidersHorizontal :size="18" />
+          </button>
         </div>
-      </div>
 
-      <div class="si-layout">
-        <aside class="si-list" aria-label="Support messages">
-          <div class="si-list__head">
-            <span>Messages</span>
-            <span>Received</span>
-          </div>
-
-          <div v-if="!filteredMessages.length && !loading" class="si-empty si-empty--list">
-            {{ searchQuery.trim() ? 'No messages match that search.' : 'No support messages yet.' }}
+        <div class="si-list" :aria-busy="loading">
+          <div v-if="loading && !messages.length" class="si-empty">Loading support messages...</div>
+          <div v-else-if="!filteredMessages.length" class="si-empty">
+            {{ searchQuery.trim() ? 'No messages match that search.' : 'No messages in this view.' }}
           </div>
 
           <button
@@ -297,621 +348,339 @@ void loadList()
             type="button"
             @click="openMessage(message.id)"
           >
-            <div class="si-row__status">
-              <span class="si-dot" :class="{ 'si-dot--muted': message.isRead }"></span>
-              <component :is="message.isRead ? MailOpen : Mail" :size="15" />
-            </div>
-
-            <div class="si-row__content">
-              <div class="si-row__top">
-                <strong>{{ message.fromName }}</strong>
-                <span>{{ message.subject }}</span>
-              </div>
-              <div class="si-row__meta">
-                <span>{{ message.fromEmail }}</span>
-                <span>{{ message.snippet }}</span>
-              </div>
-            </div>
-
-            <time class="si-row__time">{{ formatListDate(message.receivedAt) }}</time>
+            <span class="si-avatar" :class="`si-avatar--${categoryFor(message)}`">
+              <component :is="categoryIcon(message)" v-if="categoryFor(message) !== 'customer'" :size="20" />
+              <template v-else>{{ initials(message.fromName) }}</template>
+            </span>
+            <span class="si-row__content">
+              <span class="si-row__top"><strong>{{ message.fromName }}</strong><time>{{ formatListDate(message.receivedAt) }}</time></span>
+              <span class="si-row__subject">{{ message.subject }}</span>
+              <span class="si-row__snippet">{{ message.snippet || message.fromEmail }}</span>
+            </span>
+            <span v-if="!message.isRead" class="si-unread-dot" aria-label="Unread"></span>
           </button>
-        </aside>
+        </div>
+      </aside>
 
-        <section class="si-thread">
-          <template v-if="selected">
-            <div class="si-thread__header">
-              <div>
-                <h2 class="si-thread__subject">{{ selected.subject }}</h2>
-                <div class="si-thread__meta">
-                  <span>From {{ selected.fromName }} &lt;{{ selected.fromEmail }}&gt;</span>
-                  <span>Reply to {{ selected.replyToName }} &lt;{{ selectedReplyEmail }}&gt;</span>
-                  <span>{{ formatDate(selected.receivedAt) }}</span>
-                </div>
-              </div>
-              <span class="si-thread__badge">{{ selectedSummary?.isRead ? 'Opened' : 'New' }}</span>
+      <section class="si-thread" :aria-busy="loadingMessage">
+        <template v-if="selected">
+          <header class="si-thread__header">
+            <div class="si-sender">
+              <span class="si-avatar si-avatar--large">{{ initials(selected.fromName) }}</span>
+              <span><strong>{{ selected.fromName }}</strong><small>{{ selected.fromEmail }}</small></span>
             </div>
-
-            <div class="si-thread__body">
-              {{ selected.body || selectedSummary?.snippet || 'No message body available.' }}
+            <div class="si-thread__actions">
+              <button class="si-action si-action--primary" type="button" @click="focusComposer"><Reply :size="16" /> Reply</button>
+              <button class="si-action" type="button" :disabled="loading" @click="loadList(selected.id)"><RefreshCw :size="16" :class="{ 'si-spin': loading }" /> Refresh</button>
             </div>
+          </header>
 
-            <form class="si-reply" @submit.prevent="sendReply">
-              <div class="si-reply__header">
-                <h3 class="si-reply__title">Reply</h3>
-                <span class="si-reply__hint">Sent from support@omaykan.com</span>
-              </div>
-
-              <label class="si-field">
-                <span>Subject</span>
-                <input v-model="replySubject" class="sheet-input si-input" type="text" maxlength="190">
-              </label>
-
-              <label class="si-field">
-                <span>Message</span>
-                <textarea
-                  v-model="replyBody"
-                  class="sheet-input si-input si-input--body"
-                  rows="7"
-                  maxlength="5000"
-                ></textarea>
-              </label>
-
-              <p v-if="replyError" class="auth-error si-reply__error">{{ replyError }}</p>
-
-              <div class="si-reply__actions">
-                <span class="si-reply__caption">
-                  Replying to {{ selected.replyToName || selected.fromName }}
-                </span>
-                <button class="primary-button si-send" type="submit" :disabled="sending">
-                  {{ sending ? 'Sending...' : 'Send reply' }}
-                </button>
-              </div>
-            </form>
-          </template>
-
-          <div v-else class="si-empty si-empty--thread">
-            {{ loadingMessage ? 'Loading message...' : 'Select a message to read and reply.' }}
+          <div class="si-subject-row">
+            <div>
+              <h2>{{ selected.subject }}</h2>
+              <span class="si-badge"><component :is="categoryIcon(selected)" :size="13" /> {{ categoryLabel(selected) }}</span>
+            </div>
+            <time>{{ formatDate(selected.receivedAt) }}</time>
           </div>
-        </section>
-      </div>
+
+          <div v-if="errorMessage" class="si-banner si-banner--error">{{ errorMessage }}</div>
+          <div v-if="successMessage" class="si-banner si-banner--success">{{ successMessage }}</div>
+
+          <div class="si-conversation">
+            <article class="si-message si-message--incoming">
+              <span class="si-avatar">{{ initials(selected.fromName) }}</span>
+              <div class="si-bubble">
+                <strong>{{ selected.fromName }}</strong>
+                <p>{{ selected.body || selectedSummary?.snippet || 'No message body available.' }}</p>
+              </div>
+            </article>
+
+            <article v-if="lastSentBody && replySentAt" class="si-message si-message--outgoing">
+              <span class="si-avatar si-avatar--admin">A</span>
+              <div class="si-bubble">
+                <div class="si-message__meta"><strong>Admin (Omaykan Support)</strong><time>{{ formatSentTime(replySentAt) }}</time></div>
+                <p>{{ lastSentBody }}</p>
+              </div>
+            </article>
+          </div>
+
+          <form class="si-composer" @submit.prevent="sendReply">
+            <div class="si-composer__top">
+              <strong>Reply</strong>
+              <span>To {{ selectedReplyEmail }}</span>
+            </div>
+            <label class="si-subject-input">
+              <span>Subject</span>
+              <input v-model="replySubject" type="text" maxlength="190">
+            </label>
+            <textarea ref="replyTextarea" v-model="replyBody" rows="4" maxlength="5000" placeholder="Write your reply..."></textarea>
+            <p v-if="replyError" class="si-reply-error">{{ replyError }}</p>
+            <div class="si-composer__footer">
+              <button class="si-canned" type="button" @click="insertGreeting"><Clock3 :size="16" /> Insert greeting</button>
+              <button class="si-send" type="submit" :disabled="sending"><Send :size="16" /> {{ sending ? 'Sending...' : 'Send reply' }}</button>
+            </div>
+          </form>
+        </template>
+
+        <div v-else class="si-empty si-empty--thread">
+          <MessageCircle :size="32" />
+          <strong>{{ loadingMessage ? 'Loading message...' : 'Select a message' }}</strong>
+          <span>Choose a conversation to read and reply.</span>
+        </div>
+      </section>
     </div>
   </section>
 </template>
 
 <style scoped>
-/*
- * This screen was drawn for the old operator portal, which was dark. It is now
- * one of nine screens in a cream one, and a single dark panel among eight pale
- * ones reads as a different product rather than a different page.
- *
- * The whole re-skin is these eleven values: the rest of the block below is
- * written against them, so pointing them at the portal's palette restyles the
- * screen without touching a line of its layout.
- */
 .si-page {
-  --si-bg: var(--sf-paper);
-  --si-surface: var(--sf-paper);
-  --si-surface-strong: var(--sf-sand);
-  --si-border: var(--sf-rule);
-  --si-border-strong: var(--sf-sand-deep);
-  --si-text: var(--sf-ink);
-  --si-muted: var(--sf-muted);
-  --si-subtle: var(--sf-faint);
-  --si-success: #0a6b0a;
-  --si-danger: #9c2626;
   display: grid;
+  gap: 16px;
+  color: #19231f;
 }
+
+.si-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.si-stat {
+  position: relative;
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 24px;
+  align-items: center;
+  min-height: 86px;
+  padding: 14px 16px;
+  border: 1px solid #e5e0d6;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 4px 16px rgba(41, 49, 44, 0.04);
+}
+
+.si-stat__icon {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border-radius: 50%;
+}
+
+.si-stat--blue .si-stat__icon { color: #246dc8; background: #e9f2ff; }
+.si-stat--green .si-stat__icon { color: #19733f; background: #ebf5ec; }
+.si-stat--amber .si-stat__icon { color: #c56c08; background: #fff1df; }
+.si-stat--mint .si-stat__icon { color: #13723e; background: #edf5eb; }
+
+.si-stat div { display: grid; gap: 2px; }
+.si-stat div > span { color: #505a55; font-size: 12px; }
+.si-stat strong { color: #161d19; font-family: Georgia, serif; font-size: 24px; line-height: 1; }
+.si-stat small { color: #7b827e; font-size: 11px; }
+.si-stat__arrow { justify-self: end; padding: 5px; border: 1px solid #e6e1d8; border-radius: 50%; color: #6f7672; box-sizing: content-box; }
 
 .si-shell {
-  padding: 0;
+  display: grid;
+  grid-template-columns: minmax(390px, 40%) minmax(0, 1fr);
+  min-height: 620px;
   overflow: hidden;
-  border: 1px solid var(--si-border);
-  border-radius: 22px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 16%),
-    var(--si-bg);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
+  border: 1px solid #e3ded3;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 6px 22px rgba(41, 49, 44, 0.05);
 }
 
-.si-header,
-.si-toolbar,
-.si-thread__header,
-.si-reply,
-.si-list__head,
-.si-row {
+.si-inbox {
   min-width: 0;
+  border-right: 1px solid #e7e2d8;
 }
 
-.si-header {
+.si-tabs {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 22px 24px 14px;
-  border-bottom: 1px solid var(--si-border);
-}
-
-.si-header__copy {
-  min-width: 0;
-}
-
-.si-title {
-  margin: 0;
-  color: var(--si-text);
-  font: 700 1.3rem/1.1 var(--font-sans, inherit);
-}
-
-.si-copy {
-  margin: 6px 0 0;
-  max-width: 720px;
-  color: var(--si-muted);
-  font: 500 0.92rem/1.5 var(--font-sans, inherit);
-}
-
-.si-header__actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.si-counter,
-.si-thread__badge,
-.si-chip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--si-border-strong);
-  border-radius: 999px;
-  font: 600 0.72rem/1 var(--font-sans, inherit);
-  letter-spacing: 0.03em;
-}
-
-.si-counter {
-  min-height: 32px;
-  padding: 0 12px;
-  color: var(--si-muted);
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.si-refresh {
-  display: inline-flex;
-  align-items: center;
   gap: 8px;
-  min-height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--si-border-strong);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--si-text);
-  font: 600 0.78rem/1 var(--font-sans, inherit);
+  padding: 12px 14px 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.si-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: #47504b;
+  background: #f7f5f1;
+  font: inherit;
+  font-size: 12px;
   cursor: pointer;
 }
 
-.si-refresh:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.si-spin {
-  animation: si-spin 0.9s linear infinite;
-}
-
-.si-banner {
-  margin: 0 24px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  font: 600 0.82rem/1.4 var(--font-sans, inherit);
-}
-
-.si-banner--success {
-  margin-top: 14px;
-  border: 1px solid rgba(113, 212, 159, 0.22);
-  background: rgba(113, 212, 159, 0.09);
-  color: var(--si-success);
-}
-
-.si-banner--error {
-  margin-top: 14px;
-}
+.si-tab span { display: grid; min-width: 17px; height: 17px; padding: 0 4px; place-items: center; border: 1px solid #ddd8cf; border-radius: 999px; font-size: 10px; }
+.si-tab--active { color: #fff; background: #0d4a32; border-color: #0d4a32; }
+.si-tab--active span { border-color: rgba(255,255,255,.35); background: rgba(255,255,255,.14); }
 
 .si-toolbar {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 24px;
-  border-bottom: 1px solid var(--si-border);
+  gap: 8px;
+  padding: 0 14px 12px;
+  border-bottom: 1px solid #e7e2d8;
 }
 
 .si-search {
-  flex: 1 1 320px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
+  flex: 1;
   min-width: 0;
   height: 38px;
   padding: 0 12px;
-  border: 1px solid var(--si-border-strong);
-  border-radius: 12px;
-  background: rgba(0, 0, 0, 0.2);
-  color: var(--si-subtle);
+  border: 1px solid #ded9cf;
+  border-radius: 9px;
+  color: #66706a;
+  background: #fff;
 }
 
-.si-search input {
-  flex: 1 1 auto;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--si-text);
-  font: 500 0.84rem/1.2 var(--font-sans, inherit);
-}
+.si-search:focus-within { border-color: #568b70; box-shadow: 0 0 0 3px rgba(25, 111, 65, 0.09); }
+.si-search input { width: 100%; border: 0; outline: 0; color: #1c2822; background: transparent; font: inherit; font-size: 12px; }
+.si-search input::placeholder { color: #929892; }
+.si-filter-button { display: grid; width: 38px; height: 38px; place-items: center; border: 1px solid #ded9cf; border-radius: 9px; color: #38433d; background: #fff; cursor: pointer; }
 
-.si-search input::placeholder {
-  color: var(--si-subtle);
-}
-
-.si-chip {
-  min-height: 34px;
-  padding: 0 12px;
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--si-muted);
-  cursor: pointer;
-}
-
-.si-chip--active {
-  border-color: color-mix(in srgb, var(--accent) 44%, white 18%);
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  color: var(--si-text);
-}
-
-.si-toolbar__meta {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  color: var(--si-subtle);
-  font: 500 0.78rem/1 var(--font-sans, inherit);
-  white-space: nowrap;
-}
-
-.si-layout {
-  display: grid;
-  grid-template-columns: minmax(360px, 440px) minmax(0, 1fr);
-  min-height: 720px;
-}
-
-.si-list {
-  display: grid;
-  align-content: start;
-  border-right: 1px solid var(--si-border);
-  background: rgba(255, 255, 255, 0.015);
-}
-
-.si-list__head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 84px;
-  gap: 12px;
-  padding: 12px 18px;
-  border-bottom: 1px solid var(--si-border);
-  color: var(--si-subtle);
-  font: 700 0.67rem/1 var(--font-sans, inherit);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
+.si-list { max-height: 540px; overflow-y: auto; }
 .si-row {
+  position: relative;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: start;
+  grid-template-columns: 44px minmax(0, 1fr);
   gap: 12px;
   width: 100%;
-  padding: 14px 18px;
+  padding: 11px 18px;
   border: 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid #eeeae3;
+  color: #1e2923;
   background: transparent;
-  color: var(--si-text);
   text-align: left;
   cursor: pointer;
-  transition: background 140ms ease, border-color 140ms ease;
 }
 
-.si-row:hover {
-  background: rgba(255, 255, 255, 0.035);
-}
+.si-row::before { position: absolute; inset: 0 auto 0 0; width: 3px; background: transparent; content: ''; }
+.si-row:hover { background: #faf9f6; }
+.si-row--active { background: linear-gradient(90deg, #edf5ee, #f8faf6); }
+.si-row--active::before { background: #16814b; }
+.si-row--unread .si-row__top strong, .si-row--unread .si-row__subject { font-weight: 800; }
 
-.si-row--active {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 14%, transparent), rgba(255, 255, 255, 0.025));
-  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 72%, white 8%);
-}
-
-.si-row--unread .si-row__top strong,
-.si-row--unread .si-row__top span {
-  color: #ffffff;
-}
-
-.si-row__status {
+.si-avatar {
   display: grid;
-  justify-items: center;
-  gap: 7px;
-  padding-top: 2px;
-  color: var(--si-subtle);
-}
-
-.si-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--accent) 76%, white 10%);
-}
-
-.si-dot--muted {
-  background: rgba(255, 255, 255, 0.18);
-}
-
-.si-row__content {
-  min-width: 0;
-}
-
-.si-row__top,
-.si-row__meta,
-.si-thread__meta {
-  display: flex;
-  gap: 10px;
-  min-width: 0;
-}
-
-.si-row__top {
-  align-items: baseline;
-  margin-bottom: 6px;
-}
-
-.si-row__top strong,
-.si-row__top span,
-.si-row__meta span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.si-row__top strong {
-  flex: 0 1 auto;
-  max-width: 42%;
-  color: var(--si-text);
-  font: 700 0.86rem/1.2 var(--font-sans, inherit);
-}
-
-.si-row__top span {
-  flex: 1 1 auto;
-  color: #e7e9ee;
-  font: 600 0.84rem/1.2 var(--font-sans, inherit);
-}
-
-.si-row__meta {
-  flex-wrap: nowrap;
-  color: var(--si-muted);
-  font: 500 0.76rem/1.2 var(--font-sans, inherit);
-}
-
-.si-row__meta span:first-child {
-  flex: 0 0 42%;
-}
-
-.si-row__meta span:last-child {
-  flex: 1 1 auto;
-  color: var(--si-subtle);
-}
-
-.si-row__time {
-  padding-top: 2px;
-  color: var(--si-subtle);
-  font: 600 0.72rem/1.2 var(--font-sans, inherit);
-  white-space: nowrap;
-}
-
-.si-thread {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  min-width: 0;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 20%);
-}
-
-.si-thread__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 20px 24px 18px;
-  border-bottom: 1px solid var(--si-border);
-}
-
-.si-thread__subject {
-  margin: 0;
-  color: var(--si-text);
-  font: 700 1.05rem/1.25 var(--font-sans, inherit);
-}
-
-.si-thread__meta {
-  flex-wrap: wrap;
-  margin-top: 10px;
-}
-
-.si-thread__meta span {
-  color: var(--si-muted);
-  font: 500 0.78rem/1.4 var(--font-sans, inherit);
-}
-
-.si-thread__meta span:not(:last-child)::after {
-  content: '•';
-  margin-left: 10px;
-  color: var(--si-subtle);
-}
-
-.si-thread__badge {
-  min-height: 28px;
-  padding: 0 10px;
-  color: var(--si-muted);
-  background: rgba(255, 255, 255, 0.04);
-  white-space: nowrap;
-}
-
-.si-thread__body {
-  min-width: 0;
-  min-height: 0;
-  padding: 24px;
-  overflow: auto;
-  color: #eff2f8;
-  font: 500 0.89rem/1.68 var(--font-sans, inherit);
-  white-space: pre-wrap;
-}
-
-.si-reply {
-  display: grid;
-  gap: 14px;
-  padding: 18px 24px 24px;
-  border-top: 1px solid var(--si-border);
-  background: rgba(0, 0, 0, 0.18);
-}
-
-.si-reply__header,
-.si-reply__actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.si-reply__title {
-  margin: 0;
-  color: var(--si-text);
-  font: 700 0.95rem/1.2 var(--font-sans, inherit);
-}
-
-.si-reply__hint,
-.si-reply__caption {
-  color: var(--si-subtle);
-  font: 500 0.76rem/1.3 var(--font-sans, inherit);
-}
-
-.si-field {
-  display: grid;
-  gap: 8px;
-}
-
-.si-field span {
-  color: var(--si-muted);
-  font: 700 0.7rem/1 var(--font-sans, inherit);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.si-input {
-  min-height: 40px;
-  border-color: var(--si-border-strong);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--si-text);
-}
-
-.si-input::placeholder {
-  color: var(--si-subtle);
-}
-
-.si-input:focus {
-  border-color: color-mix(in srgb, var(--accent) 45%, white 20%);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
-}
-
-.si-input--body {
-  min-height: 160px;
-  resize: vertical;
-}
-
-.si-reply__error {
-  margin: 0;
-}
-
-.si-send {
-  min-width: 120px;
-}
-
-.si-empty {
-  display: grid;
+  width: 40px;
+  height: 40px;
   place-items: center;
-  min-height: 200px;
-  padding: 24px;
-  color: var(--si-muted);
-  text-align: center;
-  font: 500 0.88rem/1.5 var(--font-sans, inherit);
+  align-self: start;
+  border-radius: 50%;
+  color: #225d3d;
+  background: #dfece0;
+  font-size: 13px;
+  font-weight: 800;
 }
 
-.si-empty--list {
-  min-height: 120px;
-}
+.si-avatar--seller { color: #8e4b05; background: #ffead3; }
+.si-avatar--rider { color: #29634a; background: #e5f2e6; }
+.si-avatar--system { color: #444b48; background: #eeece8; }
+.si-avatar--large { width: 46px; height: 46px; font-size: 14px; }
+.si-avatar--admin { color: #fff; background: #103f2e; }
+.si-row__content, .si-row__top { min-width: 0; }
+.si-row__content { display: grid; gap: 3px; }
+.si-row__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.si-row__top strong, .si-row__subject, .si-row__snippet { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.si-row__top strong { font-size: 12px; font-weight: 650; }
+.si-row__top time { flex: 0 0 auto; color: #757e79; font-size: 10px; }
+.si-row__subject { color: #26322c; font-size: 12px; font-weight: 600; }
+.si-row__snippet { color: #78807b; font-size: 10.5px; }
+.si-unread-dot { position: absolute; right: 18px; bottom: 16px; width: 7px; height: 7px; border-radius: 50%; background: #24824d; }
 
-.si-empty--thread {
-  min-height: 100%;
-}
+.si-thread { display: flex; min-width: 0; flex-direction: column; background: rgba(255,255,255,.32); }
+.si-thread__header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; border-bottom: 1px solid #e8e3db; }
+.si-sender { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.si-sender > span:last-child { display: grid; min-width: 0; gap: 2px; }
+.si-sender strong, .si-sender small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.si-sender strong { font-size: 14px; }
+.si-sender small { color: #6c756f; font-size: 11px; }
+.si-thread__actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.si-action { display: inline-flex; height: 34px; align-items: center; gap: 6px; padding: 0 13px; border: 1px solid #ddd8cf; border-radius: 8px; color: #2a352f; background: #fff; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
+.si-action--primary { color: #fff; border-color: #123e2e; background: #123e2e; }
+.si-action:disabled { opacity: .55; cursor: wait; }
 
-@keyframes si-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
+.si-subject-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 14px 20px 10px; }
+.si-subject-row h2 { margin: 0 0 7px; color: #18221d; font-family: Georgia, serif; font-size: 18px; line-height: 1.25; }
+.si-subject-row time { flex: 0 0 auto; padding-top: 4px; color: #6f7873; font-size: 10px; }
+.si-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 999px; color: #1d6840; background: #e8f3e9; font-size: 10px; font-weight: 700; }
+
+.si-banner { margin: 0 20px 8px; padding: 9px 12px; border-radius: 8px; font-size: 11px; }
+.si-banner--error { color: #8c2929; background: #fff0ef; }
+.si-banner--success { color: #17663c; background: #eaf5ec; }
+.si-conversation { display: grid; gap: 12px; flex: 1; align-content: start; max-height: 315px; padding: 6px 20px 14px; overflow-y: auto; }
+.si-message { display: flex; align-items: flex-start; gap: 10px; max-width: 88%; }
+.si-message--outgoing { justify-self: end; flex-direction: row-reverse; }
+.si-bubble { min-width: 0; padding: 12px 15px; border-radius: 14px; color: #36413b; background: #f3f1ed; font-size: 12px; line-height: 1.55; }
+.si-message--incoming .si-bubble { border-top-left-radius: 4px; }
+.si-message--outgoing .si-bubble { border-top-right-radius: 4px; background: #edf4ee; }
+.si-bubble > strong { display: block; margin-bottom: 5px; color: #1e2923; font-size: 11px; }
+.si-bubble p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.si-message__meta { display: flex; justify-content: space-between; gap: 18px; margin-bottom: 5px; }
+.si-message__meta time { color: #737b76; font-size: 9px; }
+
+.si-composer { margin: 0 14px 14px; overflow: hidden; border: 1px solid #ded9cf; border-radius: 12px; background: #fff; box-shadow: 0 3px 12px rgba(36,45,40,.04); }
+.si-composer__top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 13px; border-bottom: 1px solid #ece8e0; }
+.si-composer__top strong { color: #155336; font-size: 11px; }
+.si-composer__top span { overflow: hidden; color: #818783; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.si-subject-input { display: grid; grid-template-columns: 52px 1fr; align-items: center; padding: 7px 13px; border-bottom: 1px solid #eeeae3; color: #77807a; font-size: 10px; }
+.si-subject-input input { min-width: 0; border: 0; outline: 0; color: #29342e; background: transparent; font: inherit; font-size: 11px; }
+.si-composer textarea { display: block; width: 100%; min-height: 82px; padding: 10px 13px; resize: vertical; border: 0; outline: 0; color: #26322c; background: #fff; font: inherit; font-size: 12px; line-height: 1.5; box-sizing: border-box; }
+.si-composer textarea::placeholder { color: #a0a49f; }
+.si-reply-error { margin: 0 13px 8px; color: #9d2d2d; font-size: 10px; }
+.si-composer__footer { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-top: 1px solid #eeeae3; }
+.si-canned, .si-send { display: inline-flex; align-items: center; gap: 7px; height: 34px; border-radius: 8px; font: inherit; font-size: 10px; font-weight: 700; cursor: pointer; }
+.si-canned { padding: 0 10px; border: 0; color: #59625d; background: transparent; }
+.si-send { padding: 0 15px; border: 1px solid #123e2e; color: #fff; background: #123e2e; box-shadow: 0 4px 10px rgba(18,62,46,.16); }
+.si-send:disabled { opacity: .55; cursor: wait; }
+.si-empty { display: grid; min-height: 180px; place-content: center; gap: 7px; padding: 24px; color: #78817b; text-align: center; font-size: 12px; }
+.si-empty--thread { flex: 1; min-height: 520px; }
+.si-empty--thread svg { justify-self: center; color: #2d8053; }
+.si-empty--thread strong { color: #28352e; font-size: 15px; }
+
+@keyframes si-spin { to { transform: rotate(360deg); } }
+.si-spin { animation: si-spin .8s linear infinite; }
+
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid rgba(35, 121, 74, .2); outline-offset: 2px; }
 
 @media (max-width: 1100px) {
-  .si-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .si-list {
-    border-right: 0;
-    border-bottom: 1px solid var(--si-border);
-  }
+  .si-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .si-shell { grid-template-columns: minmax(330px, 39%) minmax(0, 1fr); }
 }
 
-@media (max-width: 720px) {
-  .si-header,
-  .si-toolbar,
-  .si-thread__header,
-  .si-thread__body,
-  .si-reply {
-    padding-left: 16px;
-    padding-right: 16px;
-  }
+@media (max-width: 760px) {
+  .si-stats { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .si-stat { min-height: 78px; grid-template-columns: 48px minmax(0, 1fr); padding: 12px; }
+  .si-stat__icon { width: 40px; height: 40px; }
+  .si-stat__arrow { display: none; }
+  .si-stat strong { font-size: 21px; }
+  .si-shell { display: block; }
+  .si-inbox { border-right: 0; border-bottom: 1px solid #e7e2d8; }
+  .si-list { max-height: 360px; }
+  .si-thread { min-height: 620px; }
+}
 
-  .si-header,
-  .si-toolbar,
-  .si-reply__header,
-  .si-reply__actions {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .si-toolbar__meta {
-    margin-left: 0;
-    justify-content: space-between;
-  }
-
-  .si-search {
-    flex: 0 0 auto;
-    width: 100%;
-  }
-
-  .si-list__head {
-    grid-template-columns: minmax(0, 1fr) 64px;
-    padding-left: 16px;
-    padding-right: 16px;
-  }
-
-  .si-row {
-    grid-template-columns: auto minmax(0, 1fr);
-    padding-left: 16px;
-    padding-right: 16px;
-  }
-
-  .si-row__time {
-    grid-column: 2;
-    padding-top: 0;
-  }
+@media (max-width: 480px) {
+  .si-stats { grid-template-columns: 1fr; }
+  .si-stat { min-height: 70px; }
+  .si-tabs { padding-inline: 10px; }
+  .si-toolbar { padding-inline: 10px; }
+  .si-row { padding-inline: 14px; }
+  .si-thread__header { align-items: flex-start; padding: 12px; }
+  .si-thread__actions { flex-direction: column; }
+  .si-action { justify-content: center; }
+  .si-subject-row { flex-direction: column; padding-inline: 14px; }
+  .si-subject-row time { padding-top: 0; }
+  .si-conversation { padding-inline: 14px; }
+  .si-message { max-width: 100%; }
+  .si-composer { margin-inline: 10px; }
 }
 </style>

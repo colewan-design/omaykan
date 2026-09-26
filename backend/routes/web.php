@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AssetLinksController;
 use App\Http\Controllers\Auth\EmailVerificationController;
+use App\Http\Controllers\DiscoveryPageController;
 use App\Http\Controllers\ShopShellController;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Session\Middleware\StartSession;
@@ -41,3 +42,27 @@ Route::get('/email/verify/seller/{id}/{hash}', [EmailVerificationController::cla
  * that the rest of this application lives under /api.
  */
 Route::get('/.well-known/assetlinks.json', [AssetLinksController::class, 'show']);
+
+/*
+ * Town and category landing pages — /baguio, /baguio/restaurants — and
+ * /sitemap-towns.xml, which lists them. See DiscoveryPageController.
+ *
+ * Only the towns and categories in config/discovery.php match, so every other
+ * top-level path is left alone. nginx sends the same paths here
+ * (documentation/deployment.md §6c).
+ *
+ * Without the session, for the same reasons as the shop page above: public,
+ * cached, and crawled.
+ */
+Route::withoutMiddleware([StartSession::class, ShareErrorsFromSession::class, ValidateCsrfToken::class])
+    ->group(function () {
+        $localities = array_keys(config('discovery.localities', []));
+        $categories = array_keys(config('discovery.categories', []));
+
+        Route::get('/sitemap-towns.xml', [DiscoveryPageController::class, 'sitemap']);
+        Route::get('/{locality}', [DiscoveryPageController::class, 'town'])
+            ->whereIn('locality', $localities);
+        Route::get('/{locality}/{category}', [DiscoveryPageController::class, 'category'])
+            ->whereIn('locality', $localities)
+            ->whereIn('category', $categories);
+    });

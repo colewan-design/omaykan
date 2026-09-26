@@ -27,3 +27,6 @@ Disallow: /*?*category=
 Disallow: /*?*sort=
 
 Sitemap: https://omaykan.com/sitemap.xml
+# The town and category pages (/baguio/restaurants). Laravel lists these as
+# shops join, so they are not in the build's sitemap above.
+Sitemap: https://omaykan.com/sitemap-towns.xml

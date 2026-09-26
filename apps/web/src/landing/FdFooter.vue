@@ -9,6 +9,7 @@ import {
 } from '@pos/web/commerce/delivery'
 import { useStockedCategories } from '@pos/web/commerce/catalog'
 import MountainMark from './MountainMark.vue'
+import { DISCOVERY_TOWNS } from './towns'
 
 // Shared by the landing, about and account pages: the redesign's dark forest
 // footer. `shopHref` follows the same rule as FdHeader's: an in-page anchor on
@@ -76,6 +77,11 @@ function backToTop() {
         </a>
         <a :href="anchor('shops')">Nearby shops</a>
         <a :href="anchor('deals')">Deals</a>
+        <!-- Each town's own landing page (/baguio), which Laravel renders; see
+             towns.ts. -->
+        <a v-for="town in DISCOVERY_TOWNS" :key="town.slug" :href="`/${town.slug}`">
+          Shops in {{ town.name }}
+        </a>
       </div>
 
       <div>

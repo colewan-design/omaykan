@@ -2,6 +2,7 @@ import { defineConfig, loadEnv, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import path from 'node:path'
 import type { ServerResponse } from 'node:http'
+import { DISCOVERY_TOWNS } from './src/landing/towns'
 
 // Serves app.html and landing.html from cleaner public routes in dev and preview.
 function entryRouteAliases(shopRootDomain: string): Plugin {
@@ -185,8 +186,15 @@ function requireTenant(): Plugin {
  * bundle, and a built deployment still relies on its own nginx.
  */
 function apiProxy(apiBase: string) {
+  // The town and category landing pages, and the sitemap listing them, are
+  // rendered by Laravel too (DiscoveryPageController). A key starting with ^
+  // is a regular expression to Vite's proxy.
+  const towns = DISCOVERY_TOWNS.map((town) => town.slug).join('|')
+
   return {
     '/api': { target: apiBase, changeOrigin: true },
+    [`^/(${towns})(/[^/?]+)?/?(\\?.*)?$`]: { target: apiBase, changeOrigin: true },
+    '/sitemap-towns.xml': { target: apiBase, changeOrigin: true },
   }
 }
 

@@ -287,6 +287,47 @@ sudo -u www-data env HOME=/tmp php artisan ...
 
 Directory swaps are reversible.
 
+**Updated 2026-09-26, 15:45 UTC.** Backend plus nginx: town and category
+landing pages, `/baguio`, `/baguio/baked-goods`, `/la-trinidad/vegetables` and
+the rest, and `/sitemap-towns.xml` listing the ones with shops (§6c). Released
+from `e3ed3a7` on top of `3e3fdde`; the live backend was checked first and
+matched `3e3fdde` file for file. No migration, no new `.env` key.
+
+**The frontend half of that commit did not go out** — the footer's "Shops in
+Baguio" links and the second `Sitemap:` line in `robots.txt`. A build of
+`3e3fdde` from a clean checkout, with or without this change, renders no
+products on `/`: the prerender refuses it ("rendered 0 products (need 10)")
+and a headless browser finds 0 `?product=` links where the live page has 82,
+against the same API. The live build also has the shop-messages link, which
+`VITE_FEATURE_MESSAGES=false` compiles out. So the 2026-09-24 frontend was
+built from a tree or a `.env.production` that is not in `main`, and shipping
+`main` would have taken the shelves off the home page. Reconcile that first;
+then this commit's frontend is an ordinary build (§3.1). Until then, submit
+`/sitemap-towns.xml` in Search Console by hand.
+
+| | Roll back to | Holds |
+|---|---|---|
+| Backend | `backend.bak-20260926-154257-town-pages` | the `3e3fdde` backend |
+| nginx | `/root/nginx-omaykan.bak-20260926-154257-town-pages` | the config without the two town-page blocks |
+
+Either rolls back alone. With only the backend rolled back, nginx hands the
+town paths to a Laravel that has no route for them and they 404; with only
+nginx rolled back, they fall through to `index.html` with a 200.
+
+Verified after the swap, from the server: `/baguio`, `/baguio/`,
+`/baguio?utm_source=x`, `/la-trinidad` and three category pages serve their own
+titles; `/baguio/hardware` is a 404; no `Set-Cookie`, and `Cache-Control:
+max-age=300, public`; an empty page carries `noindex, follow`. `/`, `/about`,
+`/account`, `/cart`, `/seller/signup`, `/seller/founding`, `/rider`, `/app`,
+`/api/stores`, `/sitemap.xml`, `/robots.txt`, a shop checkout and a shop
+subdomain all still answer as before; storage matched the backup file for
+file after the second rsync; the queue and Reverb restarted active; nginx's
+error log is clean. A headless browser outside the box opened `/baguio` at
+1280px and `/la-trinidad` at 390px: no console errors, no broken images, no
+horizontal overflow. Live placement at release: Baguio 3 shops, La Trinidad 1;
+`colewan-market` is in neither town (its address names neither and its pin is
+outside both radii).
+
 **Updated 2026-09-23, 16:45 UTC+8.** Sign in with Google, on every login form.
 Backend first, then frontend — the new cards call two endpoints that did not
 exist.
@@ -1357,6 +1398,59 @@ normal deploy does **not** do. Do them once, in this order.
 
 Everything new is reachable on the existing nginx configuration; no new host
 or path is needed.
+
+---
+
+## 6c. Town and category landing pages — `/baguio/restaurants`
+
+**Live since 2026-09-26, 15:45 UTC** (backend and nginx; the footer links and
+the `robots.txt` line are still waiting on a frontend release, see §3.3). One
+page per town (`/baguio`, `/la-trinidad`) and per town and category
+(`/baguio/restaurants`, `/la-trinidad/strawberries`, …), plus
+`/sitemap-towns.xml` listing the ones with shops on them. They are for
+customers browsing and for search, so **Laravel renders them as HTML**
+(`DiscoveryPageController`, views in `resources/views/discovery/`); they are
+not part of the Vue build and do not need the prerender. The towns and
+categories, and the rules that place a shop in them, are in
+`backend/config/discovery.php`. Nothing is stored: a shop's town is the last
+one its address names, or failing that the town whose radius its pin falls in,
+and its categories come from its till mode, its business type and its shelf.
+
+A town or category with no shops still answers 200, marked `noindex` and left
+out of the sitemap. Any other slug is a 404 from Laravel — but only because
+nginx sends the town paths there.
+
+**Its own sitemap, not `/sitemap.xml`.** That one is a static file the
+prerender writes at build time. These pages change as shops join, so Laravel
+lists them, and `robots.txt` names both.
+
+Shop cards link to `<slug>.omaykan.com` through `ShopSubdomain`, from the
+`SHOP_ROOT_DOMAIN` the backend already has. Canonical links and the sitemap
+use `APP_URL`; `DISCOVERY_SITE_URL` overrides it and is unset in production.
+
+**nginx**, in the main site's server block, before `location /`. The town list
+is the same as `config/discovery.php` `localities` and
+`apps/web/src/landing/towns.ts`; adding a town means editing all three.
+
+```nginx
+location ~ ^/(baguio|la-trinidad)(/[a-z0-9-]+)?/?$ {
+    root /var/www/omaykan/backend/public;
+    try_files $uri /index.php$is_args$args;
+}
+location = /sitemap-towns.xml {
+    root /var/www/omaykan/backend/public;
+    try_files $uri /index.php$is_args$args;
+}
+```
+
+**Checking it** — the status code alone proves nothing (§3.1):
+
+```bash
+curl -s https://omaykan.com/baguio | grep -o '<title>[^<]*'      # "Shop local in Baguio …"
+curl -s https://omaykan.com/baguio/hardware -o /dev/null -w '%{http_code}\n'   # 404
+curl -sI https://omaykan.com/baguio/restaurants | grep -i 'set-cookie'          # nothing
+curl -s https://omaykan.com/sitemap-towns.xml | head
+```
 
 ---
 
